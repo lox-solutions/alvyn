@@ -1,42 +1,36 @@
 # Security Policies and Procedures
 
-This document outlines security procedures and general policies for the `Alvyn`
-project.
+This document describes the security procedures and general policies for the **Alvyn** project, maintained by **LOX Solutions**.
 
-  * [Reporting a Bug](#reporting-a-bug)
-  * [Disclosure Policy](#disclosure-policy)
-  * [Comments on this Policy](#comments-on-this-policy)
+- [Reporting a Vulnerability](#reporting-a-vulnerability)  
+- [Disclosure Policy](#disclosure-policy)  
+- [Improving this Policy](#improving-this-policy)
 
-## Reporting a Bug
+## Reporting a Vulnerability
 
-The `Alvyn` team and community take all security bugs in `Alvyn` seriously.
-Thank you for improving the security of `Alvyn`. We appreciate your efforts and
-responsible disclosure and will make every effort to acknowledge your
-contributions.
+The **Alvyn** team at **LOX Solutions** takes all security issues seriously.  
+We appreciate responsible disclosure and your help in keeping **Alvyn** secure.
 
-Report security bugs by emailing the lead maintainer at opensource@lox-solutions.eu.
+Please report vulnerabilities by emailing: **opensource@lox-solutions.eu**
 
-The lead maintainer will acknowledge your email within 48 hours, and will send a
-more detailed response within 48 hours indicating the next steps in handling
-your report. After the initial reply to your report, the security team will
-endeavor to keep you informed of the progress towards a fix and full
-announcement, and may ask for additional information or guidance.
+The lead maintainer will acknowledge your report within **48 hours** and provide a follow-up within another **48 hours** outlining next steps.  
+The security team will keep you informed of progress until the issue is resolved and a fix is released.  
+Additional details or clarification may be requested as part of the process.
 
-Report security bugs in third-party modules to the person or team maintaining
-the module.
+If the issue is in a **third-party dependency**, please report it directly to the relevant maintainer.
 
 ## Disclosure Policy
 
-When the security team receives a security bug report, they will assign it to a
-primary handler. This person will coordinate the fix and release process,
-involving the following steps:
+When a vulnerability report is received, the **LOX Solutions security team** will:
 
-  * Confirm the problem and determine the affected versions.
-  * Audit code to find any potential similar problems.
-  * Prepare fixes for all releases still under maintenance. These fixes will be
-    released as fast as possible.
+1. Verify the issue and determine affected versions.  
+2. Audit related components to identify similar weaknesses.  
+3. Develop and test fixes for all maintained releases.  
+4. Release updates and publish an advisory as soon as possible.
 
-## Comments on this Policy
+All fixes will be released through the standard **Gradle build and release process**, following semantic versioning and ensuring backward compatibility whenever possible.
 
-If you have suggestions on how this process could be improved please submit a
-pull request.
+## Improving this Policy
+
+Suggestions to enhance this policy are welcome.  
+Please open a pull request or contact **opensource@lox-solutions.eu** with recommendations.
