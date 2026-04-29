@@ -7,7 +7,7 @@ import {
   createTestPool,
   uniqueSchema,
 } from "../__tests__/setup";
-import type { OutboxEntry } from "./types";
+import type { OutboxEntry } from "../types";
 
 let pool: pg.Pool;
 

@@ -288,8 +288,8 @@ describe("defineAggregate", () => {
     it("returns registered upcasters", () => {
       const upcaster = {
         eventType: "OrderPlaced",
-        fromVersion: 1,
-        toVersion: 2,
+        fromSchemaVersion: 1,
+        toSchemaVersion: 2,
         upcast: (data: Record<string, unknown>) => ({ ...data, currency: "EUR" }),
       };
 
