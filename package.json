@@ -1,6 +1,6 @@
 {
-  "name": "alvyn",
-  "version": "0.1.1",
+  "name": "@lox-solutions/alvyn",
+  "version": "0.1.0",
   "description": "Event sourcing and CQRS for PostgreSQL — zero extra infrastructure.",
   "type": "module",
   "license": "MIT",
@@ -49,6 +49,9 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/lox-solutions/alvyn.git"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "peerDependencies": {
     "pg": "^8.0.0"
