@@ -1,6 +1,6 @@
 {
   "name": "alvyn",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Event sourcing and CQRS for PostgreSQL — zero extra infrastructure.",
   "type": "module",
   "license": "MIT",
