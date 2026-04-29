@@ -23,14 +23,14 @@ Alvyn is an **event sourcing library for Node.js and PostgreSQL**. It provides e
 ### Installation
 
 ```bash
-npm install alvyn pg
+npm install @lox-solutions/alvyn pg
 ```
 
 ### Setup
 
 ```typescript
 import { Pool } from "pg";
-import { EventStore, defineAggregate } from "alvyn";
+import { EventStore, defineAggregate } from "@lox-solutions/alvyn";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
