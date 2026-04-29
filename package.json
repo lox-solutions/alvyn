@@ -1,0 +1,55 @@
+{
+  "name": "alvyn",
+  "version": "0.1.0",
+  "description": "Event sourcing and CQRS for PostgreSQL — zero extra infrastructure.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "pnpm run build"
+  },
+  "keywords": [
+    "event-sourcing",
+    "cqrs",
+    "event-store",
+    "postgresql",
+    "postgres",
+    "cloud-events",
+    "aggregate",
+    "projection",
+    "outbox",
+    "gdpr",
+    "crypto-shredding",
+    "ddd",
+    "domain-driven-design"
+  ],
+  "packageManager": "pnpm@10.28.2",
+  "engines": {
+    "node": ">=18",
+    "pnpm": ">=10"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lox-solutions/alvyn.git"
+  },
+  "peerDependencies": {
+    "pg": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/pg": "8.11.11",
+    "typescript": "^5.9.3"
+  }
+}
