@@ -26,6 +26,7 @@ export interface EncryptResult {
  */
 function getNestedField(obj: Record<string, unknown>, path: string): unknown {
   const parts = path.split(".");
+  if (!parts.every(isSafePathSegment)) return undefined;
   let current: unknown = obj;
   for (const part of parts) {
     if (
@@ -83,6 +84,7 @@ function setNestedField(
  */
 function removeNestedField(obj: Record<string, unknown>, path: string): void {
   const parts = path.split(".");
+  if (!parts.every(isSafePathSegment)) return;
   let current: Record<string, unknown> = obj;
   for (let i = 0; i < parts.length - 1; i++) {
     const part = parts[i]!;
