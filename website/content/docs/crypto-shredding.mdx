@@ -1,10 +1,11 @@
+---
+title: Crypto-Shredding & GDPR
+description: Envelope encryption for GDPR-compliant PII handling with per-entity key revocation and tombstoned events.
+---
+
 # Crypto-Shredding & GDPR
 
 The event store implements **envelope encryption** for GDPR-compliant PII handling. Per-entity encryption keys allow surgical data erasure by revoking a single key, making all PII for that entity irrecoverable without touching any other data.
-
-> **Related:** [Event Store Overview](../event-store.md) | [Aggregates](./aggregates.md) | [API Reference](./api-reference.md)
-
----
 
 ## Architecture
 
@@ -33,8 +34,6 @@ The event store implements **envelope encryption** for GDPR-compliant PII handli
 2. Each entity (e.g., a user) gets its own **AES-256-GCM key** stored encrypted in the `crypto_keys` table.
 3. Individual PII fields within event data are encrypted with the entity's key, each with a unique random IV.
 
----
-
 ## How It Works
 
 ### Write Path (append)
@@ -59,8 +58,6 @@ crypto_key_id column:   "user:abc123"
 
 1. If the entity's crypto key is **active**: fields are decrypted and merged back into the event data. The caller sees the complete event as if encryption was transparent.
 2. If the key is **revoked or missing**: the event is returned as a `TombstonedEvent` with `data: null` and `tombstoned: true`.
-
----
 
 ## Setting Up Encryption
 
@@ -89,7 +86,7 @@ Create a per-entity key before appending encrypted events:
 await eventStore.createCryptoKey("user:abc123");
 ```
 
-This is **idempotent** -- if the key already exists, it's a no-op.
+This is **idempotent** — if the key already exists, it's a no-op.
 
 ### 3. Configure Aggregate Encryption
 
@@ -105,7 +102,6 @@ const User = defineAggregate<UserEvents>()({
     encryptedFields: {
       UserRegistered: ["name", "email", "address.street"],
       UserRenamed: ["name"],
-      // UserDeactivated has no PII -- no entry needed
     },
   },
 });
@@ -130,14 +126,12 @@ await eventStore.append({
 });
 ```
 
----
-
 ## Dot-Path Field Notation
 
 Encrypted fields are specified using dot-path notation for nested objects:
 
 ```typescript
-encryptedFields: ["name", "address.street", "address.city"];
+encryptedFields: ["name", "address.street", "address.city"]
 ```
 
 Given event data:
@@ -166,17 +160,15 @@ And `encrypted_data` column contains:
 }
 ```
 
----
-
 ## GDPR Right to Erasure
 
 The complete flow for handling a user deletion request:
 
 ```typescript
-// 1. When user registers -- create their crypto key
+// 1. When user registers — create their crypto key
 await eventStore.createCryptoKey("user:abc123");
 
-// 2. Normal operation -- append events with encrypted PII
+// 2. Normal operation — append events with encrypted PII
 await User.append(eventStore, "abc123", {
   expectedVersion: -1,
   events: [
@@ -191,7 +183,7 @@ await User.append(eventStore, "abc123", {
   ],
 });
 
-// 3. User requests deletion -- revoke the key
+// 3. User requests deletion — revoke the key
 await eventStore.revokeKey("user:abc123");
 
 // 4. All future reads return tombstones for encrypted events
@@ -204,27 +196,24 @@ const user = await User.load(eventStore, "abc123");
 
 Within a single transaction:
 
-1. Sets `revoked_at = now()` on the crypto key (the key is **not deleted** -- kept for audit trail)
+1. Sets `revoked_at = now()` on the crypto key (the key is **not deleted** — kept for audit trail)
 2. Finds all streams that used this crypto key
 3. Deletes snapshots for those streams (snapshots may contain cached PII)
 
-The key is never deleted from the database. This is intentional -- the `revoked_at` timestamp provides an audit trail for GDPR compliance.
-
----
+The key is never deleted from the database. This is intentional — the `revoked_at` timestamp provides an audit trail for GDPR compliance.
 
 ## Tombstoned Events
 
 After key revocation, encrypted events are returned as `TombstonedEvent`:
 
 ```typescript
-interface TombstonedEvent
-  extends CloudEventRequiredAttributes, CloudEventOptionalAttributes {
+interface TombstonedEvent {
   globalPosition: bigint;
   streamId: string;
   streamVersion: number;
-  type: string; // Event type name (CloudEvents `type`)
-  data: null; // PII shredded -- irrecoverable
-  extensions: CloudEventExtensions; // Extensions are NOT encrypted
+  type: string;        // Event type name — you know what happened
+  data: null;          // PII shredded — irrecoverable
+  extensions: object;  // Extensions are NOT encrypted
   createdAt: Date;
   tombstoned: true;
 }
@@ -232,9 +221,9 @@ interface TombstonedEvent
 
 **Important characteristics:**
 
-- `data` is `null` -- the PII is cryptographically irrecoverable
+- `data` is `null` — the PII is cryptographically irrecoverable
 - `extensions` is still available (it's never encrypted)
-- `type` is still available -- you know _what_ happened, just not _the PII details_
+- `type` is still available — you know *what* happened, just not *the PII details*
 - Non-encrypted events in the same stream are **not affected**
 
 ### Handling Tombstones in Evolve Handlers
@@ -247,25 +236,20 @@ evolve: {
     ...state,
     name: event.data?.name ?? state.name,
     email: event.data?.email ?? state.email,
-    // Non-PII fields also need fallbacks since the entire data is null
     active: event.data?.active ?? state.active,
   }),
 }
 ```
 
----
-
 ## Error Handling
 
-| Error                    | When                                                     | Recovery                                      |
-| ------------------------ | -------------------------------------------------------- | --------------------------------------------- |
-| `CryptoKeyRevokedError`  | Trying to encrypt **new** events with a revoked key      | Do not write PII for deleted users            |
-| `CryptoKeyNotFoundError` | Crypto key does not exist in the key store               | Create the key first with `createCryptoKey()` |
-| `MasterKeyRequiredError` | Crypto operation without `masterEncryptionKey` in config | Provide the master key                        |
+| Error | When | Recovery |
+|---|---|---|
+| `CryptoKeyRevokedError` | Trying to encrypt **new** events with a revoked key | Do not write PII for deleted users |
+| `CryptoKeyNotFoundError` | Crypto key does not exist in the key store | Create the key first with `createCryptoKey()` |
+| `MasterKeyRequiredError` | Crypto operation without `masterEncryptionKey` in config | Provide the master key |
 
-Note: `CryptoKeyRevokedError` is only thrown on **write** operations. On **read**, revoked keys simply produce tombstoned events without throwing.
-
----
+`CryptoKeyRevokedError` is only thrown on **write** operations. On **read**, revoked keys simply produce tombstoned events without throwing.
 
 ## Security Details
 

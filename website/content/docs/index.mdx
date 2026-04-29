@@ -1,0 +1,100 @@
+---
+title: Introduction
+description: Alvyn is a production-grade event store for PostgreSQL with type-safe aggregates, GDPR crypto-shredding, projections, transactional outbox, and schema evolution.
+---
+
+# Alvyn
+
+Alvyn is an **event sourcing library for Node.js and PostgreSQL**. It provides everything you need to build event-sourced systems with strong consistency guarantees, GDPR compliance, and full TypeScript support.
+
+## Features
+
+- **Type-safe aggregates** — Define event maps and evolve handlers with full TypeScript inference via `defineAggregate`
+- **GDPR crypto-shredding** — Per-entity AES-256-GCM envelope encryption with key revocation and tombstoned events
+- **Projections** — Build read models from the global event stream with checkpoint tracking and exactly-once semantics
+- **Transactional outbox** — At-least-once delivery to external systems, written atomically with events
+- **Schema evolution** — Read-time upcasters that transform old event shapes without modifying stored data
+- **Snapshots** — Automatic snapshot management for fast aggregate loading
+- **CloudEvents v1.0.2** — All events comply with the CloudEvents specification
+- **PostgreSQL native** — Advisory locks, OCC, `FOR UPDATE SKIP LOCKED`, and schema isolation
+
+## Quick Start
+
+### Installation
+
+```bash
+npm install alvyn pg
+```
+
+### Setup
+
+```typescript
+import { Pool } from "pg";
+import { EventStore, defineAggregate } from "alvyn";
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+const eventStore = new EventStore({
+  pool,
+  masterEncryptionKey: process.env.EVENT_STORE_MASTER_KEY, // optional, for GDPR
+});
+
+await eventStore.setup(); // idempotent — safe on every startup
+```
+
+### Define an Aggregate
+
+```typescript
+type OrderEvents = {
+  OrderPlaced: { customerId: string; total: number };
+  OrderShipped: { trackingNumber: string };
+};
+
+const Order = defineAggregate<OrderEvents>()({
+  streamPrefix: "Order",
+  initialState: () => ({ status: "pending", total: 0 }),
+  evolve: {
+    OrderPlaced: (state, event) => ({
+      ...state,
+      status: "placed",
+      total: event.data?.total ?? 0,
+    }),
+    OrderShipped: (state) => ({
+      ...state,
+      status: "shipped",
+    }),
+  },
+});
+```
+
+### Load and Append
+
+```typescript
+// Load aggregate state
+const order = await Order.load(eventStore, "order-123");
+// order.state  -> { status: "placed", total: 99.99 }
+// order.version -> 1
+
+// Append events with optimistic concurrency
+await Order.append(eventStore, "order-123", {
+  expectedVersion: order.version,
+  events: [
+    { type: "OrderShipped", data: { trackingNumber: "TRACK-456" } },
+  ],
+});
+```
+
+## Requirements
+
+- Node.js >= 18
+- PostgreSQL >= 14
+- `pg` (peer dependency)
+
+## Next Steps
+
+- [Aggregates](/docs/aggregates) — Full guide to defining and using aggregates
+- [Crypto-Shredding](/docs/crypto-shredding) — GDPR-compliant PII encryption
+- [Projections](/docs/projections) — Build read models and use the transactional outbox
+- [Schema Evolution](/docs/schema-evolution) — Evolve event shapes with upcasters
+- [API Reference](/docs/api-reference) — Complete API documentation
+- [Database Schema](/docs/database-schema) — PostgreSQL table structure

@@ -1,4 +1,11 @@
 # ===========================================================================
+# Workspace
+# ===========================================================================
+packages:
+  - "."
+  - "website"
+
+# ===========================================================================
 # Security — supply-chain hardening
 # ===========================================================================
 
@@ -11,8 +18,11 @@ blockExoticSubdeps: true
 # Fail install if a package's trust level dropped vs previous releases
 trustPolicy: no-downgrade
 
-# Block ALL postinstall scripts — no deps need build scripts
-onlyBuiltDependencies: []
+# Block ALL postinstall scripts except explicitly allowed
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+  - unrs-resolver
 
 # ===========================================================================
 # Strictness

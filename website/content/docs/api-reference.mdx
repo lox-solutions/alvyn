@@ -1,0 +1,374 @@
+---
+title: API Reference
+description: Complete reference for the EventStore class, all exported types, and error classes.
+---
+
+# API Reference
+
+Complete reference for the `EventStore` class, all exported types, and error classes.
+
+## EventStore Class
+
+### Constructor
+
+```typescript
+import { EventStore } from "alvyn";
+
+new EventStore(config: EventStoreConfig)
+```
+
+```typescript
+interface EventStoreConfig {
+  pool: Pool;
+  schema?: string;
+  masterEncryptionKey?: string;
+  defaultSource?: string;
+}
+```
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `pool` | `Pool` | Yes | PostgreSQL connection pool (caller manages lifecycle) |
+| `schema` | `string` | No | PostgreSQL schema name (default: `"event_store"`) |
+| `masterEncryptionKey` | `string` | No | 256-bit hex key (64 chars) for envelope encryption |
+| `defaultSource` | `string` | No | CloudEvents `source` URI-reference applied to all events |
+
+The schema name is validated against `/^[a-z_][a-z0-9_]{0,62}$/`. Invalid names throw `InvalidSchemaNameError`.
+
+### Lifecycle
+
+#### `setup(): Promise<void>`
+
+Runs idempotent schema migrations (`CREATE TABLE IF NOT EXISTS`). Safe on every startup. **Must be called before any other method.**
+
+Throws `EventStoreNotInitializedError` if other methods are called before `setup()`.
+
+### Stream Operations
+
+#### `append(input, options?): Promise<AppendResult>`
+
+Appends events to a stream within an ACID transaction.
+
+```typescript
+const result = await eventStore.append({
+  streamId: "Order-123",
+  expectedVersion: 5,
+  events: [
+    {
+      type: "OrderShipped",
+      data: { trackingNumber: "TRACK-456" },
+      extensions: { actorid: "user-789", correlationid: "cmd-abc" },
+    },
+  ],
+  outboxTopics: ["orders"],
+});
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `streamId` | `string` | Target stream identifier |
+| `expectedVersion` | `number` | `-1` = new stream, `0` = no check, `N` = exact version |
+| `events` | `AppendEventInput[]` | Events to append |
+| `outboxTopics` | `string[]` | Optional: topics for transactional outbox |
+
+**Options:** Pass `{ client }` to use an existing transaction (from `withTransaction()`).
+
+**Returns:** `AppendResult` with `streamId`, `fromVersion`, `toVersion`, `globalPositions[]`.
+
+**Throws:** `OptimisticConcurrencyError`, `CryptoKeyRevokedError`.
+
+#### `load(streamId): Promise<ReplayedEvent[]>`
+
+Loads all events for a stream from version 1. Handles decryption and upcasting automatically.
+
+#### `loadFrom(streamId, fromVersion): Promise<ReplayedEvent[]>`
+
+Loads events starting from a specific version.
+
+#### `loadWithSnapshot(streamId): Promise<{ snapshot, events }>`
+
+Loads the snapshot (if any) plus events after the snapshot version. Most efficient way to rebuild aggregate state.
+
+```typescript
+const { snapshot, events } = await eventStore.loadWithSnapshot("Order-123");
+```
+
+#### `listStreams(options?): Promise<string[]>`
+
+Lists distinct stream IDs, optionally filtered by prefix.
+
+```typescript
+const orderStreams = await eventStore.listStreams({
+  prefix: "Order",
+  limit: 50,
+});
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `prefix` | `string` | - | Stream ID prefix (separator `"-"` is appended automatically) |
+| `limit` | `number` | `100` | Maximum number of stream IDs to return |
+
+### Snapshots
+
+#### `saveSnapshot(input): Promise<void>`
+
+Saves a snapshot for a stream. Upserts — one snapshot per stream.
+
+```typescript
+await eventStore.saveSnapshot({
+  streamId: "Order-123",
+  streamVersion: 100,
+  snapshotType: "Order",
+  data: { status: "shipped", total: 99.99 },
+});
+```
+
+#### `deleteSnapshot(streamId): Promise<void>`
+
+Deletes the snapshot for a stream.
+
+### Crypto / GDPR
+
+#### `createCryptoKey(keyId): Promise<void>`
+
+Creates a per-entity AES-256 encryption key. Idempotent.
+
+**Throws:** `MasterKeyRequiredError` if no `masterEncryptionKey` was configured.
+
+#### `revokeKey(keyId): Promise<void>`
+
+Revokes a crypto key (GDPR erasure). Encrypted events become tombstones on read. Deletes snapshots for affected streams.
+
+**Throws:** `MasterKeyRequiredError`, `CryptoKeyNotFoundError`.
+
+See [Crypto-Shredding](/docs/crypto-shredding) for details.
+
+### Outbox
+
+#### `pollOutbox(limit?): Promise<OutboxEntry[]>`
+
+Polls pending outbox entries (default limit: 100). Uses `FOR UPDATE SKIP LOCKED` for replica-safe concurrent processing.
+
+#### `markOutboxProcessed(ids): Promise<void>`
+
+Marks outbox entries as processed.
+
+See [Projections & Outbox](/docs/projections) for details.
+
+### Projections
+
+#### `runProjection(projection, batchSize?): Promise<number>`
+
+Processes the next batch of events for a projection (default batch: 500). Returns the count of events processed.
+
+See [Projections & Outbox](/docs/projections) for details.
+
+### Upcasters
+
+#### `registerUpcaster(upcaster): void`
+
+Registers a single schema evolution transformer.
+
+#### `registerUpcasters(upcasters): void`
+
+Registers multiple upcasters at once.
+
+See [Schema Evolution](/docs/schema-evolution) for details.
+
+### Transactions
+
+#### `withTransaction(fn): Promise<T>`
+
+Executes a function within a PostgreSQL transaction.
+
+```typescript
+await eventStore.withTransaction(async (client) => {
+  await eventStore.append(
+    {
+      streamId: "Order-123",
+      expectedVersion: 5,
+      events: [{ type: "OrderPlaced", data: { total: 99.99 } }],
+    },
+    { client },
+  );
+  await client.query("INSERT INTO audit_log ...", [...]);
+});
+```
+
+## Type Definitions
+
+### Event Types
+
+```typescript
+interface StoredEvent<T = unknown> {
+  globalPosition: bigint;
+  streamId: string;
+  streamVersion: number;
+  type: string;
+  data: T;
+  extensions: CloudEventExtensions;
+  createdAt: Date;
+}
+
+interface TombstonedEvent {
+  globalPosition: bigint;
+  streamId: string;
+  streamVersion: number;
+  type: string;
+  data: null;
+  extensions: CloudEventExtensions;
+  createdAt: Date;
+  tombstoned: true;
+}
+
+type ReplayedEvent<T = unknown> = StoredEvent<T> | TombstonedEvent;
+```
+
+### Append Types
+
+```typescript
+interface AppendEventInput<T = unknown> {
+  type: string;
+  data: T;
+  extensions?: Partial<CloudEventExtensions>;
+  source?: string;
+  encryptedFields?: string[];
+  cryptoKeyId?: string;
+  schemaVersion?: number;
+}
+
+interface AppendInput<T = unknown> {
+  streamId: string;
+  expectedVersion: number;
+  events: AppendEventInput<T>[];
+  outboxTopics?: string[];
+}
+
+interface AppendResult {
+  streamId: string;
+  fromVersion: number;
+  toVersion: number;
+  globalPositions: bigint[];
+}
+```
+
+### Snapshot Types
+
+```typescript
+interface Snapshot<T = unknown> {
+  streamId: string;
+  streamVersion: number;
+  snapshotType: string;
+  data: T;
+  createdAt: Date;
+}
+
+interface SaveSnapshotInput<T = unknown> {
+  streamId: string;
+  streamVersion: number;
+  snapshotType: string;
+  data: T;
+}
+```
+
+### Upcaster Type
+
+```typescript
+interface Upcaster<TIn = unknown, TOut = unknown> {
+  eventType: string;
+  fromSchemaVersion: number;
+  toSchemaVersion: number;
+  upcast(data: TIn): TOut;
+}
+```
+
+### Projection Types
+
+```typescript
+interface Projection {
+  projectionName: string;
+  handle(event: StoredEvent, client: PoolClient): Promise<void>;
+}
+
+interface ProjectionHandlerContext {
+  entityId: string;
+  streamId: string;
+  globalPosition: bigint;
+  streamVersion: number;
+  createdAt: Date;
+  client: PoolClient;
+}
+```
+
+### Outbox Type
+
+```typescript
+interface OutboxEntry {
+  id: bigint;
+  eventGlobalPosition: bigint;
+  topic: string;
+  payload: unknown;
+  createdAt: Date;
+}
+```
+
+### Aggregate Types
+
+```typescript
+type EventMap = Record<string, unknown>;
+
+type AggregateEventInput<TEvents extends EventMap> = {
+  [K in keyof TEvents & string]: {
+    type: K;
+    data: TEvents[K];
+    extensions?: Partial<CloudEventExtensions>;
+    schemaVersion?: number;
+  };
+}[keyof TEvents & string];
+
+interface AggregateInstance<TState> {
+  state: TState;
+  version: number;
+  exists: boolean;
+  streamId: string;
+}
+```
+
+## Error Reference
+
+All errors extend `Error` and have a `name` property matching the class name for `instanceof` checks.
+
+### `OptimisticConcurrencyError`
+
+Thrown when `expectedVersion` does not match the stream's current version.
+
+| Property | Type | Description |
+|---|---|---|
+| `streamId` | `string` | The conflicting stream |
+| `expectedVersion` | `number` | What the caller expected |
+| `actualVersion` | `number` | The stream's actual version |
+
+### `StreamNotFoundError`
+
+Thrown when loading a stream that does not exist and the caller explicitly required existence.
+
+### `CryptoKeyRevokedError`
+
+Thrown when attempting to encrypt **new** events with a revoked key. Not thrown during reads.
+
+### `CryptoKeyNotFoundError`
+
+Thrown when a crypto key is not found in the key store.
+
+### `MasterKeyRequiredError`
+
+Thrown when crypto operations are attempted but no `masterEncryptionKey` was provided.
+
+### `EventStoreNotInitializedError`
+
+Thrown when any method is called before `setup()`.
+
+### `InvalidSchemaNameError`
+
+Thrown when the schema name does not match `/^[a-z_][a-z0-9_]{0,62}$/`.
