@@ -13,7 +13,7 @@
 A production-grade event sourcing library for **Node.js** and **PostgreSQL**. Type-safe aggregates, GDPR crypto-shredding, projections, transactional outbox, and schema evolution — all in one package.
 
 [![CI](https://github.com/lox-solutions/alvyn/actions/workflows/ci.yml/badge.svg)](https://github.com/lox-solutions/alvyn/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/alvyn)](https://www.npmjs.com/package/alvyn)
+[![npm](https://img.shields.io/npm/v/@lox-solutions/alvyn)](https://www.npmjs.com/package/@lox-solutions/alvyn)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ## Why Alvyn?
@@ -28,9 +28,9 @@ Most event sourcing libraries for Node.js are either too minimal (just an append
 ## Install
 
 ```bash
-npm install alvyn pg
+npm install @lox-solutions/alvyn pg
 # or
-pnpm add alvyn pg
+pnpm add @lox-solutions/alvyn pg
 ```
 
 `pg` is a peer dependency — you provide the connection pool.
@@ -39,7 +39,7 @@ pnpm add alvyn pg
 
 ```typescript
 import { Pool } from "pg";
-import { EventStore, defineAggregate } from "alvyn";
+import { EventStore, defineAggregate } from "@lox-solutions/alvyn";
 
 // 1. Create the event store
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
