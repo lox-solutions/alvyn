@@ -306,7 +306,10 @@ export interface OutboxEntry {
  *   If your handler writes to a different database, at-least-once semantics
  *   apply (the entries are marked processed only after handler success).
  */
-export type OutboxHandler = (entries: OutboxEntry[], client: PoolClient) => Promise<void>;
+export type OutboxHandler = (
+  entries: OutboxEntry[],
+  client: PoolClient,
+) => Promise<void>;
 
 // ---------------------------------------------------------------------------
 // Stream Discovery

@@ -3,7 +3,11 @@ import type { PoolClient } from "pg";
 import type { CryptoKeyManager } from "../crypto/crypto-key-manager";
 import { encryptFields } from "../crypto/field-encryptor";
 import { OptimisticConcurrencyError } from "../errors";
-import type { AppendEventInput, AppendResult, CloudEventExtensions } from "../types";
+import type {
+  AppendEventInput,
+  AppendResult,
+  CloudEventExtensions,
+} from "../types";
 
 /**
  * PostgreSQL maximum number of query parameters.
@@ -83,7 +87,9 @@ export async function appendToStream(
   // Two-key lock: fixed namespace (1936024421 = hashtext('event_store')) + stream hash.
   // This prevents collisions with other subsystems using advisory locks and uses
   // the full 32-bit space for each key (rather than cramming everything into one int4).
-  await client.query(`SELECT pg_advisory_xact_lock(1936024421, hashtext($1))`, [streamId]);
+  await client.query(`SELECT pg_advisory_xact_lock(1936024421, hashtext($1))`, [
+    streamId,
+  ]);
 
   // Read current stream version
   const versionResult = await client.query<{ max_version: number | null }>(
@@ -97,12 +103,20 @@ export async function appendToStream(
   if (expectedVersion === -1) {
     // Expect new stream
     if (currentVersion > 0) {
-      throw new OptimisticConcurrencyError(streamId, expectedVersion, currentVersion);
+      throw new OptimisticConcurrencyError(
+        streamId,
+        expectedVersion,
+        currentVersion,
+      );
     }
   } else if (expectedVersion > 0) {
     // Expect specific version
     if (currentVersion !== expectedVersion) {
-      throw new OptimisticConcurrencyError(streamId, expectedVersion, currentVersion);
+      throw new OptimisticConcurrencyError(
+        streamId,
+        expectedVersion,
+        currentVersion,
+      );
     }
   }
   // expectedVersion === 0 -> no concurrency check (append regardless)
@@ -155,14 +169,22 @@ export async function appendToStream(
     let cryptoKeyId: string | null = event.cryptoKeyId ?? null;
 
     // Handle encryption if needed
-    if (event.encryptedFields && event.encryptedFields.length > 0 && cryptoKeyId) {
+    if (
+      event.encryptedFields &&
+      event.encryptedFields.length > 0 &&
+      cryptoKeyId
+    ) {
       if (!cryptoKeyManager) {
         throw new Error(
           "Crypto operations require a master encryption key in the EventStore configuration",
         );
       }
 
-      const aesKey = await cryptoKeyManager.getKeyForEncryption(client, schema, cryptoKeyId);
+      const aesKey = await cryptoKeyManager.getKeyForEncryption(
+        client,
+        schema,
+        cryptoKeyId,
+      );
       const result = encryptFields(
         event.data as Record<string, unknown>,
         event.encryptedFields,
@@ -198,8 +220,15 @@ export async function appendToStream(
   // --- Batch INSERT events, chunked to stay within PG's parameter limit ---
   const globalPositions: bigint[] = [];
 
-  for (let chunkStart = 0; chunkStart < preparedRows.length; chunkStart += MAX_EVENTS_PER_CHUNK) {
-    const chunk = preparedRows.slice(chunkStart, chunkStart + MAX_EVENTS_PER_CHUNK);
+  for (
+    let chunkStart = 0;
+    chunkStart < preparedRows.length;
+    chunkStart += MAX_EVENTS_PER_CHUNK
+  ) {
+    const chunk = preparedRows.slice(
+      chunkStart,
+      chunkStart + MAX_EVENTS_PER_CHUNK,
+    );
     const valuePlaceholders: string[] = [];
     const params: (string | number | null)[] = [];
     let paramIdx = 1;
@@ -294,14 +323,23 @@ export async function appendToStream(
       chunkStart < allOutboxRows.length;
       chunkStart += MAX_OUTBOX_ROWS_PER_CHUNK
     ) {
-      const chunk = allOutboxRows.slice(chunkStart, chunkStart + MAX_OUTBOX_ROWS_PER_CHUNK);
+      const chunk = allOutboxRows.slice(
+        chunkStart,
+        chunkStart + MAX_OUTBOX_ROWS_PER_CHUNK,
+      );
       const outboxValues: string[] = [];
       const outboxParams: (string | null)[] = [];
       let outboxParamIdx = 1;
 
       for (const outboxRow of chunk) {
-        outboxValues.push(`($${outboxParamIdx}, $${outboxParamIdx + 1}, $${outboxParamIdx + 2})`);
-        outboxParams.push(outboxRow.globalPosition, outboxRow.topic, outboxRow.payloadJson);
+        outboxValues.push(
+          `($${outboxParamIdx}, $${outboxParamIdx + 1}, $${outboxParamIdx + 2})`,
+        );
+        outboxParams.push(
+          outboxRow.globalPosition,
+          outboxRow.topic,
+          outboxRow.payloadJson,
+        );
         outboxParamIdx += PARAMS_PER_OUTBOX;
       }
 

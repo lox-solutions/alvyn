@@ -29,12 +29,12 @@ interface EventStoreConfig {
 }
 ```
 
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `pool` | `Pool` | Yes | PostgreSQL connection pool (caller manages lifecycle) |
-| `schema` | `string` | No | PostgreSQL schema name (default: `"event_store"`) |
-| `masterEncryptionKey` | `string` | No | 256-bit hex key (64 chars) for envelope encryption |
-| `defaultSource` | `string` | No | CloudEvents `source` URI-reference applied to all events unless overridden |
+| Parameter             | Type     | Required | Description                                                                |
+| --------------------- | -------- | -------- | -------------------------------------------------------------------------- |
+| `pool`                | `Pool`   | Yes      | PostgreSQL connection pool (caller manages lifecycle)                      |
+| `schema`              | `string` | No       | PostgreSQL schema name (default: `"event_store"`)                          |
+| `masterEncryptionKey` | `string` | No       | 256-bit hex key (64 chars) for envelope encryption                         |
+| `defaultSource`       | `string` | No       | CloudEvents `source` URI-reference applied to all events unless overridden |
 
 The schema name is validated against `/^[a-z_][a-z0-9_]{0,62}$/`. Invalid names throw `InvalidSchemaNameError`.
 
@@ -76,12 +76,12 @@ const result = await eventStore.append({
 
 **Parameters:**
 
-| Field | Type | Description |
-|---|---|---|
-| `streamId` | `string` | Target stream identifier |
-| `expectedVersion` | `number` | `-1` = new stream, `0` = no check, `N` = exact version |
-| `events` | `AppendEventInput<T>[]` | Events to append |
-| `outboxTopics` | `string[]` | Optional: topics for transactional outbox |
+| Field             | Type                    | Description                                            |
+| ----------------- | ----------------------- | ------------------------------------------------------ |
+| `streamId`        | `string`                | Target stream identifier                               |
+| `expectedVersion` | `number`                | `-1` = new stream, `0` = no check, `N` = exact version |
+| `events`          | `AppendEventInput<T>[]` | Events to append                                       |
+| `outboxTopics`    | `string[]`              | Optional: topics for transactional outbox              |
 
 **Options:** Pass `{ client }` to use an existing transaction (from `withTransaction()`).
 
@@ -122,16 +122,19 @@ Lists distinct stream IDs, optionally filtered by prefix. Uses the B-tree index 
 const allStreams = await eventStore.listStreams();
 
 // List streams for a specific aggregate
-const orderStreams = await eventStore.listStreams({ prefix: "Order", limit: 50 });
+const orderStreams = await eventStore.listStreams({
+  prefix: "Order",
+  limit: 50,
+});
 // => ["Order-abc123", "Order-def456", ...]
 ```
 
 **Options:**
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `prefix` | `string` | – | Stream ID prefix (e.g. `"AgentRun"`). The separator `"-"` is appended automatically. |
-| `limit` | `number` | `100` | Maximum number of stream IDs to return. |
+| Field    | Type     | Default | Description                                                                          |
+| -------- | -------- | ------- | ------------------------------------------------------------------------------------ |
+| `prefix` | `string` | –       | Stream ID prefix (e.g. `"AgentRun"`). The separator `"-"` is appended automatically. |
+| `limit`  | `number` | `100`   | Maximum number of stream IDs to return.                                              |
 
 **Returns:** Array of full stream IDs, ordered descending by stream ID.
 
@@ -213,7 +216,9 @@ const orderProjection = defineProjection<OrderEvents>()({
   projectionName: "order-summary",
   streamPrefix: "Order",
   handlers: {
-    OrderPlaced: async (data, ctx) => { /* typed handler */ },
+    OrderPlaced: async (data, ctx) => {
+      /* typed handler */
+    },
   },
 });
 ```
@@ -263,27 +268,27 @@ await eventStore.withTransaction(async (client) => {
 ```typescript
 /** CloudEvents v1.0.2 required context attributes */
 interface CloudEventRequiredAttributes {
-  id: string;                        // Unique event ID: "{streamId}/{streamVersion}"
-  source: string;                    // URI-reference identifying the event source
-  specversion: string;               // Always "1.0"
-  type: string;                      // Event type name (e.g. "OrderPlaced")
+  id: string; // Unique event ID: "{streamId}/{streamVersion}"
+  source: string; // URI-reference identifying the event source
+  specversion: string; // Always "1.0"
+  type: string; // Event type name (e.g. "OrderPlaced")
 }
 
 /** CloudEvents v1.0.2 optional context attributes */
 interface CloudEventOptionalAttributes {
-  datacontenttype?: string;          // Always "application/json" for this library
-  dataschema?: string;               // Optional URI to the data schema
-  subject?: string;                  // Stream ID (e.g. "Order-123")
-  time?: string;                     // ISO 8601 timestamp
+  datacontenttype?: string; // Always "application/json" for this library
+  dataschema?: string; // Optional URI to the data schema
+  subject?: string; // Stream ID (e.g. "Order-123")
+  time?: string; // ISO 8601 timestamp
 }
 
 /** Extension attributes stored in the `extensions` JSONB column */
 interface CloudEventExtensions {
-  correlationid?: string;            // Chain correlation across services
-  causationid?: string;              // ID of causing event/command
-  actorid?: string;                  // User/system actor
-  schemaversion?: number;            // For upcasting (default: 1)
-  [key: string]: unknown;            // Arbitrary additional extensions
+  correlationid?: string; // Chain correlation across services
+  causationid?: string; // ID of causing event/command
+  actorid?: string; // User/system actor
+  schemaversion?: number; // For upcasting (default: 1)
+  [key: string]: unknown; // Arbitrary additional extensions
 }
 
 /** Full CloudEvents context (required + optional + extensions) */
@@ -296,23 +301,25 @@ type CloudEventContext = CloudEventRequiredAttributes &
 ### Event Types
 
 ```typescript
-interface StoredEvent<T = unknown> extends CloudEventRequiredAttributes, CloudEventOptionalAttributes {
+interface StoredEvent<T = unknown>
+  extends CloudEventRequiredAttributes, CloudEventOptionalAttributes {
   globalPosition: bigint;
   streamId: string;
   streamVersion: number;
-  type: string;                      // Event type name (CloudEvents `type`)
+  type: string; // Event type name (CloudEvents `type`)
   data: T;
-  extensions: CloudEventExtensions;  // Extension attributes
+  extensions: CloudEventExtensions; // Extension attributes
   createdAt: Date;
 }
 
-interface TombstonedEvent extends CloudEventRequiredAttributes, CloudEventOptionalAttributes {
+interface TombstonedEvent
+  extends CloudEventRequiredAttributes, CloudEventOptionalAttributes {
   globalPosition: bigint;
   streamId: string;
   streamVersion: number;
-  type: string;                      // Event type name (CloudEvents `type`)
-  data: null;                        // PII shredded -- irrecoverable
-  extensions: CloudEventExtensions;  // Extensions are NOT encrypted
+  type: string; // Event type name (CloudEvents `type`)
+  data: null; // PII shredded -- irrecoverable
+  extensions: CloudEventExtensions; // Extensions are NOT encrypted
   createdAt: Date;
   tombstoned: true;
 }
@@ -325,27 +332,27 @@ type ReplayedEvent<T = unknown> = StoredEvent<T> | TombstonedEvent;
 
 ```typescript
 interface AppendEventInput<T = unknown> {
-  type: string;                      // Event type name (CloudEvents `type`)
+  type: string; // Event type name (CloudEvents `type`)
   data: T;
   extensions?: Partial<CloudEventExtensions>;
-  source?: string;                   // Override defaultSource for this event
-  encryptedFields?: string[];        // Dot-paths to PII fields
-  cryptoKeyId?: string;              // Entity crypto key ID
-  schemaVersion?: number;            // Default: 1
+  source?: string; // Override defaultSource for this event
+  encryptedFields?: string[]; // Dot-paths to PII fields
+  cryptoKeyId?: string; // Entity crypto key ID
+  schemaVersion?: number; // Default: 1
 }
 
 interface AppendInput<T = unknown> {
   streamId: string;
-  expectedVersion: number;           // -1 = new, 0 = no check, N = exact
+  expectedVersion: number; // -1 = new, 0 = no check, N = exact
   events: AppendEventInput<T>[];
-  outboxTopics?: string[];           // Topics for transactional outbox
+  outboxTopics?: string[]; // Topics for transactional outbox
 }
 
 interface AppendResult {
   streamId: string;
-  fromVersion: number;               // First new stream_version written
-  toVersion: number;                 // Last new stream_version written
-  globalPositions: bigint[];         // Global positions assigned to each event
+  fromVersion: number; // First new stream_version written
+  toVersion: number; // Last new stream_version written
+  globalPositions: bigint[]; // Global positions assigned to each event
 }
 ```
 
@@ -406,17 +413,20 @@ interface ProjectionDefinition<TEvents extends EventMap> {
   projectionName: string;
   streamPrefix: string;
   handlers: {
-    [K in keyof TEvents & string]?: (data: TEvents[K], ctx: ProjectionHandlerContext) => Promise<void>;
+    [K in keyof TEvents & string]?: (
+      data: TEvents[K],
+      ctx: ProjectionHandlerContext,
+    ) => Promise<void>;
   };
 }
 
 interface ProjectionHandlerContext {
-  entityId: string;        // Entity ID (prefix stripped from stream ID)
-  streamId: string;        // Full stream ID
-  globalPosition: bigint;  // Event's global position
-  streamVersion: number;   // Event's stream version
-  createdAt: Date;         // Event's creation timestamp
-  client: PoolClient;      // Transactional PoolClient
+  entityId: string; // Entity ID (prefix stripped from stream ID)
+  streamId: string; // Full stream ID
+  globalPosition: bigint; // Event's global position
+  streamVersion: number; // Event's stream version
+  createdAt: Date; // Event's creation timestamp
+  client: PoolClient; // Transactional PoolClient
 }
 
 interface ProjectionHandle {
@@ -461,10 +471,10 @@ type AggregateEventInput<TEvents extends EventMap> = {
 }[keyof TEvents & string];
 
 interface AggregateInstance<TState> {
-  state: TState;                     // Current state after replay
-  version: number;                   // Current stream version
-  exists: boolean;                   // Has at least one event
-  streamId: string;                  // Full stream ID
+  state: TState; // Current state after replay
+  version: number; // Current stream version
+  exists: boolean; // Has at least one event
+  streamId: string; // Full stream ID
 }
 
 interface EncryptionConfig<TEvents extends EventMap> {
@@ -473,7 +483,7 @@ interface EncryptionConfig<TEvents extends EventMap> {
 }
 
 interface SnapshotConfig {
-  every: number;                     // Auto-snapshot every N events
+  every: number; // Auto-snapshot every N events
 }
 ```
 
@@ -487,11 +497,11 @@ All errors extend `Error` and have a `name` property matching the class name for
 
 Thrown when `expectedVersion` does not match the stream's current version.
 
-| Property | Type | Description |
-|---|---|---|
-| `streamId` | `string` | The conflicting stream |
-| `expectedVersion` | `number` | What the caller expected |
-| `actualVersion` | `number` | The stream's actual version |
+| Property          | Type     | Description                 |
+| ----------------- | -------- | --------------------------- |
+| `streamId`        | `string` | The conflicting stream      |
+| `expectedVersion` | `number` | What the caller expected    |
+| `actualVersion`   | `number` | The stream's actual version |
 
 **Recovery:** Reload the stream and retry.
 
@@ -499,25 +509,25 @@ Thrown when `expectedVersion` does not match the stream's current version.
 
 Thrown when loading a stream that does not exist and the caller explicitly required existence.
 
-| Property | Type |
-|---|---|
+| Property   | Type     |
+| ---------- | -------- |
 | `streamId` | `string` |
 
 ### `CryptoKeyRevokedError`
 
 Thrown when attempting to encrypt **new** events with a revoked key. Not thrown during reads -- revoked keys produce tombstones instead.
 
-| Property | Type |
-|---|---|
-| `keyId` | `string` |
+| Property | Type     |
+| -------- | -------- |
+| `keyId`  | `string` |
 
 ### `CryptoKeyNotFoundError`
 
 Thrown when a crypto key is not found in the key store.
 
-| Property | Type |
-|---|---|
-| `keyId` | `string` |
+| Property | Type     |
+| -------- | -------- |
+| `keyId`  | `string` |
 
 ### `MasterKeyRequiredError`
 
@@ -531,6 +541,6 @@ Thrown when any method is called before `setup()`.
 
 Thrown when the schema name does not match `/^[a-z_][a-z0-9_]{0,62}$/`.
 
-| Property | Type |
-|---|---|
+| Property     | Type     |
+| ------------ | -------- |
 | `schemaName` | `string` |

@@ -91,5 +91,7 @@ export async function deleteSnapshot(
   schema: string,
   streamId: string,
 ): Promise<void> {
-  await client.query(`DELETE FROM ${schema}.snapshots WHERE stream_id = $1`, [streamId]);
+  await client.query(`DELETE FROM ${schema}.snapshots WHERE stream_id = $1`, [
+    streamId,
+  ]);
 }

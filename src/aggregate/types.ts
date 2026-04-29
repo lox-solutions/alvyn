@@ -63,7 +63,10 @@ export interface AggregateDefinition<TEvents extends EventMap, TState> {
    * Handlers should gracefully handle null data.
    */
   evolve: {
-    [K in EventTypeNames<TEvents>]: (state: TState, event: ReplayedEvent<TEvents[K]>) => TState;
+    [K in EventTypeNames<TEvents>]: (
+      state: TState,
+      event: ReplayedEvent<TEvents[K]>,
+    ) => TState;
   };
   /** Optional: GDPR encryption configuration */
   encryption?: EncryptionConfig<TEvents>;
@@ -110,7 +113,10 @@ export interface AggregateHandle<TEvents extends EventMap, TState> {
   /**
    * Loads the aggregate state by replaying events (with snapshot optimization).
    */
-  load(eventStore: EventStore, entityId: string): Promise<AggregateInstance<TState>>;
+  load(
+    eventStore: EventStore,
+    entityId: string,
+  ): Promise<AggregateInstance<TState>>;
 
   /**
    * Appends events to the aggregate's stream.

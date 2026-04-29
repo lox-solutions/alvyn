@@ -19,6 +19,8 @@
   ],
   "scripts": {
     "build": "tsc",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "prepublishOnly": "pnpm run build"
   },
   "keywords": [
@@ -50,6 +52,7 @@
   },
   "devDependencies": {
     "@types/pg": "8.11.11",
+    "prettier": "^3.8.3",
     "typescript": "^5.9.3"
   }
 }

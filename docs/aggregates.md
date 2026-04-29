@@ -1,8 +1,11 @@
 # Aggregates
 
-The `defineAggregate` function is the **primary DX surface** for working with event-sourced aggregates. It produces a type-safe `AggregateHandle` that encapsulates stream ID derivation, state replay, automatic snapshot management, and encryption configuration.
+The `defineAggregate` function is the **primary DX surface** for working with event-sourced aggregates. It produces a
+type-safe `AggregateHandle` that encapsulates stream ID derivation, state replay, automatic snapshot management, and
+encryption configuration.
 
-> **Related:** [Event Store Overview](../event-store.md) | [Crypto-Shredding](./crypto-shredding.md) | [Schema Evolution](./schema-evolution.md)
+> **Related:
+> ** [Event Store Overview](../event-store.md) | [Crypto-Shredding](./crypto-shredding.md) | [Schema Evolution](./schema-evolution.md)
 
 ---
 
@@ -23,6 +26,7 @@ type OrderEvents = {
 ### Step 2: Define the Aggregate
 
 `defineAggregate` uses a **curried function pattern** for full TypeScript inference:
+
 - `TEvents` is provided **explicitly** (the event map)
 - `TState` is **inferred** from `initialState()`
 
@@ -30,7 +34,7 @@ type OrderEvents = {
 import { defineAggregate } from "@repo/event-store";
 
 const Order = defineAggregate<OrderEvents>()({
-  streamPrefix: "Order",                          // stream_id = "Order-{entityId}"
+  streamPrefix: "Order", // stream_id = "Order-{entityId}"
   initialState: () => ({
     status: "pending" as "pending" | "shipped" | "cancelled",
     total: 0,
@@ -61,30 +65,38 @@ const Order = defineAggregate<OrderEvents>()({
 
 ```typescript
 interface AggregateDefinition<TEvents, TState> {
-  streamPrefix: string;              // e.g. "Order" -> stream_id = "Order-{id}"
-  initialState: () => TState;        // Factory for initial aggregate state
-  evolve: {                          // Event handlers (immutable update pattern)
-    [K in keyof TEvents]: (state: TState, event: ReplayedEvent<TEvents[K]>) => TState;
+  streamPrefix: string; // e.g. "Order" -> stream_id = "Order-{id}"
+  initialState: () => TState; // Factory for initial aggregate state
+  evolve: {
+    // Event handlers (immutable update pattern)
+    [K in keyof TEvents]: (
+      state: TState,
+      event: ReplayedEvent<TEvents[K]>,
+    ) => TState;
   };
-  encryption?: EncryptionConfig;     // Optional: GDPR encryption
-  snapshot?: SnapshotConfig;         // Optional: auto-snapshot
-  upcasters?: Upcaster[];           // Optional: schema evolution
+  encryption?: EncryptionConfig; // Optional: GDPR encryption
+  snapshot?: SnapshotConfig; // Optional: auto-snapshot
+  upcasters?: Upcaster[]; // Optional: schema evolution
 }
 ```
 
 ### `streamPrefix`
 
-Determines how stream IDs are derived: `"{streamPrefix}-{entityId}"`. For example, `streamPrefix: "Order"` with `entityId: "123"` produces `stream_id = "Order-123"`.
+Determines how stream IDs are derived: `"{streamPrefix}-{entityId}"`. For example, `streamPrefix: "Order"` with
+`entityId: "123"` produces `stream_id = "Order-123"`.
 
 ### `initialState`
 
-A factory function that returns the default state for a new (empty) aggregate. Called when no events exist or as the base state before applying events.
+A factory function that returns the default state for a new (empty) aggregate. Called when no events exist or as the
+base state before applying events.
 
 ### `evolve`
 
-A map of event type names to handler functions. Each handler receives the current state and the event, and returns the new state using an **immutable update pattern**.
+A map of event type names to handler functions. Each handler receives the current state and the event, and returns the
+new state using an **immutable update pattern**.
 
-**Important:** Events without a handler in `evolve` are silently skipped. This supports forward compatibility -- new event types can be added to the stream without breaking existing aggregate definitions.
+**Important:** Events without a handler in `evolve` are silently skipped. This supports forward compatibility -- new
+event types can be added to the stream without breaking existing aggregate definitions.
 
 ### `encryption` (optional)
 
@@ -92,20 +104,28 @@ See [Crypto-Shredding](./crypto-shredding.md) for details.
 
 ```typescript
 encryption: {
-  cryptoKeyId: (entityId) => `user:${entityId}`,  // Derives key ID from entity ID
-  encryptedFields: {
-    UserRegistered: ["name", "email", "address.street"],  // Dot-path field notation
-    UserRenamed: ["name"],
-  },
+    cryptoKeyId: (entityId) => `user:${entityId}`,  // Derives key ID from entity ID
+        encryptedFields
+:
+    {
+        UserRegistered: ["name", "email", "address.street"],  // Dot-path field notation
+            UserRenamed
+    :
+        ["name"],
+    }
+,
 }
 ```
 
 ### `snapshot` (optional)
 
-Configures automatic snapshotting. When `load()` replays more events than the threshold since the last snapshot, a new snapshot is saved automatically.
+Configures automatic snapshotting. When `load()` replays more events than the threshold since the last snapshot, a new
+snapshot is saved automatically.
 
 ```typescript
-snapshot: { every: 100 }  // Auto-snapshot every 100 events
+snapshot: {
+  every: 100;
+} // Auto-snapshot every 100 events
 ```
 
 ### `upcasters` (optional)
@@ -113,7 +133,7 @@ snapshot: { every: 100 }  // Auto-snapshot every 100 events
 See [Schema Evolution](./schema-evolution.md) for details.
 
 ```typescript
-upcasters: [userRenamedV1ToV2, userRenamedV2ToV3]
+upcasters: [userRenamedV1ToV2, userRenamedV2ToV3];
 ```
 
 ---
@@ -122,12 +142,12 @@ upcasters: [userRenamedV1ToV2, userRenamedV2ToV3]
 
 The `defineAggregate` call returns an `AggregateHandle` with the following interface:
 
-| Method / Property | Description |
-|---|---|
-| `streamPrefix` | The stream prefix string (readonly) |
-| `load(eventStore, entityId)` | Returns `AggregateInstance<TState>` |
-| `append(eventStore, entityId, input)` | Appends typed events to the stream |
-| `getUpcasters()` | Returns upcasters for registration at startup |
+| Method / Property                     | Description                                   |
+| ------------------------------------- | --------------------------------------------- |
+| `streamPrefix`                        | The stream prefix string (readonly)           |
+| `load(eventStore, entityId)`          | Returns `AggregateInstance<TState>`           |
+| `append(eventStore, entityId, input)` | Appends typed events to the stream            |
+| `getUpcasters()`                      | Returns upcasters for registration at startup |
 
 ### `load(eventStore, entityId)`
 
@@ -136,13 +156,14 @@ Loads the aggregate by replaying all events (or from snapshot + remaining events
 ```typescript
 const order = await Order.load(eventStore, "order-123");
 
-order.state;     // { status: "shipped", total: 99.99, customerId: "cust-1" }
-order.version;   // 5 (current stream version)
-order.exists;    // true (stream has at least one event)
-order.streamId;  // "Order-order-123"
+order.state; // { status: "shipped", total: 99.99, customerId: "cust-1" }
+order.version; // 5 (current stream version)
+order.exists; // true (stream has at least one event)
+order.streamId; // "Order-order-123"
 ```
 
-**Snapshot optimization:** If `snapshot` is configured, `load()` uses `loadWithSnapshot()` internally. When the number of replayed events since the last snapshot exceeds `snapshot.every`, a new snapshot is saved automatically.
+**Snapshot optimization:** If `snapshot` is configured, `load()` uses `loadWithSnapshot()` internally. When the number
+of replayed events since the last snapshot exceeds `snapshot.every`, a new snapshot is saved automatically.
 
 ### `append(eventStore, entityId, input)`
 
@@ -150,11 +171,9 @@ Appends typed events to the aggregate's stream. Automatically maps encryption co
 
 ```typescript
 await Order.append(eventStore, "order-123", {
-  expectedVersion: order.version,       // OCC: must match current version
-  events: [
-    { type: "OrderShipped", data: { trackingNumber: "TRACK-456" } },
-  ],
-  outboxTopics: ["orders"],             // Optional: transactional outbox
+  expectedVersion: order.version, // OCC: must match current version
+  events: [{ type: "OrderShipped", data: { trackingNumber: "TRACK-456" } }],
+  outboxTopics: ["orders"], // Optional: transactional outbox
 });
 ```
 
@@ -173,7 +192,8 @@ type AggregateEventInput<TEvents extends EventMap> = {
 
 ### `getUpcasters()`
 
-Returns all upcasters defined in the aggregate definition. Call this during startup to register them with the event store:
+Returns all upcasters defined in the aggregate definition. Call this during startup to register them with the event
+store:
 
 ```typescript
 eventStore.registerUpcasters(Order.getUpcasters());
@@ -205,7 +225,10 @@ async function shipOrder(orderId: string, trackingNumber: string) {
       });
       return; // Success
     } catch (error) {
-      if (error instanceof OptimisticConcurrencyError && attempt < maxRetries - 1) {
+      if (
+        error instanceof OptimisticConcurrencyError &&
+        attempt < maxRetries - 1
+      ) {
         continue; // Reload and retry
       }
       throw error;
@@ -218,19 +241,21 @@ async function shipOrder(orderId: string, trackingNumber: string) {
 
 ## Handling Tombstoned Events
 
-When a crypto key is revoked (GDPR erasure), encrypted events return with `data: null`. Evolve handlers **must gracefully handle null data** using optional chaining with fallbacks:
+When a crypto key is revoked (GDPR erasure), encrypted events return with `data: null`. Evolve handlers **must
+gracefully handle null data** using optional chaining with fallbacks:
 
 ```typescript
 evolve: {
-  UserRegistered: (state, event) => ({
-    ...state,
-    name: event.data?.name ?? state.name,     // Falls back to current state
-    email: event.data?.email ?? state.email,
-  }),
+    UserRegistered: (state, event) => ({
+        ...state,
+        name: event.data?.name ?? state.name,     // Falls back to current state
+        email: event.data?.email ?? state.email,
+    }),
 }
 ```
 
-This ensures the aggregate can still be loaded after key revocation -- the state simply reflects the `initialState` values for shredded fields.
+This ensures the aggregate can still be loaded after key revocation -- the state simply reflects the `initialState`
+values for shredded fields.
 
 ---
 
@@ -240,7 +265,11 @@ This ensures the aggregate can still be loaded after key revocation -- the state
 import { defineAggregate, type Upcaster } from "@repo/event-store";
 
 type UserEvents = {
-  UserRegistered: { name: string; email: string; address: { street: string; city: string } };
+  UserRegistered: {
+    name: string;
+    email: string;
+    address: { street: string; city: string };
+  };
   UserRenamed: { name: string };
   UserDeactivated: { reason: string };
 };

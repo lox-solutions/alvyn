@@ -43,7 +43,9 @@ export class CryptoKeyRevokedError extends Error {
   public readonly name = "CryptoKeyRevokedError" as const;
 
   constructor(public readonly keyId: string) {
-    super(`Crypto key "${keyId}" has been revoked — cannot encrypt new events with it`);
+    super(
+      `Crypto key "${keyId}" has been revoked — cannot encrypt new events with it`,
+    );
   }
 }
 
@@ -80,7 +82,9 @@ export class EventStoreNotInitializedError extends Error {
   public readonly name = "EventStoreNotInitializedError" as const;
 
   constructor() {
-    super("Event store has not been initialized. Call `await eventStore.setup()` before use.");
+    super(
+      "Event store has not been initialized. Call `await eventStore.setup()` before use.",
+    );
   }
 }
 

@@ -47,7 +47,11 @@ export class UpcasterRegistry {
    * @param data - The raw event data from the database
    * @returns The upcasted data (or the original data if no upcasters apply)
    */
-  upcast(eventType: string, storedSchemaVersion: number, data: unknown): unknown {
+  upcast(
+    eventType: string,
+    storedSchemaVersion: number,
+    data: unknown,
+  ): unknown {
     const chain = this.upcasters.get(eventType);
     if (!chain || chain.length === 0) {
       return data;

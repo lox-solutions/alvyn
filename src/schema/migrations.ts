@@ -12,7 +12,10 @@ import type { PoolClient } from "pg";
  * `time`, `datacontenttype`. Extension attributes are stored in the
  * `extensions` JSONB column.
  */
-export async function runMigrations(client: PoolClient, schema: string): Promise<void> {
+export async function runMigrations(
+  client: PoolClient,
+  schema: string,
+): Promise<void> {
   await client.query(`CREATE SCHEMA IF NOT EXISTS ${schema}`);
 
   // Events table — CloudEvents v1.0.2 compliant

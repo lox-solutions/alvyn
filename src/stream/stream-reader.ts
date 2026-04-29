@@ -3,7 +3,12 @@ import type { PoolClient } from "pg";
 import type { CryptoKeyManager } from "../crypto/crypto-key-manager";
 import { decryptFields } from "../crypto/field-encryptor";
 import { CryptoKeyNotFoundError } from "../errors";
-import type { CloudEventExtensions, ReplayedEvent, StoredEvent, TombstonedEvent } from "../types";
+import type {
+  CloudEventExtensions,
+  ReplayedEvent,
+  StoredEvent,
+  TombstonedEvent,
+} from "../types";
 import type { UpcasterRegistry } from "../upcaster/upcaster-registry";
 
 interface EventRow {
@@ -118,7 +123,11 @@ export async function readStream<T = unknown>(
         aesKey = keyCache.get(row.crypto_key_id)!;
       } else {
         try {
-          aesKey = await cryptoKeyManager.getKey(client, schema, row.crypto_key_id);
+          aesKey = await cryptoKeyManager.getKey(
+            client,
+            schema,
+            row.crypto_key_id,
+          );
         } catch (error) {
           // Only treat CryptoKeyNotFoundError as a tombstone condition.
           // All other errors (DB failures, connection issues) must propagate
@@ -146,7 +155,10 @@ export async function readStream<T = unknown>(
       // Decrypt and merge
       const decryptedData = decryptFields(
         row.data as Record<string, unknown>,
-        row.encrypted_data as Record<string, { ciphertext: string; iv: string; authTag: string }>,
+        row.encrypted_data as Record<
+          string,
+          { ciphertext: string; iv: string; authTag: string }
+        >,
         aesKey,
       );
 
@@ -154,7 +166,11 @@ export async function readStream<T = unknown>(
 
       // Apply upcasters
       if (upcasterRegistry) {
-        finalData = upcasterRegistry.upcast(row.event_type, row.schema_version, finalData);
+        finalData = upcasterRegistry.upcast(
+          row.event_type,
+          row.schema_version,
+          finalData,
+        );
       }
 
       const event: StoredEvent<T> = {
@@ -168,7 +184,11 @@ export async function readStream<T = unknown>(
 
       // Apply upcasters
       if (upcasterRegistry) {
-        finalData = upcasterRegistry.upcast(row.event_type, row.schema_version, finalData);
+        finalData = upcasterRegistry.upcast(
+          row.event_type,
+          row.schema_version,
+          finalData,
+        );
       }
 
       const event: StoredEvent<T> = {
