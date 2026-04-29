@@ -21,7 +21,7 @@ Alvyn uses option 2. Upcasters are pure functions that convert event data from o
 An upcaster implements the `Upcaster` interface:
 
 ```typescript
-import type { Upcaster } from "alvyn";
+import type { Upcaster } from "@lox-solutions/alvyn";
 
 const orderPlacedV1ToV2: Upcaster = {
   eventType: "OrderPlaced",

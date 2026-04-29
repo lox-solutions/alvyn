@@ -29,7 +29,7 @@ type OrderEvents = {
 - `TState` is **inferred** from `initialState()`
 
 ```typescript
-import { defineAggregate } from "alvyn";
+import { defineAggregate } from "@lox-solutions/alvyn";
 
 const Order = defineAggregate<OrderEvents>()({
   streamPrefix: "Order", // stream_id = "Order-{entityId}"
@@ -172,7 +172,7 @@ eventStore.registerUpcasters(Order.getUpcasters());
 When multiple writers may target the same stream, use a retry loop:
 
 ```typescript
-import { OptimisticConcurrencyError } from "alvyn";
+import { OptimisticConcurrencyError } from "@lox-solutions/alvyn";
 
 async function shipOrder(orderId: string, trackingNumber: string) {
   const maxRetries = 3;
@@ -222,7 +222,7 @@ This ensures the aggregate can still be loaded after key revocation — the stat
 ## Full Example with All Options
 
 ```typescript
-import { defineAggregate, type Upcaster } from "alvyn";
+import { defineAggregate, type Upcaster } from "@lox-solutions/alvyn";
 
 type UserEvents = {
   UserRegistered: {

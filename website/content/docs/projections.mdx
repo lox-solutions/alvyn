@@ -18,7 +18,7 @@ A projection reads events sequentially from the global stream (ordered by `globa
 Implement the `Projection` interface. The `handle` function receives a `StoredEvent` and a `PoolClient` — use the provided client for all database writes to ensure atomicity with the projection checkpoint:
 
 ```typescript
-import type { Projection, StoredEvent } from "alvyn";
+import type { Projection, StoredEvent } from "@lox-solutions/alvyn";
 import type { PoolClient } from "pg";
 
 const orderSummaryProjection: Projection = {
@@ -52,7 +52,7 @@ The `client` parameter is the same `PoolClient` that holds the transaction for t
 For typed projections tied to an event-sourced aggregate, use `defineProjection`. It mirrors the `defineAggregate` pattern — same curried function for type inference, automatic stream prefix filtering, entity ID extraction, and typed event handlers:
 
 ```typescript
-import { defineProjection } from "alvyn";
+import { defineProjection } from "@lox-solutions/alvyn";
 
 type OrderEvents = {
   OrderPlaced: { customerId: string; total: number };
