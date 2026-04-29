@@ -2,7 +2,11 @@ import type { PoolClient } from "pg";
 
 import type { EventMap } from "../aggregate/types";
 import type { StoredEvent } from "../types";
-import type { ProjectionDefinition, ProjectionHandle, ProjectionHandlerContext } from "./types";
+import type {
+  ProjectionDefinition,
+  ProjectionHandle,
+  ProjectionHandlerContext,
+} from "./types";
 
 /**
  * Defines a typed projection from an event-sourced aggregate.
@@ -44,7 +48,9 @@ import type { ProjectionDefinition, ProjectionHandle, ProjectionHandlerContext }
  * ```
  */
 export function defineProjection<TEvents extends EventMap>() {
-  return function (definition: ProjectionDefinition<TEvents>): ProjectionHandle {
+  return function (
+    definition: ProjectionDefinition<TEvents>,
+  ): ProjectionHandle {
     const { projectionName, streamPrefix, handlers } = definition;
     const prefix = `${streamPrefix}-`;
 
@@ -71,10 +77,12 @@ export function defineProjection<TEvents extends EventMap>() {
           client,
         };
 
-        await (handler as (data: unknown, ctx: ProjectionHandlerContext) => Promise<void>)(
-          event.data,
-          ctx,
-        );
+        await (
+          handler as (
+            data: unknown,
+            ctx: ProjectionHandlerContext,
+          ) => Promise<void>
+        )(event.data, ctx);
       },
     };
   };

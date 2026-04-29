@@ -46,7 +46,7 @@ The `Projection` interface:
 
 ```typescript
 interface Projection {
-  projectionName: string;            // Unique identifier for checkpoint tracking
+  projectionName: string; // Unique identifier for checkpoint tracking
   handle(event: StoredEvent, client: PoolClient): Promise<void>;
 }
 ```
@@ -93,6 +93,7 @@ await eventStore.runProjection(orderProjection, 500);
 ```
 
 The builder automatically:
+
 - **Filters by stream prefix** — events from other aggregates are skipped without calling any handler
 - **Extracts the entity ID** from the stream ID (e.g. `"Order-123"` → `"123"`)
 - **Provides typed `data`** — each handler receives the correctly-typed event payload, no manual casting
@@ -102,12 +103,12 @@ The builder automatically:
 
 ```typescript
 interface ProjectionHandlerContext {
-  entityId: string;        // Entity ID (prefix stripped)
-  streamId: string;        // Full stream ID
-  globalPosition: bigint;  // Event's global position
-  streamVersion: number;   // Event's stream version
-  createdAt: Date;         // Event's creation timestamp
-  client: PoolClient;      // Transactional PoolClient
+  entityId: string; // Entity ID (prefix stripped)
+  streamId: string; // Full stream ID
+  globalPosition: bigint; // Event's global position
+  streamVersion: number; // Event's stream version
+  createdAt: Date; // Event's creation timestamp
+  client: PoolClient; // Transactional PoolClient
 }
 ```
 
@@ -219,6 +220,7 @@ export const agentRunProjection = defineProjection<AgentRunEvents>()({
 ```
 
 Key patterns:
+
 - **`defineProjection<AgentRunEvents>()`** — same curried pattern as `defineAggregate`, gives full type inference on handler `data` parameters
 - **Automatic prefix filtering** — events from other aggregates are skipped without calling any handler
 - **`ctx.entityId`** — automatically extracted from stream ID (e.g. `"abc123"` from `"AgentRun-abc123"`)
@@ -251,12 +253,12 @@ const runs = await prisma.agentRunReadModel.findMany({
 
 #### 5. Consistency Trade-offs
 
-| Operation | Source | Consistency |
-|---|---|---|
-| `agentRuns` (list query) | Read model (Prisma) | Eventually consistent |
-| `agentRun` (single query) | Event store (aggregate replay) | Strongly consistent |
-| `createAgentRun` (mutation) | Event store (write) + returns aggregate state | Strongly consistent |
-| `cancelAgentRun` (mutation) | Event store (write) + returns aggregate state | Strongly consistent |
+| Operation                   | Source                                        | Consistency           |
+| --------------------------- | --------------------------------------------- | --------------------- |
+| `agentRuns` (list query)    | Read model (Prisma)                           | Eventually consistent |
+| `agentRun` (single query)   | Event store (aggregate replay)                | Strongly consistent   |
+| `createAgentRun` (mutation) | Event store (write) + returns aggregate state | Strongly consistent   |
+| `cancelAgentRun` (mutation) | Event store (write) + returns aggregate state | Strongly consistent   |
 
 Mutations return state from the event store directly (not the read model) to guarantee read-your-writes consistency. The list query uses the eventually-consistent read model for performance.
 
@@ -357,10 +359,10 @@ setInterval(relayOutbox, 2000);
 
 ```typescript
 interface OutboxEntry {
-  id: bigint;                      // Unique outbox row ID
-  eventGlobalPosition: bigint;     // Reference to events.global_position
-  topic: string;                   // Message topic/channel
-  payload: unknown;                // CloudEvents v1.0.2 JSON payload
+  id: bigint; // Unique outbox row ID
+  eventGlobalPosition: bigint; // Reference to events.global_position
+  topic: string; // Message topic/channel
+  payload: unknown; // CloudEvents v1.0.2 JSON payload
   createdAt: Date;
 }
 ```

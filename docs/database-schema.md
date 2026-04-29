@@ -19,7 +19,7 @@ The schema name defaults to `event_store` but can be configured:
 ```typescript
 const eventStore = new EventStore({
   pool,
-  schema: "my_custom_schema",  // Must match /^[a-z_][a-z0-9_]{0,62}$/
+  schema: "my_custom_schema", // Must match /^[a-z_][a-z0-9_]{0,62}$/
 });
 ```
 
@@ -57,28 +57,29 @@ CREATE TABLE IF NOT EXISTS {schema}.events (
 );
 ```
 
-| Column | Type | Description |
-|---|---|---|
-| `global_position` | `BIGSERIAL PK` | Monotonically increasing global ordering across all streams |
-| `stream_id` | `TEXT NOT NULL` | Stream identifier (e.g. `"Order-123"`) |
-| `stream_version` | `INTEGER NOT NULL` | Sequential version within the stream (1, 2, 3, ...) |
-| `id` | `TEXT NOT NULL` | CloudEvents `id` — unique event identifier formatted as `"{streamId}/{streamVersion}"` |
-| `source` | `TEXT NOT NULL` | CloudEvents `source` — URI-reference identifying the event source |
-| `specversion` | `TEXT NOT NULL` | CloudEvents `specversion` — always `"1.0"` |
-| `event_type` | `TEXT NOT NULL` | CloudEvents `type` — event type name (e.g. `"OrderPlaced"`). Named `event_type` because `type` is a SQL reserved word. |
-| `subject` | `TEXT NOT NULL` | CloudEvents `subject` — the stream ID |
-| `time` | `TIMESTAMPTZ NOT NULL` | CloudEvents `time` — ISO 8601 timestamp of event creation |
-| `datacontenttype` | `TEXT NOT NULL` | CloudEvents `datacontenttype` — always `"application/json"` |
-| `data` | `JSONB NOT NULL` | Event payload. PII fields are removed if encryption is used. |
-| `extensions` | `JSONB NOT NULL` | CloudEvents extension attributes (`correlationid`, `causationid`, `actorid`, `schemaversion`, etc.) |
-| `encrypted_data` | `JSONB NULL` | Encrypted PII field blobs. `NULL` for unencrypted events. |
-| `crypto_key_id` | `TEXT NULL` | Reference to `crypto_keys.key_id`. `NULL` for unencrypted events. |
-| `schema_version` | `INTEGER NOT NULL` | Schema version for upcasting |
-| `created_at` | `TIMESTAMPTZ NOT NULL` | Auto-set by the database |
+| Column            | Type                   | Description                                                                                                            |
+| ----------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `global_position` | `BIGSERIAL PK`         | Monotonically increasing global ordering across all streams                                                            |
+| `stream_id`       | `TEXT NOT NULL`        | Stream identifier (e.g. `"Order-123"`)                                                                                 |
+| `stream_version`  | `INTEGER NOT NULL`     | Sequential version within the stream (1, 2, 3, ...)                                                                    |
+| `id`              | `TEXT NOT NULL`        | CloudEvents `id` — unique event identifier formatted as `"{streamId}/{streamVersion}"`                                 |
+| `source`          | `TEXT NOT NULL`        | CloudEvents `source` — URI-reference identifying the event source                                                      |
+| `specversion`     | `TEXT NOT NULL`        | CloudEvents `specversion` — always `"1.0"`                                                                             |
+| `event_type`      | `TEXT NOT NULL`        | CloudEvents `type` — event type name (e.g. `"OrderPlaced"`). Named `event_type` because `type` is a SQL reserved word. |
+| `subject`         | `TEXT NOT NULL`        | CloudEvents `subject` — the stream ID                                                                                  |
+| `time`            | `TIMESTAMPTZ NOT NULL` | CloudEvents `time` — ISO 8601 timestamp of event creation                                                              |
+| `datacontenttype` | `TEXT NOT NULL`        | CloudEvents `datacontenttype` — always `"application/json"`                                                            |
+| `data`            | `JSONB NOT NULL`       | Event payload. PII fields are removed if encryption is used.                                                           |
+| `extensions`      | `JSONB NOT NULL`       | CloudEvents extension attributes (`correlationid`, `causationid`, `actorid`, `schemaversion`, etc.)                    |
+| `encrypted_data`  | `JSONB NULL`           | Encrypted PII field blobs. `NULL` for unencrypted events.                                                              |
+| `crypto_key_id`   | `TEXT NULL`            | Reference to `crypto_keys.key_id`. `NULL` for unencrypted events.                                                      |
+| `schema_version`  | `INTEGER NOT NULL`     | Schema version for upcasting                                                                                           |
+| `created_at`      | `TIMESTAMPTZ NOT NULL` | Auto-set by the database                                                                                               |
 
 **Design principle:** No column defaults except `created_at` and `global_position` (auto-increment). All values are set explicitly by the application code. A missing value causes a `NOT NULL` violation instead of silently storing a default — this catches bugs early.
 
 **Constraints:**
+
 - `PRIMARY KEY (global_position)` -- global ordering
 - `UNIQUE (stream_id, stream_version)` -- enforces sequential versions per stream, serves as OCC safety net
 
@@ -113,13 +114,13 @@ CREATE TABLE IF NOT EXISTS {schema}.snapshots (
 );
 ```
 
-| Column | Type | Description |
-|---|---|---|
-| `stream_id` | `TEXT PK` | One snapshot per stream (upserted via `ON CONFLICT`) |
-| `stream_version` | `INTEGER NOT NULL` | The stream version at snapshot time |
-| `snapshot_type` | `TEXT NOT NULL` | Aggregate type name (e.g. `"Order"`) |
-| `data` | `JSONB NOT NULL` | Serialized aggregate state |
-| `created_at` | `TIMESTAMPTZ NOT NULL` | Auto-set / updated on upsert |
+| Column           | Type                   | Description                                          |
+| ---------------- | ---------------------- | ---------------------------------------------------- |
+| `stream_id`      | `TEXT PK`              | One snapshot per stream (upserted via `ON CONFLICT`) |
+| `stream_version` | `INTEGER NOT NULL`     | The stream version at snapshot time                  |
+| `snapshot_type`  | `TEXT NOT NULL`        | Aggregate type name (e.g. `"Order"`)                 |
+| `data`           | `JSONB NOT NULL`       | Serialized aggregate state                           |
+| `created_at`     | `TIMESTAMPTZ NOT NULL` | Auto-set / updated on upsert                         |
 
 ---
 
@@ -138,14 +139,14 @@ CREATE TABLE IF NOT EXISTS {schema}.outbox (
 );
 ```
 
-| Column | Type | Description |
-|---|---|---|
-| `id` | `BIGSERIAL PK` | Auto-incrementing outbox entry ID |
-| `event_global_pos` | `BIGINT NOT NULL` | Reference to `events.global_position` |
-| `topic` | `TEXT NOT NULL` | Message topic/channel name |
-| `payload` | `JSONB NOT NULL` | CloudEvents v1.0.2 JSON payload (extension attributes at top level) |
-| `processed_at` | `TIMESTAMPTZ NULL` | `NULL` = pending, set = processed |
-| `created_at` | `TIMESTAMPTZ NOT NULL` | Auto-set by database |
+| Column             | Type                   | Description                                                         |
+| ------------------ | ---------------------- | ------------------------------------------------------------------- |
+| `id`               | `BIGSERIAL PK`         | Auto-incrementing outbox entry ID                                   |
+| `event_global_pos` | `BIGINT NOT NULL`      | Reference to `events.global_position`                               |
+| `topic`            | `TEXT NOT NULL`        | Message topic/channel name                                          |
+| `payload`          | `JSONB NOT NULL`       | CloudEvents v1.0.2 JSON payload (extension attributes at top level) |
+| `processed_at`     | `TIMESTAMPTZ NULL`     | `NULL` = pending, set = processed                                   |
+| `created_at`       | `TIMESTAMPTZ NOT NULL` | Auto-set by database                                                |
 
 **Indexes:**
 
@@ -171,13 +172,13 @@ CREATE TABLE IF NOT EXISTS {schema}.crypto_keys (
 );
 ```
 
-| Column | Type | Description |
-|---|---|---|
-| `key_id` | `TEXT PK` | Entity key identifier (e.g. `"user:abc123"`) |
-| `encrypted_key` | `BYTEA NOT NULL` | AES key encrypted by master key. Format: `[iv][authTag][ciphertext]` |
-| `algorithm` | `TEXT NOT NULL` | Always `"aes-256-gcm"` |
-| `revoked_at` | `TIMESTAMPTZ NULL` | `NULL` = active, set = revoked (GDPR erasure) |
-| `created_at` | `TIMESTAMPTZ NOT NULL` | Auto-set by database |
+| Column          | Type                   | Description                                                          |
+| --------------- | ---------------------- | -------------------------------------------------------------------- |
+| `key_id`        | `TEXT PK`              | Entity key identifier (e.g. `"user:abc123"`)                         |
+| `encrypted_key` | `BYTEA NOT NULL`       | AES key encrypted by master key. Format: `[iv][authTag][ciphertext]` |
+| `algorithm`     | `TEXT NOT NULL`        | Always `"aes-256-gcm"`                                               |
+| `revoked_at`    | `TIMESTAMPTZ NULL`     | `NULL` = active, set = revoked (GDPR erasure)                        |
+| `created_at`    | `TIMESTAMPTZ NOT NULL` | Auto-set by database                                                 |
 
 **Note:** Revoked keys are **not deleted** -- the `revoked_at` timestamp provides an audit trail for GDPR compliance.
 
@@ -195,11 +196,11 @@ CREATE TABLE IF NOT EXISTS {schema}.projections (
 );
 ```
 
-| Column | Type | Description |
-|---|---|---|
-| `projection_name` | `TEXT PK` | Unique projection identifier |
-| `last_position` | `BIGINT NOT NULL` | Last processed `global_position` (checkpoint) |
-| `updated_at` | `TIMESTAMPTZ NOT NULL` | Last checkpoint update time |
+| Column            | Type                   | Description                                   |
+| ----------------- | ---------------------- | --------------------------------------------- |
+| `projection_name` | `TEXT PK`              | Unique projection identifier                  |
+| `last_position`   | `BIGINT NOT NULL`      | Last processed `global_position` (checkpoint) |
+| `updated_at`      | `TIMESTAMPTZ NOT NULL` | Last checkpoint update time                   |
 
 ---
 

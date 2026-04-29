@@ -30,7 +30,11 @@ import type {
  *
  * Limitation: Map keys are always restored as strings (JSON only supports string keys).
  */
-function restoreSnapshot<T>(raw: T, mapFields: string[], setFields: string[]): T {
+function restoreSnapshot<T>(
+  raw: T,
+  mapFields: string[],
+  setFields: string[],
+): T {
   if (mapFields.length === 0 && setFields.length === 0) return raw;
 
   const restored = { ...(raw as Record<string, unknown>) };
@@ -129,11 +133,15 @@ export function defineAggregate<TEvents extends EventMap>() {
     const handle: AggregateHandle<TEvents, TState> = {
       streamPrefix,
 
-      async load(eventStore: EventStore, entityId: string): Promise<AggregateInstance<TState>> {
+      async load(
+        eventStore: EventStore,
+        entityId: string,
+      ): Promise<AggregateInstance<TState>> {
         const streamId = buildStreamId(entityId);
 
         if (snapshot) {
-          const { snapshot: snap, events } = await eventStore.loadWithSnapshot(streamId);
+          const { snapshot: snap, events } =
+            await eventStore.loadWithSnapshot(streamId);
           const baseState = snap
             ? deserializeSnapshot
               ? deserializeSnapshot(snap.data)
@@ -142,7 +150,9 @@ export function defineAggregate<TEvents extends EventMap>() {
           const baseVersion = snap ? snap.streamVersion : 0;
           const state = applyEvents(baseState, events);
           const version =
-            events.length > 0 ? events[events.length - 1]!.streamVersion : baseVersion;
+            events.length > 0
+              ? events[events.length - 1]!.streamVersion
+              : baseVersion;
 
           // Auto-snapshot if we replayed enough events since last snapshot.
           // Wrapped in try-catch: a failed snapshot is not fatal — the aggregate
@@ -173,7 +183,8 @@ export function defineAggregate<TEvents extends EventMap>() {
         // No snapshot config — full replay
         const events = await eventStore.load(streamId);
         const state = applyEvents(initialState(), events);
-        const version = events.length > 0 ? events[events.length - 1]!.streamVersion : 0;
+        const version =
+          events.length > 0 ? events[events.length - 1]!.streamVersion : 0;
 
         return {
           state,
@@ -199,7 +210,8 @@ export function defineAggregate<TEvents extends EventMap>() {
           expectedVersion: input.expectedVersion,
           outboxTopics: input.outboxTopics,
           events: input.events.map((e) => {
-            const encryptedFields = encryption?.encryptedFields[e.type] ?? undefined;
+            const encryptedFields =
+              encryption?.encryptedFields[e.type] ?? undefined;
             const cryptoKeyId =
               encryptedFields && encryptedFields.length > 0
                 ? encryption!.cryptoKeyId(entityId)

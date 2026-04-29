@@ -28,7 +28,11 @@ function getNestedField(obj: Record<string, unknown>, path: string): unknown {
   const parts = path.split(".");
   let current: unknown = obj;
   for (const part of parts) {
-    if (current === null || current === undefined || typeof current !== "object") {
+    if (
+      current === null ||
+      current === undefined ||
+      typeof current !== "object"
+    ) {
       return undefined;
     }
     current = (current as Record<string, unknown>)[part];
@@ -41,10 +45,18 @@ function getNestedField(obj: Record<string, unknown>, path: string): unknown {
  * Mutates the object in place.
  */
 function isSafePathSegment(segment: string): boolean {
-  return segment !== "__proto__" && segment !== "constructor" && segment !== "prototype";
+  return (
+    segment !== "__proto__" &&
+    segment !== "constructor" &&
+    segment !== "prototype"
+  );
 }
 
-function setNestedField(obj: Record<string, unknown>, path: string, value: unknown): void {
+function setNestedField(
+  obj: Record<string, unknown>,
+  path: string,
+  value: unknown,
+): void {
   const parts = path.split(".");
   if (parts.length === 0 || !parts.every(isSafePathSegment)) {
     return;
@@ -53,7 +65,11 @@ function setNestedField(obj: Record<string, unknown>, path: string, value: unkno
   let current: Record<string, unknown> = obj;
   for (let i = 0; i < parts.length - 1; i++) {
     const part = parts[i]!;
-    if (!(part in current) || typeof current[part] !== "object" || current[part] === null) {
+    if (
+      !(part in current) ||
+      typeof current[part] !== "object" ||
+      current[part] === null
+    ) {
       current[part] = {};
     }
     current = current[part] as Record<string, unknown>;
@@ -70,7 +86,11 @@ function removeNestedField(obj: Record<string, unknown>, path: string): void {
   let current: Record<string, unknown> = obj;
   for (let i = 0; i < parts.length - 1; i++) {
     const part = parts[i]!;
-    if (!(part in current) || typeof current[part] !== "object" || current[part] === null) {
+    if (
+      !(part in current) ||
+      typeof current[part] !== "object" ||
+      current[part] === null
+    ) {
       return;
     }
     current = current[part] as Record<string, unknown>;
@@ -101,9 +121,14 @@ export function encryptFields(
 
     const plaintext = JSON.stringify(value);
     const iv = randomBytes(IV_LENGTH);
-    const cipher = createCipheriv(ALGORITHM, aesKey, iv, { authTagLength: AUTH_TAG_LENGTH });
+    const cipher = createCipheriv(ALGORITHM, aesKey, iv, {
+      authTagLength: AUTH_TAG_LENGTH,
+    });
 
-    const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+    const encrypted = Buffer.concat([
+      cipher.update(plaintext, "utf8"),
+      cipher.final(),
+    ]);
     const authTag = cipher.getAuthTag();
 
     encryptedData[field] = {
@@ -131,19 +156,25 @@ export function decryptFields(
   encryptedData: Record<string, EncryptedFieldEntry>,
   aesKey: Buffer,
 ): Record<string, unknown> {
-  const result = JSON.parse(JSON.stringify(cleanData)) as Record<string, unknown>;
+  const result = JSON.parse(JSON.stringify(cleanData)) as Record<
+    string,
+    unknown
+  >;
 
   for (const [field, entry] of Object.entries(encryptedData)) {
     const ciphertext = Buffer.from(entry.ciphertext, "base64");
     const iv = Buffer.from(entry.iv, "base64");
     const authTag = Buffer.from(entry.authTag, "base64");
 
-    const decipher = createDecipheriv(ALGORITHM, aesKey, iv, { authTagLength: AUTH_TAG_LENGTH });
+    const decipher = createDecipheriv(ALGORITHM, aesKey, iv, {
+      authTagLength: AUTH_TAG_LENGTH,
+    });
     decipher.setAuthTag(authTag);
 
-    const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString(
-      "utf8",
-    );
+    const decrypted = Buffer.concat([
+      decipher.update(ciphertext),
+      decipher.final(),
+    ]).toString("utf8");
 
     const value: unknown = JSON.parse(decrypted);
     setNestedField(result, field, value);

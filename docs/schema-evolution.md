@@ -25,13 +25,13 @@ An upcaster implements the `Upcaster` interface:
 import type { Upcaster } from "@repo/event-store";
 
 const orderPlacedV1ToV2: Upcaster = {
-  eventType: "OrderPlaced",          // Which event type this applies to
-  fromSchemaVersion: 1,              // Source version
-  toSchemaVersion: 2,                // Target version
+  eventType: "OrderPlaced", // Which event type this applies to
+  fromSchemaVersion: 1, // Source version
+  toSchemaVersion: 2, // Target version
   upcast(data: { total: number }) {
     return {
       ...data,
-      currency: "EUR",               // New required field in v2
+      currency: "EUR", // New required field in v2
     };
   },
 };
@@ -106,11 +106,11 @@ eventStore.registerUpcasters([addressV1ToV2, addressV2ToV3]);
 
 Given registered upcasters: `v1->v2`, `v2->v3`
 
-| Stored Version | Upcasters Applied | Result Version |
-|---|---|---|
-| 1 | v1->v2, then v2->v3 | 3 |
-| 2 | v2->v3 | 3 |
-| 3 | (none) | 3 |
+| Stored Version | Upcasters Applied   | Result Version |
+| -------------- | ------------------- | -------------- |
+| 1              | v1->v2, then v2->v3 | 3              |
+| 2              | v2->v3              | 3              |
+| 3              | (none)              | 3              |
 
 ---
 
@@ -121,8 +121,12 @@ Define upcasters in the aggregate definition to keep them co-located with the do
 ```typescript
 const Order = defineAggregate<OrderEvents>()({
   streamPrefix: "Order",
-  initialState: () => ({ /* ... */ }),
-  evolve: { /* ... */ },
+  initialState: () => ({
+    /* ... */
+  }),
+  evolve: {
+    /* ... */
+  },
 
   upcasters: [
     {
@@ -149,11 +153,13 @@ When you create a new schema version, set the `schemaVersion` on new events so t
 ```typescript
 await Order.append(eventStore, orderId, {
   expectedVersion: order.version,
-  events: [{
-    type: "OrderPlaced",
-    data: { total: 99.99, currency: "USD" },
-    schemaVersion: 2,  // New events are already v2
-  }],
+  events: [
+    {
+      type: "OrderPlaced",
+      data: { total: 99.99, currency: "USD" },
+      schemaVersion: 2, // New events are already v2
+    },
+  ],
 });
 ```
 
@@ -235,11 +241,13 @@ New events appended after the change must declare their schema version so the up
 ```typescript
 await Order.append(eventStore, orderId, {
   expectedVersion: order.version,
-  events: [{
-    type: "OrderPlaced",
-    data: { total: 99.99, currency: "USD" },
-    schemaVersion: 2,  // Mark as v2 — upcaster won't touch it
-  }],
+  events: [
+    {
+      type: "OrderPlaced",
+      data: { total: 99.99, currency: "USD" },
+      schemaVersion: 2, // Mark as v2 — upcaster won't touch it
+    },
+  ],
 });
 ```
 

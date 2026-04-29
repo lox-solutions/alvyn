@@ -15,7 +15,10 @@ import {
   loadSnapshot as loadSnapshotFn,
   saveSnapshot as saveSnapshotFn,
 } from "./snapshot/snapshot-store";
-import { listStreams as listStreamsFn, readStream } from "./stream/stream-reader";
+import {
+  listStreams as listStreamsFn,
+  readStream,
+} from "./stream/stream-reader";
 import { appendToStream } from "./stream/stream-writer";
 import type {
   AppendInput,
@@ -178,7 +181,10 @@ export class EventStore {
    * @param maxEvents - Optional limit on number of events to load.
    *   Use this to prevent unbounded memory usage on large streams.
    */
-  async load<T = unknown>(streamId: string, maxEvents?: number): Promise<ReplayedEvent<T>[]> {
+  async load<T = unknown>(
+    streamId: string,
+    maxEvents?: number,
+  ): Promise<ReplayedEvent<T>[]> {
     this.ensureInitialized();
 
     const client = await this.pool.connect();
@@ -278,7 +284,12 @@ export class EventStore {
 
     const client = await this.pool.connect();
     try {
-      return await listStreamsFn(client, this.schema, options?.prefix, options?.limit);
+      return await listStreamsFn(
+        client,
+        this.schema,
+        options?.prefix,
+        options?.limit,
+      );
     } finally {
       client.release();
     }
@@ -412,7 +423,11 @@ export class EventStore {
     try {
       await client.query("BEGIN");
 
-      const entries = await pollOutbox(client, this.schema, limit ?? DEFAULT_OUTBOX_BATCH_SIZE);
+      const entries = await pollOutbox(
+        client,
+        this.schema,
+        limit ?? DEFAULT_OUTBOX_BATCH_SIZE,
+      );
 
       if (entries.length === 0) {
         await client.query("COMMIT");
@@ -496,7 +511,10 @@ export class EventStore {
    * Runs a projection by processing the next batch of events.
    * Returns the number of events processed.
    */
-  async runProjection(projection: Projection, batchSize?: number): Promise<number> {
+  async runProjection(
+    projection: Projection,
+    batchSize?: number,
+  ): Promise<number> {
     this.ensureInitialized();
 
     const client = await this.pool.connect();
@@ -598,7 +616,10 @@ export class EventStore {
       try {
         return await fn();
       } catch (error) {
-        if (error instanceof OptimisticConcurrencyError && attempt < maxRetries) {
+        if (
+          error instanceof OptimisticConcurrencyError &&
+          attempt < maxRetries
+        ) {
           lastError = error;
           continue;
         }

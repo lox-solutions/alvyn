@@ -2,7 +2,11 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
 import type { PoolClient } from "pg";
 
-import { CryptoKeyNotFoundError, CryptoKeyRevokedError, MasterKeyRequiredError } from "../errors";
+import {
+  CryptoKeyNotFoundError,
+  CryptoKeyRevokedError,
+  MasterKeyRequiredError,
+} from "../errors";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
@@ -35,7 +39,11 @@ export class CryptoKeyManager {
    * Creates a new per-entity encryption key and stores it encrypted in the database.
    * If a key with this ID already exists (and is not revoked), this is a no-op.
    */
-  async createKey(client: PoolClient, schema: string, keyId: string): Promise<void> {
+  async createKey(
+    client: PoolClient,
+    schema: string,
+    keyId: string,
+  ): Promise<void> {
     const entityKey = randomBytes(KEY_LENGTH);
     const encryptedKey = this.encryptWithMasterKey(entityKey);
 
@@ -52,11 +60,18 @@ export class CryptoKeyManager {
    * Returns null if the key has been revoked (tombstone semantics).
    * Throws CryptoKeyNotFoundError if the key does not exist at all.
    */
-  async getKey(client: PoolClient, schema: string, keyId: string): Promise<Buffer | null> {
+  async getKey(
+    client: PoolClient,
+    schema: string,
+    keyId: string,
+  ): Promise<Buffer | null> {
     const result = await client.query<{
       encrypted_key: Buffer;
       revoked_at: Date | null;
-    }>(`SELECT encrypted_key, revoked_at FROM ${schema}.crypto_keys WHERE key_id = $1`, [keyId]);
+    }>(
+      `SELECT encrypted_key, revoked_at FROM ${schema}.crypto_keys WHERE key_id = $1`,
+      [keyId],
+    );
 
     if (result.rows.length === 0) {
       throw new CryptoKeyNotFoundError(keyId);
@@ -77,7 +92,11 @@ export class CryptoKeyManager {
    * Unlike getKey(), this throws if the key is revoked — you cannot
    * encrypt new events with a revoked key.
    */
-  async getKeyForEncryption(client: PoolClient, schema: string, keyId: string): Promise<Buffer> {
+  async getKeyForEncryption(
+    client: PoolClient,
+    schema: string,
+    keyId: string,
+  ): Promise<Buffer> {
     const key = await this.getKey(client, schema, keyId);
     if (key === null) {
       throw new CryptoKeyRevokedError(keyId);
@@ -90,7 +109,11 @@ export class CryptoKeyManager {
    * Events encrypted with this key will be returned as tombstones on read.
    * The key is NOT deleted — this is intentional for audit trails.
    */
-  async revokeKey(client: PoolClient, schema: string, keyId: string): Promise<void> {
+  async revokeKey(
+    client: PoolClient,
+    schema: string,
+    keyId: string,
+  ): Promise<void> {
     const result = await client.query(
       `UPDATE ${schema}.crypto_keys SET revoked_at = now() WHERE key_id = $1 AND revoked_at IS NULL`,
       [keyId],
@@ -98,9 +121,10 @@ export class CryptoKeyManager {
 
     if (result.rowCount === 0) {
       // Check if key exists at all
-      const exists = await client.query(`SELECT 1 FROM ${schema}.crypto_keys WHERE key_id = $1`, [
-        keyId,
-      ]);
+      const exists = await client.query(
+        `SELECT 1 FROM ${schema}.crypto_keys WHERE key_id = $1`,
+        [keyId],
+      );
       if (exists.rows.length === 0) {
         throw new CryptoKeyNotFoundError(keyId);
       }
@@ -124,7 +148,10 @@ export class CryptoKeyManager {
 
   private decryptWithMasterKey(encryptedKey: Buffer): Buffer {
     const iv = encryptedKey.subarray(0, IV_LENGTH);
-    const authTag = encryptedKey.subarray(IV_LENGTH, IV_LENGTH + AUTH_TAG_LENGTH);
+    const authTag = encryptedKey.subarray(
+      IV_LENGTH,
+      IV_LENGTH + AUTH_TAG_LENGTH,
+    );
     const ciphertext = encryptedKey.subarray(IV_LENGTH + AUTH_TAG_LENGTH);
 
     const decipher = createDecipheriv(ALGORITHM, this.masterKey, iv, {
