@@ -1,11 +1,12 @@
 import Link from 'next/link';
+import { basePath } from '@/lib/shared';
 
 export default function HomePage() {
   return (
     <div className="flex flex-col items-center justify-center text-center flex-1 px-4 py-16">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/logo.png"
+        src={`${basePath}/logo.png`}
         alt="Alvyn logo"
         width={220}
         height={220}
