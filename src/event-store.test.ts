@@ -6,7 +6,6 @@ import {
   stopPostgres,
   createTestPool,
   uniqueSchema,
-  testMasterKey,
 } from "./__tests__/setup";
 import {
   EventStoreNotInitializedError,
