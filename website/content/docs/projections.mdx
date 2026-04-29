@@ -1,0 +1,244 @@
+---
+title: Projections & Outbox
+description: Build read models from the global event stream and use the transactional outbox for at-least-once delivery to external systems.
+---
+
+# Projections & Outbox
+
+Projections build **read models** from the global event stream. The transactional outbox guarantees **at-least-once delivery** of events to external systems. Both patterns are built into the event store.
+
+## Projections
+
+### Overview
+
+A projection reads events sequentially from the global stream (ordered by `global_position`) and transforms them into a read-optimized data structure (read model). Each projection tracks its own checkpoint and processes events independently.
+
+### Defining a Projection
+
+Implement the `Projection` interface. The `handle` function receives a `StoredEvent` and a `PoolClient` — use the provided client for all database writes to ensure atomicity with the projection checkpoint:
+
+```typescript
+import type { Projection, StoredEvent } from "alvyn";
+import type { PoolClient } from "pg";
+
+const orderSummaryProjection: Projection = {
+  projectionName: "order-summary",
+  async handle(event: StoredEvent, client: PoolClient) {
+    switch (event.type) {
+      case "OrderPlaced":
+        await client.query(
+          `INSERT INTO order_summaries (stream_id, total, status)
+           VALUES ($1, $2, 'placed')`,
+          [event.streamId, (event.data as { total: number }).total],
+        );
+        break;
+      case "OrderShipped":
+        await client.query(
+          `UPDATE order_summaries SET status = 'shipped' WHERE stream_id = $1`,
+          [event.streamId],
+        );
+        break;
+    }
+  },
+};
+```
+
+<Callout>
+The `client` parameter is the same `PoolClient` that holds the transaction for the checkpoint update. If you use this client for your SQL writes, the read model update and the checkpoint advance are **atomic** — if anything fails, both roll back. This gives exactly-once projection semantics within a single database.
+</Callout>
+
+### `defineProjection` Builder (Recommended)
+
+For typed projections tied to an event-sourced aggregate, use `defineProjection`. It mirrors the `defineAggregate` pattern — same curried function for type inference, automatic stream prefix filtering, entity ID extraction, and typed event handlers:
+
+```typescript
+import { defineProjection } from "alvyn";
+
+type OrderEvents = {
+  OrderPlaced: { customerId: string; total: number };
+  OrderShipped: { trackingNumber: string };
+};
+
+const orderProjection = defineProjection<OrderEvents>()({
+  projectionName: "order-summary",
+  streamPrefix: "Order",
+
+  handlers: {
+    OrderPlaced: async (data, ctx) => {
+      await ctx.client.query(
+        `INSERT INTO order_summaries (id, total, status) VALUES ($1, $2, 'placed')`,
+        [ctx.entityId, data.total],
+      );
+    },
+    OrderShipped: async (_data, ctx) => {
+      await ctx.client.query(
+        `UPDATE order_summaries SET status = 'shipped' WHERE id = $1`,
+        [ctx.entityId],
+      );
+    },
+  },
+});
+
+await eventStore.runProjection(orderProjection, 500);
+```
+
+The builder automatically:
+
+- **Filters by stream prefix** — events from other aggregates are skipped without calling any handler
+- **Extracts the entity ID** from the stream ID (e.g. `"Order-123"` -> `"123"`)
+- **Provides typed `data`** — each handler receives the correctly-typed event payload
+- **Passes the transactional `PoolClient`** via `ctx.client` for atomic writes
+
+**`ProjectionHandlerContext`:**
+
+```typescript
+interface ProjectionHandlerContext {
+  entityId: string;       // Entity ID (prefix stripped)
+  streamId: string;       // Full stream ID
+  globalPosition: bigint; // Event's global position
+  streamVersion: number;  // Event's stream version
+  createdAt: Date;        // Event's creation timestamp
+  client: PoolClient;     // Transactional PoolClient
+}
+```
+
+### Running Projections
+
+Call `runProjection()` to process the next batch of events:
+
+```typescript
+const processed = await eventStore.runProjection(orderSummaryProjection, 500);
+```
+
+**Catch-up loop** — process until fully caught up:
+
+```typescript
+let count: number;
+do {
+  count = await eventStore.runProjection(orderSummaryProjection, 500);
+} while (count > 0);
+```
+
+**Continuous processing** — run on a schedule:
+
+```typescript
+setInterval(async () => {
+  try {
+    await eventStore.runProjection(orderSummaryProjection, 500);
+  } catch (error) {
+    console.error("Projection failed:", error);
+  }
+}, 5000);
+```
+
+### How Projections Work Internally
+
+1. The projection's checkpoint is stored in the `projections` table (`last_position` column).
+2. On each `runProjection()` call:
+   - Upserts the checkpoint row (idempotent)
+   - Reads `last_position` with `FOR UPDATE` (row-level lock)
+   - Fetches the next batch: `SELECT ... WHERE global_position > last_position ORDER BY global_position ASC LIMIT batchSize`
+   - Calls `handle(event)` for each event sequentially
+   - Updates `last_position` to the last processed event's `global_position`
+3. Everything runs within a single transaction — if the handler fails, the checkpoint is not advanced (crash recovery).
+
+### Important Notes
+
+- Projections read **plain event data only** (no decryption). They are designed for building read models from non-PII data.
+- Each projection name must be unique. Multiple instances with the same name will contend on the same checkpoint row.
+- The `handle` function receives `StoredEvent` (not `ReplayedEvent`) — there are no tombstones in projection processing.
+
+## Transactional Outbox
+
+### Overview
+
+The outbox pattern solves the dual-write problem: how to atomically update the event store and notify external systems. Outbox rows are inserted **in the same transaction** as the events, guaranteeing consistency.
+
+### How It Works
+
+```
+1. Begin Transaction
+   |
+   +-> INSERT INTO events ...
+   +-> INSERT INTO outbox ...     (same transaction)
+   |
+2. Commit Transaction
+   |
+3. Relay Worker (separate process)
+   |
+   +-> SELECT ... FOR UPDATE SKIP LOCKED  (poll pending entries)
+   +-> Dispatch to message broker
+   +-> UPDATE outbox SET processed_at = now()
+```
+
+### Publishing to the Outbox
+
+Specify `outboxTopics` when appending events:
+
+```typescript
+await eventStore.append({
+  streamId: "Order-123",
+  expectedVersion: 0,
+  events: [{ type: "OrderPlaced", data: { total: 99.99 } }],
+  outboxTopics: ["orders", "notifications"],
+});
+```
+
+Or through the aggregate builder:
+
+```typescript
+await Order.append(eventStore, "order-123", {
+  expectedVersion: order.version,
+  events: [{ type: "OrderPlaced", data: { total: 99.99 } }],
+  outboxTopics: ["orders"],
+});
+```
+
+### Outbox Payload Format (CloudEvents v1.0.2)
+
+Each outbox entry contains a fully CloudEvents v1.0.2 compliant JSON payload:
+
+```json
+{
+  "specversion": "1.0",
+  "type": "OrderPlaced",
+  "source": "urn:my-app:event-store",
+  "id": "Order-123/1",
+  "time": "2026-03-12T10:00:00.000Z",
+  "datacontenttype": "application/json",
+  "subject": "Order-123",
+  "correlationid": "cmd-abc",
+  "actorid": "user-789",
+  "schemaversion": 1,
+  "data": { "customerId": "cust-1", "total": 99.99 }
+}
+```
+
+### Polling and Dispatching
+
+Build a relay worker that polls and dispatches:
+
+```typescript
+async function relayOutbox() {
+  const entries = await eventStore.pollOutbox(100);
+
+  if (entries.length === 0) return;
+
+  for (const entry of entries) {
+    await messageBroker.publish(entry.topic, entry.payload);
+  }
+
+  await eventStore.markOutboxProcessed(entries.map((e) => e.id));
+}
+
+setInterval(relayOutbox, 2000);
+```
+
+### Replica Safety
+
+The outbox uses `SELECT ... FOR UPDATE SKIP LOCKED` for polling. This means:
+
+- **Multiple relay workers** can run concurrently across replicas
+- Each worker gets a **disjoint set** of entries — no double-processing
+- If a worker crashes mid-batch, the entries are automatically unlocked when the transaction rolls back
+- Delivery guarantee: **at-least-once** (entries may be redelivered if the worker crashes after dispatching but before marking as processed)

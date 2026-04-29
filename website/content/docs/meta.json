@@ -1,0 +1,15 @@
+{
+  "title": "Documentation",
+  "pages": [
+    "---Getting Started---",
+    "index",
+    "aggregates",
+    "---Features---",
+    "crypto-shredding",
+    "projections",
+    "schema-evolution",
+    "---Reference---",
+    "api-reference",
+    "database-schema"
+  ]
+}
