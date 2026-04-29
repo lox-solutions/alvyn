@@ -40,8 +40,16 @@ function getNestedField(obj: Record<string, unknown>, path: string): unknown {
  * Sets a nested field value on an object by dot-path.
  * Mutates the object in place.
  */
+function isSafePathSegment(segment: string): boolean {
+  return segment !== "__proto__" && segment !== "constructor" && segment !== "prototype";
+}
+
 function setNestedField(obj: Record<string, unknown>, path: string, value: unknown): void {
   const parts = path.split(".");
+  if (parts.length === 0 || !parts.every(isSafePathSegment)) {
+    return;
+  }
+
   let current: Record<string, unknown> = obj;
   for (let i = 0; i < parts.length - 1; i++) {
     const part = parts[i]!;
