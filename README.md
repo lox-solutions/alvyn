@@ -70,23 +70,21 @@ const order = await Order.load(eventStore, "order-123");
 
 await Order.append(eventStore, "order-123", {
   expectedVersion: order.version,
-  events: [
-    { type: "OrderShipped", data: { trackingNumber: "TRACK-456" } },
-  ],
+  events: [{ type: "OrderShipped", data: { trackingNumber: "TRACK-456" } }],
 });
 ```
 
 ## Features
 
-| Feature | Description |
-|---|---|
-| **Aggregates** | `defineAggregate` with full TypeScript inference, OCC, and auto-snapshots |
-| **Projections** | `defineProjection` for typed read models with checkpoint tracking |
-| **Crypto-Shredding** | Per-entity AES-256-GCM envelope encryption for GDPR compliance |
-| **Transactional Outbox** | At-least-once delivery to external systems, atomic with event writes |
-| **Schema Evolution** | Read-time upcasters that transform old event shapes without migrations |
-| **Snapshots** | Automatic snapshot management with Map/Set serialization support |
-| **CloudEvents** | All events comply with CloudEvents v1.0.2 specification |
+| Feature                  | Description                                                               |
+| ------------------------ | ------------------------------------------------------------------------- |
+| **Aggregates**           | `defineAggregate` with full TypeScript inference, OCC, and auto-snapshots |
+| **Projections**          | `defineProjection` for typed read models with checkpoint tracking         |
+| **Crypto-Shredding**     | Per-entity AES-256-GCM envelope encryption for GDPR compliance            |
+| **Transactional Outbox** | At-least-once delivery to external systems, atomic with event writes      |
+| **Schema Evolution**     | Read-time upcasters that transform old event shapes without migrations    |
+| **Snapshots**            | Automatic snapshot management with Map/Set serialization support          |
+| **CloudEvents**          | All events comply with CloudEvents v1.0.2 specification                   |
 
 ## Documentation
 

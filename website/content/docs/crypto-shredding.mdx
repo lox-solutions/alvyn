@@ -131,7 +131,7 @@ await eventStore.append({
 Encrypted fields are specified using dot-path notation for nested objects:
 
 ```typescript
-encryptedFields: ["name", "address.street", "address.city"]
+encryptedFields: ["name", "address.street", "address.city"];
 ```
 
 Given event data:
@@ -211,9 +211,9 @@ interface TombstonedEvent {
   globalPosition: bigint;
   streamId: string;
   streamVersion: number;
-  type: string;        // Event type name — you know what happened
-  data: null;          // PII shredded — irrecoverable
-  extensions: object;  // Extensions are NOT encrypted
+  type: string; // Event type name — you know what happened
+  data: null; // PII shredded — irrecoverable
+  extensions: object; // Extensions are NOT encrypted
   createdAt: Date;
   tombstoned: true;
 }
@@ -223,7 +223,7 @@ interface TombstonedEvent {
 
 - `data` is `null` — the PII is cryptographically irrecoverable
 - `extensions` is still available (it's never encrypted)
-- `type` is still available — you know *what* happened, just not *the PII details*
+- `type` is still available — you know _what_ happened, just not _the PII details_
 - Non-encrypted events in the same stream are **not affected**
 
 ### Handling Tombstones in Evolve Handlers
@@ -243,11 +243,11 @@ evolve: {
 
 ## Error Handling
 
-| Error | When | Recovery |
-|---|---|---|
-| `CryptoKeyRevokedError` | Trying to encrypt **new** events with a revoked key | Do not write PII for deleted users |
-| `CryptoKeyNotFoundError` | Crypto key does not exist in the key store | Create the key first with `createCryptoKey()` |
-| `MasterKeyRequiredError` | Crypto operation without `masterEncryptionKey` in config | Provide the master key |
+| Error                    | When                                                     | Recovery                                      |
+| ------------------------ | -------------------------------------------------------- | --------------------------------------------- |
+| `CryptoKeyRevokedError`  | Trying to encrypt **new** events with a revoked key      | Do not write PII for deleted users            |
+| `CryptoKeyNotFoundError` | Crypto key does not exist in the key store               | Create the key first with `createCryptoKey()` |
+| `MasterKeyRequiredError` | Crypto operation without `masterEncryptionKey` in config | Provide the master key                        |
 
 `CryptoKeyRevokedError` is only thrown on **write** operations. On **read**, revoked keys simply produce tombstoned events without throwing.
 

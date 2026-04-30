@@ -281,8 +281,8 @@ export async function appendToStream(
     const allOutboxRows: OutboxRow[] = [];
 
     for (let i = 0; i < preparedRows.length; i++) {
-      const row = preparedRows[i]!;
-      const globalPosition = globalPositions[i]!;
+      const row = preparedRows[i];
+      const globalPosition = globalPositions[i];
 
       // CloudEvents v1.0.2 JSON format
       // IMPORTANT: Use dataToStore (PII-stripped) instead of original event data

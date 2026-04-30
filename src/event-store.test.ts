@@ -112,19 +112,22 @@ describe("EventStore", () => {
       await expect(store.deleteSnapshot("s-1")).rejects.toThrow(
         EventStoreNotInitializedError,
       );
-      await expect(store.processOutbox(async () => {})).rejects.toThrow(
-        EventStoreNotInitializedError,
-      );
+      await expect(
+        store.processOutbox(() => Promise.resolve()),
+      ).rejects.toThrow(EventStoreNotInitializedError);
       await expect(store.cleanupOutbox()).rejects.toThrow(
         EventStoreNotInitializedError,
       );
       await expect(
-        store.runProjection({ projectionName: "p", handle: async () => {} }),
+        store.runProjection({
+          projectionName: "p",
+          handle: () => Promise.resolve(),
+        }),
       ).rejects.toThrow(EventStoreNotInitializedError);
-      await expect(store.withTransaction(async () => {})).rejects.toThrow(
-        EventStoreNotInitializedError,
-      );
-      await expect(store.withRetry(async () => {})).rejects.toThrow(
+      await expect(
+        store.withTransaction(() => Promise.resolve()),
+      ).rejects.toThrow(EventStoreNotInitializedError);
+      await expect(store.withRetry(() => Promise.resolve())).rejects.toThrow(
         EventStoreNotInitializedError,
       );
     });
@@ -181,16 +184,16 @@ describe("EventStore", () => {
 
       const events = await store.load("Order-1");
       expect(events).toHaveLength(1);
-      expect(events[0]!.type).toBe("OrderPlaced");
-      expect(events[0]!.data).toEqual({ total: 99.99 });
-      expect(events[0]!.streamId).toBe("Order-1");
-      expect(events[0]!.streamVersion).toBe(1);
-      expect(events[0]!.specversion).toBe("1.0");
-      expect(events[0]!.source).toBe("event-store");
-      expect(events[0]!.subject).toBe("Order-1");
-      expect(events[0]!.id).toBe("Order-1/1");
-      expect(events[0]!.datacontenttype).toBe("application/json");
-      expect(events[0]!.time).toBeTruthy();
+      expect(events[0].type).toBe("OrderPlaced");
+      expect(events[0].data).toEqual({ total: 99.99 });
+      expect(events[0].streamId).toBe("Order-1");
+      expect(events[0].streamVersion).toBe(1);
+      expect(events[0].specversion).toBe("1.0");
+      expect(events[0].source).toBe("event-store");
+      expect(events[0].subject).toBe("Order-1");
+      expect(events[0].id).toBe("Order-1/1");
+      expect(events[0].datacontenttype).toBe("application/json");
+      expect(events[0].time).toBeTruthy();
     });
 
     it("appends multiple events in sequence", async () => {
@@ -235,7 +238,7 @@ describe("EventStore", () => {
       });
 
       const events = await store.load("S-1");
-      expect(events[0]!.source).toBe("urn:test:my-service");
+      expect(events[0].source).toBe("urn:test:my-service");
     });
 
     it("per-event source override works", async () => {
@@ -249,7 +252,7 @@ describe("EventStore", () => {
       });
 
       const events = await store.load("S-2");
-      expect(events[0]!.source).toBe("urn:override");
+      expect(events[0].source).toBe("urn:override");
     });
 
     it("stores extension attributes", async () => {
@@ -269,9 +272,9 @@ describe("EventStore", () => {
       });
 
       const events = await store.load("S-3");
-      expect(events[0]!.extensions.correlationid).toBe("corr-1");
-      expect(events[0]!.extensions.actorid).toBe("user-1");
-      expect(events[0]!.extensions.schemaversion).toBe(1);
+      expect(events[0].extensions.correlationid).toBe("corr-1");
+      expect(events[0].extensions.actorid).toBe("user-1");
+      expect(events[0].extensions.schemaversion).toBe(1);
     });
 
     it("rejects zero events", async () => {
@@ -305,8 +308,8 @@ describe("EventStore", () => {
 
       const events = await store.loadFrom("LF-1", 2);
       expect(events).toHaveLength(2);
-      expect(events[0]!.type).toBe("B");
-      expect(events[1]!.type).toBe("C");
+      expect(events[0].type).toBe("B");
+      expect(events[1].type).toBe("C");
     });
 
     it("respects maxEvents limit", async () => {
@@ -570,9 +573,9 @@ describe("EventStore", () => {
       await store.setup();
 
       let attempts = 0;
-      const result = await store.withRetry(async () => {
+      const result = await store.withRetry(() => {
         attempts++;
-        return "ok";
+        return Promise.resolve("ok");
       });
 
       expect(result).toBe("ok");
@@ -584,11 +587,12 @@ describe("EventStore", () => {
       await store.setup();
 
       let attempts = 0;
-      await store.withRetry(async () => {
+      await store.withRetry(() => {
         attempts++;
         if (attempts < 3) {
           throw new OptimisticConcurrencyError("s", 1, 2);
         }
+        return Promise.resolve();
       });
 
       expect(attempts).toBe(3);
@@ -600,7 +604,7 @@ describe("EventStore", () => {
 
       let attempts = 0;
       await expect(
-        store.withRetry(async () => {
+        store.withRetry(() => {
           attempts++;
           throw new Error("Not OCC");
         }),
@@ -615,7 +619,7 @@ describe("EventStore", () => {
 
       let attempts = 0;
       await expect(
-        store.withRetry(async () => {
+        store.withRetry(() => {
           attempts++;
           throw new OptimisticConcurrencyError("s", 1, 2);
         }, 2),
@@ -655,7 +659,7 @@ describe("EventStore", () => {
       });
 
       const events = await store.load("UP-1");
-      expect(events[0]!.data).toEqual({ total: 100, currency: "EUR" });
+      expect(events[0].data).toEqual({ total: 100, currency: "EUR" });
     });
   });
 

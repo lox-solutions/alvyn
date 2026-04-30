@@ -94,11 +94,11 @@ A v1 event stored as `{ street: "123 Main St" }` is automatically transformed th
    - Events already at the latest version skip upcasters entirely
 4. The database row is **never modified**.
 
-| Stored Version | Upcasters Applied | Result Version |
-|---|---|---|
-| 1 | v1->v2, then v2->v3 | 3 |
-| 2 | v2->v3 | 3 |
-| 3 | (none) | 3 |
+| Stored Version | Upcasters Applied   | Result Version |
+| -------------- | ------------------- | -------------- |
+| 1              | v1->v2, then v2->v3 | 3              |
+| 2              | v2->v3              | 3              |
+| 3              | (none)              | 3              |
 
 ## Using Upcasters with Aggregates
 
@@ -107,8 +107,12 @@ Define upcasters in the aggregate definition to keep them co-located with the do
 ```typescript
 const Order = defineAggregate<OrderEvents>()({
   streamPrefix: "Order",
-  initialState: () => ({ /* ... */ }),
-  evolve: { /* ... */ },
+  initialState: () => ({
+    /* ... */
+  }),
+  evolve: {
+    /* ... */
+  },
 
   upcasters: [
     {

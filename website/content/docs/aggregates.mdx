@@ -108,7 +108,9 @@ encryption: {
 Configures automatic snapshotting. When `load()` replays more events than the threshold since the last snapshot, a new snapshot is saved automatically.
 
 ```typescript
-snapshot: { every: 100 } // Auto-snapshot every 100 events
+snapshot: {
+  every: 100;
+} // Auto-snapshot every 100 events
 ```
 
 ### `upcasters` (optional)
@@ -116,19 +118,19 @@ snapshot: { every: 100 } // Auto-snapshot every 100 events
 See [Schema Evolution](/docs/schema-evolution) for details.
 
 ```typescript
-upcasters: [userRenamedV1ToV2, userRenamedV2ToV3]
+upcasters: [userRenamedV1ToV2, userRenamedV2ToV3];
 ```
 
 ## AggregateHandle (Returned Object)
 
 The `defineAggregate` call returns an `AggregateHandle` with the following interface:
 
-| Method / Property | Description |
-|---|---|
-| `streamPrefix` | The stream prefix string (readonly) |
-| `load(eventStore, entityId)` | Returns `AggregateInstance<TState>` |
-| `append(eventStore, entityId, input)` | Appends typed events to the stream |
-| `getUpcasters()` | Returns upcasters for registration at startup |
+| Method / Property                     | Description                                   |
+| ------------------------------------- | --------------------------------------------- |
+| `streamPrefix`                        | The stream prefix string (readonly)           |
+| `load(eventStore, entityId)`          | Returns `AggregateInstance<TState>`           |
+| `append(eventStore, entityId, input)` | Appends typed events to the stream            |
+| `getUpcasters()`                      | Returns upcasters for registration at startup |
 
 ### `load(eventStore, entityId)`
 
@@ -137,9 +139,9 @@ Loads the aggregate by replaying all events (or from snapshot + remaining events
 ```typescript
 const order = await Order.load(eventStore, "order-123");
 
-order.state;    // { status: "shipped", total: 99.99, customerId: "cust-1" }
-order.version;  // 5 (current stream version)
-order.exists;   // true (stream has at least one event)
+order.state; // { status: "shipped", total: 99.99, customerId: "cust-1" }
+order.version; // 5 (current stream version)
+order.exists; // true (stream has at least one event)
 order.streamId; // "Order-order-123"
 ```
 
@@ -152,9 +154,7 @@ Appends typed events to the aggregate's stream. Automatically maps encryption co
 ```typescript
 await Order.append(eventStore, "order-123", {
   expectedVersion: order.version, // OCC: must match current version
-  events: [
-    { type: "OrderShipped", data: { trackingNumber: "TRACK-456" } },
-  ],
+  events: [{ type: "OrderShipped", data: { trackingNumber: "TRACK-456" } }],
   outboxTopics: ["orders"], // Optional: transactional outbox
 });
 ```

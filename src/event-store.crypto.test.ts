@@ -111,7 +111,10 @@ describe("EventStore crypto / GDPR", () => {
         const result = await client.query(
           `SELECT data, encrypted_data FROM ${schema}.events WHERE stream_id = 'User-bob'`,
         );
-        const row = result.rows[0];
+        const row = result.rows[0] as {
+          data: Record<string, unknown>;
+          encrypted_data: Record<string, { ciphertext: string }>;
+        };
         expect(row.data.name).toBeUndefined();
         expect(row.data.public).toBe("visible");
         expect(row.encrypted_data.name).toBeDefined();
@@ -143,7 +146,7 @@ describe("EventStore crypto / GDPR", () => {
       });
 
       const events = await store.load("User-carol");
-      const data = events[0]!.data as Record<string, unknown>;
+      const data = events[0].data as Record<string, unknown>;
       const address = data.address as Record<string, unknown>;
       expect(address.street).toBe("123 Main");
       expect(address.city).toBe("Berlin");
@@ -311,8 +314,8 @@ describe("EventStore crypto / GDPR", () => {
 
       const events = await store.load("Mix-1");
       expect(events).toHaveLength(2);
-      expect(events[0]!.data).toEqual({ info: "visible" });
-      expect(events[1]!.data).toEqual({ name: "Secret" });
+      expect(events[0].data).toEqual({ info: "visible" });
+      expect(events[1].data).toEqual({ name: "Secret" });
     });
   });
 });

@@ -120,7 +120,7 @@ export async function readStream<T = unknown>(
       // Try to get the decryption key (cached per-read)
       let aesKey: Buffer | null;
       if (keyCache.has(row.crypto_key_id)) {
-        aesKey = keyCache.get(row.crypto_key_id)!;
+        aesKey = keyCache.get(row.crypto_key_id) ?? null;
       } else {
         try {
           aesKey = await cryptoKeyManager.getKey(

@@ -44,7 +44,11 @@ const orderSummaryProjection: Projection = {
 ```
 
 <Callout>
-The `client` parameter is the same `PoolClient` that holds the transaction for the checkpoint update. If you use this client for your SQL writes, the read model update and the checkpoint advance are **atomic** — if anything fails, both roll back. This gives exactly-once projection semantics within a single database.
+  The `client` parameter is the same `PoolClient` that holds the transaction for
+  the checkpoint update. If you use this client for your SQL writes, the read
+  model update and the checkpoint advance are **atomic** — if anything fails,
+  both roll back. This gives exactly-once projection semantics within a single
+  database.
 </Callout>
 
 ### `defineProjection` Builder (Recommended)
@@ -93,12 +97,12 @@ The builder automatically:
 
 ```typescript
 interface ProjectionHandlerContext {
-  entityId: string;       // Entity ID (prefix stripped)
-  streamId: string;       // Full stream ID
+  entityId: string; // Entity ID (prefix stripped)
+  streamId: string; // Full stream ID
   globalPosition: bigint; // Event's global position
-  streamVersion: number;  // Event's stream version
-  createdAt: Date;        // Event's creation timestamp
-  client: PoolClient;     // Transactional PoolClient
+  streamVersion: number; // Event's stream version
+  createdAt: Date; // Event's creation timestamp
+  client: PoolClient; // Transactional PoolClient
 }
 ```
 
