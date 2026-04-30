@@ -290,7 +290,10 @@ describe("defineAggregate", () => {
         eventType: "OrderPlaced",
         fromSchemaVersion: 1,
         toSchemaVersion: 2,
-        upcast: (data: Record<string, unknown>) => ({ ...data, currency: "EUR" }),
+        upcast: (data: Record<string, unknown>) => ({
+          ...data,
+          currency: "EUR",
+        }),
       };
 
       const AggWithUpcasters = defineAggregate<OrderEvents>()({

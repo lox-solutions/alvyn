@@ -34,8 +34,9 @@ describe("Outbox", () => {
     });
 
     const received: OutboxEntry[] = [];
-    const count = await store.processOutbox(async (entries) => {
+    const count = await store.processOutbox((entries) => {
       received.push(...entries);
+      return Promise.resolve();
     });
 
     // 1 event × 2 topics = 2 outbox entries
@@ -47,7 +48,7 @@ describe("Outbox", () => {
     ]);
 
     // Verify CloudEvents payload structure
-    const payload = received[0]!.payload as Record<string, unknown>;
+    const payload = received[0].payload as Record<string, unknown>;
     expect(payload.specversion).toBe("1.0");
     expect(payload.type).toBe("OrderPlaced");
     expect(payload.data).toEqual({ total: 100 });
@@ -63,7 +64,7 @@ describe("Outbox", () => {
       events: [{ type: "A", data: {} }],
     });
 
-    const count = await store.processOutbox(async () => {});
+    const count = await store.processOutbox(() => Promise.resolve());
     expect(count).toBe(0);
   });
 
@@ -80,14 +81,14 @@ describe("Outbox", () => {
     });
 
     await expect(
-      store.processOutbox(async () => {
+      store.processOutbox(() => {
         throw new Error("Handler failed");
       }),
     ).rejects.toThrow("Handler failed");
 
     // Entries should still be pending (not marked processed)
-    const count = await store.processOutbox(async () => {});
-    expect(count).toBe(1);
+    const count2 = await store.processOutbox(() => Promise.resolve());
+    expect(count2).toBe(1);
   });
 
   it("processOutbox respects limit", async () => {
@@ -105,11 +106,11 @@ describe("Outbox", () => {
       outboxTopics: ["t"],
     });
 
-    const count = await store.processOutbox(async () => {}, 2);
+    const count = await store.processOutbox(() => Promise.resolve(), 2);
     expect(count).toBe(2);
 
     // Remaining 1
-    const count2 = await store.processOutbox(async () => {});
+    const count2 = await store.processOutbox(() => Promise.resolve());
     expect(count2).toBe(1);
   });
 
@@ -126,7 +127,7 @@ describe("Outbox", () => {
     });
 
     // Process all entries
-    await store.processOutbox(async () => {});
+    await store.processOutbox(() => Promise.resolve());
 
     // Backdate processed_at to make it "old"
     const client = await pool.connect();

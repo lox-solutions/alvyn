@@ -55,7 +55,7 @@ export async function runProjection(
     [projection.projectionName],
   );
 
-  const lastPosition = BigInt(checkpointResult.rows[0]!.last_position);
+  const lastPosition = BigInt(checkpointResult.rows[0].last_position);
 
   // Fetch next batch of events (plain events only — projections
   // typically do NOT need encrypted data since they build read models)

@@ -48,7 +48,7 @@ describe("Projections", () => {
         projectionName: "test-proj",
         streamPrefix: "Order",
         handlers: {
-          OrderPlaced: async (_data, ctx) => {
+          OrderPlaced: (_data, ctx) => {
             handled.push(ctx.entityId);
           },
         },
@@ -75,7 +75,7 @@ describe("Projections", () => {
         projectionName: "entity-id-test",
         streamPrefix: "Order",
         handlers: {
-          OrderPlaced: async (_data, ctx) => {
+          OrderPlaced: (_data, ctx) => {
             capturedEntityId = ctx.entityId;
           },
         },
@@ -103,7 +103,7 @@ describe("Projections", () => {
         projectionName: "skip-unknown",
         streamPrefix: "Order",
         handlers: {
-          OrderPlaced: async () => {
+          OrderPlaced: () => {
             handled.push("OrderPlaced");
           },
           // No handler for OrderCancelled
@@ -131,7 +131,7 @@ describe("Projections", () => {
         projectionName: "checkpoint-test",
         streamPrefix: "Order",
         handlers: {
-          OrderPlaced: async () => {
+          OrderPlaced: () => {
             count++;
           },
         },
@@ -161,10 +161,10 @@ describe("Projections", () => {
         projectionName: "incremental-test",
         streamPrefix: "Order",
         handlers: {
-          OrderPlaced: async () => {
+          OrderPlaced: () => {
             count++;
           },
-          OrderShipped: async () => {
+          OrderShipped: () => {
             count++;
           },
         },
@@ -202,7 +202,7 @@ describe("Projections", () => {
         projectionName: "batch-test",
         streamPrefix: "Order",
         handlers: {
-          OrderPlaced: async () => {
+          OrderPlaced: () => {
             count++;
           },
         },
@@ -228,7 +228,7 @@ describe("Projections", () => {
         projectionName: "ctx-test",
         streamPrefix: "Order",
         handlers: {
-          OrderPlaced: async (_data, c) => {
+          OrderPlaced: (_data, c) => {
             ctx = {
               entityId: c.entityId,
               streamId: c.streamId,
@@ -258,7 +258,7 @@ describe("Projections", () => {
         projectionName: "error-test",
         streamPrefix: "Order",
         handlers: {
-          OrderPlaced: async () => {
+          OrderPlaced: () => {
             throw new Error("Handler exploded");
           },
         },
@@ -274,7 +274,9 @@ describe("Projections", () => {
         projectionName: "error-test",
         streamPrefix: "Order",
         handlers: {
-          OrderPlaced: async () => { count++; },
+          OrderPlaced: () => {
+            count++;
+          },
         },
       });
 

@@ -77,7 +77,7 @@ export class CryptoKeyManager {
       throw new CryptoKeyNotFoundError(keyId);
     }
 
-    const row = result.rows[0]!;
+    const row = result.rows[0];
 
     // Revoked keys return null — the caller should produce a tombstone
     if (row.revoked_at !== null) {

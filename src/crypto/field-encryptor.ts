@@ -65,7 +65,7 @@ function setNestedField(
 
   let current: Record<string, unknown> = obj;
   for (let i = 0; i < parts.length - 1; i++) {
-    const part = parts[i]!;
+    const part = parts[i];
     if (
       !(part in current) ||
       typeof current[part] !== "object" ||
@@ -75,7 +75,7 @@ function setNestedField(
     }
     current = current[part] as Record<string, unknown>;
   }
-  current[parts[parts.length - 1]!] = value;
+  current[parts[parts.length - 1]] = value;
 }
 
 /**
@@ -87,7 +87,7 @@ function removeNestedField(obj: Record<string, unknown>, path: string): void {
   if (!parts.every(isSafePathSegment)) return;
   let current: Record<string, unknown> = obj;
   for (let i = 0; i < parts.length - 1; i++) {
-    const part = parts[i]!;
+    const part = parts[i];
     if (
       !(part in current) ||
       typeof current[part] !== "object" ||
@@ -97,7 +97,9 @@ function removeNestedField(obj: Record<string, unknown>, path: string): void {
     }
     current = current[part] as Record<string, unknown>;
   }
-  delete current[parts[parts.length - 1]!];
+  const lastKey = parts[parts.length - 1];
+
+  delete current[lastKey];
 }
 
 /**

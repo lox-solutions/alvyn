@@ -26,12 +26,12 @@ interface EventStoreConfig {
 }
 ```
 
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `pool` | `Pool` | Yes | PostgreSQL connection pool (caller manages lifecycle) |
-| `schema` | `string` | No | PostgreSQL schema name (default: `"event_store"`) |
-| `masterEncryptionKey` | `string` | No | 256-bit hex key (64 chars) for envelope encryption |
-| `defaultSource` | `string` | No | CloudEvents `source` URI-reference applied to all events |
+| Parameter             | Type     | Required | Description                                              |
+| --------------------- | -------- | -------- | -------------------------------------------------------- |
+| `pool`                | `Pool`   | Yes      | PostgreSQL connection pool (caller manages lifecycle)    |
+| `schema`              | `string` | No       | PostgreSQL schema name (default: `"event_store"`)        |
+| `masterEncryptionKey` | `string` | No       | 256-bit hex key (64 chars) for envelope encryption       |
+| `defaultSource`       | `string` | No       | CloudEvents `source` URI-reference applied to all events |
 
 The schema name is validated against `/^[a-z_][a-z0-9_]{0,62}$/`. Invalid names throw `InvalidSchemaNameError`.
 
@@ -64,12 +64,12 @@ const result = await eventStore.append({
 });
 ```
 
-| Field | Type | Description |
-|---|---|---|
-| `streamId` | `string` | Target stream identifier |
-| `expectedVersion` | `number` | `-1` = new stream, `0` = no check, `N` = exact version |
-| `events` | `AppendEventInput[]` | Events to append |
-| `outboxTopics` | `string[]` | Optional: topics for transactional outbox |
+| Field             | Type                 | Description                                            |
+| ----------------- | -------------------- | ------------------------------------------------------ |
+| `streamId`        | `string`             | Target stream identifier                               |
+| `expectedVersion` | `number`             | `-1` = new stream, `0` = no check, `N` = exact version |
+| `events`          | `AppendEventInput[]` | Events to append                                       |
+| `outboxTopics`    | `string[]`           | Optional: topics for transactional outbox              |
 
 **Options:** Pass `{ client }` to use an existing transaction (from `withTransaction()`).
 
@@ -104,10 +104,10 @@ const orderStreams = await eventStore.listStreams({
 });
 ```
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `prefix` | `string` | - | Stream ID prefix (separator `"-"` is appended automatically) |
-| `limit` | `number` | `100` | Maximum number of stream IDs to return |
+| Field    | Type     | Default | Description                                                  |
+| -------- | -------- | ------- | ------------------------------------------------------------ |
+| `prefix` | `string` | -       | Stream ID prefix (separator `"-"` is appended automatically) |
+| `limit`  | `number` | `100`   | Maximum number of stream IDs to return                       |
 
 ### Snapshots
 
@@ -343,11 +343,11 @@ All errors extend `Error` and have a `name` property matching the class name for
 
 Thrown when `expectedVersion` does not match the stream's current version.
 
-| Property | Type | Description |
-|---|---|---|
-| `streamId` | `string` | The conflicting stream |
-| `expectedVersion` | `number` | What the caller expected |
-| `actualVersion` | `number` | The stream's actual version |
+| Property          | Type     | Description                 |
+| ----------------- | -------- | --------------------------- |
+| `streamId`        | `string` | The conflicting stream      |
+| `expectedVersion` | `number` | What the caller expected    |
+| `actualVersion`   | `number` | The stream's actual version |
 
 ### `StreamNotFoundError`
 

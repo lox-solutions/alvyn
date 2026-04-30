@@ -122,7 +122,9 @@ describe("field-encryptor", () => {
       const key = makeKey();
       const data = { name: "Alice", age: 30 };
       const { cleanData, encryptedData } = encryptFields(data, ["name"], key);
-      const cleanCopy = JSON.parse(JSON.stringify(cleanData));
+      const cleanCopy = JSON.parse(
+        JSON.stringify(cleanData),
+      ) as typeof cleanData;
 
       decryptFields(cleanData, encryptedData, key);
 
@@ -171,12 +173,19 @@ describe("field-encryptor", () => {
       const { cleanData, encryptedData } = encryptFields(data, ["safe"], key);
 
       // Inject a malicious key alongside real encrypted data
-      const poisoned: Record<string, unknown> = { ...encryptedData };
-      poisoned["constructor"] = encryptedData.safe;
+      const poisoned = Object.assign(
+        { ...encryptedData },
+        {
+          constructor: encryptedData.safe,
+        },
+      ) as Record<string, unknown>;
 
       const result = decryptFields(
         cleanData,
-        poisoned as unknown as Record<string, { ciphertext: string; iv: string; authTag: string }>,
+        poisoned as unknown as Record<
+          string,
+          { ciphertext: string; iv: string; authTag: string }
+        >,
         key,
       );
       // safe field decrypted normally

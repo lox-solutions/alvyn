@@ -151,7 +151,7 @@ export function defineAggregate<TEvents extends EventMap>() {
           const state = applyEvents(baseState, events);
           const version =
             events.length > 0
-              ? events[events.length - 1]!.streamVersion
+              ? events[events.length - 1].streamVersion
               : baseVersion;
 
           // Auto-snapshot if we replayed enough events since last snapshot.
@@ -184,7 +184,7 @@ export function defineAggregate<TEvents extends EventMap>() {
         const events = await eventStore.load(streamId);
         const state = applyEvents(initialState(), events);
         const version =
-          events.length > 0 ? events[events.length - 1]!.streamVersion : 0;
+          events.length > 0 ? events[events.length - 1].streamVersion : 0;
 
         return {
           state,
@@ -213,8 +213,8 @@ export function defineAggregate<TEvents extends EventMap>() {
             const encryptedFields =
               encryption?.encryptedFields[e.type] ?? undefined;
             const cryptoKeyId =
-              encryptedFields && encryptedFields.length > 0
-                ? encryption!.cryptoKeyId(entityId)
+              encryption && encryptedFields && encryptedFields.length > 0
+                ? encryption.cryptoKeyId(entityId)
                 : undefined;
 
             return {

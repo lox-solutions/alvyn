@@ -44,7 +44,7 @@ export async function loadSnapshot<T = unknown>(
     return null;
   }
 
-  const row = result.rows[0]!;
+  const row = result.rows[0];
 
   return {
     streamId: row.stream_id,

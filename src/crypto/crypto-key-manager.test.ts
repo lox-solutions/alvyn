@@ -45,7 +45,11 @@ describe("CryptoKeyManager", () => {
   describe("createKey + getKey", () => {
     it("creates and retrieves a key (round-trip)", async () => {
       const schema = uniqueSchema();
-      const store = new EventStore({ pool, schema, masterEncryptionKey: testMasterKey() });
+      const store = new EventStore({
+        pool,
+        schema,
+        masterEncryptionKey: testMasterKey(),
+      });
       await store.setup();
 
       const mgr = new CryptoKeyManager(testMasterKey());
@@ -63,7 +67,11 @@ describe("CryptoKeyManager", () => {
 
     it("createKey is idempotent", async () => {
       const schema = uniqueSchema();
-      const store = new EventStore({ pool, schema, masterEncryptionKey: testMasterKey() });
+      const store = new EventStore({
+        pool,
+        schema,
+        masterEncryptionKey: testMasterKey(),
+      });
       await store.setup();
 
       const mgr = new CryptoKeyManager(testMasterKey());
@@ -85,7 +93,11 @@ describe("CryptoKeyManager", () => {
 
     it("getKey throws CryptoKeyNotFoundError for missing key", async () => {
       const schema = uniqueSchema();
-      const store = new EventStore({ pool, schema, masterEncryptionKey: testMasterKey() });
+      const store = new EventStore({
+        pool,
+        schema,
+        masterEncryptionKey: testMasterKey(),
+      });
       await store.setup();
 
       const mgr = new CryptoKeyManager(testMasterKey());
@@ -103,7 +115,11 @@ describe("CryptoKeyManager", () => {
   describe("revokeKey", () => {
     it("revoked key returns null from getKey", async () => {
       const schema = uniqueSchema();
-      const store = new EventStore({ pool, schema, masterEncryptionKey: testMasterKey() });
+      const store = new EventStore({
+        pool,
+        schema,
+        masterEncryptionKey: testMasterKey(),
+      });
       await store.setup();
 
       const mgr = new CryptoKeyManager(testMasterKey());
@@ -120,7 +136,11 @@ describe("CryptoKeyManager", () => {
 
     it("revokeKey is idempotent", async () => {
       const schema = uniqueSchema();
-      const store = new EventStore({ pool, schema, masterEncryptionKey: testMasterKey() });
+      const store = new EventStore({
+        pool,
+        schema,
+        masterEncryptionKey: testMasterKey(),
+      });
       await store.setup();
 
       const mgr = new CryptoKeyManager(testMasterKey());
@@ -137,15 +157,19 @@ describe("CryptoKeyManager", () => {
 
     it("revokeKey throws CryptoKeyNotFoundError for missing key", async () => {
       const schema = uniqueSchema();
-      const store = new EventStore({ pool, schema, masterEncryptionKey: testMasterKey() });
+      const store = new EventStore({
+        pool,
+        schema,
+        masterEncryptionKey: testMasterKey(),
+      });
       await store.setup();
 
       const mgr = new CryptoKeyManager(testMasterKey());
       const client = await pool.connect();
       try {
-        await expect(
-          mgr.revokeKey(client, schema, "ghost"),
-        ).rejects.toThrow(CryptoKeyNotFoundError);
+        await expect(mgr.revokeKey(client, schema, "ghost")).rejects.toThrow(
+          CryptoKeyNotFoundError,
+        );
       } finally {
         client.release();
       }
@@ -155,7 +179,11 @@ describe("CryptoKeyManager", () => {
   describe("getKeyForEncryption", () => {
     it("returns key for active key", async () => {
       const schema = uniqueSchema();
-      const store = new EventStore({ pool, schema, masterEncryptionKey: testMasterKey() });
+      const store = new EventStore({
+        pool,
+        schema,
+        masterEncryptionKey: testMasterKey(),
+      });
       await store.setup();
 
       const mgr = new CryptoKeyManager(testMasterKey());
@@ -172,7 +200,11 @@ describe("CryptoKeyManager", () => {
 
     it("throws CryptoKeyRevokedError for revoked key", async () => {
       const schema = uniqueSchema();
-      const store = new EventStore({ pool, schema, masterEncryptionKey: testMasterKey() });
+      const store = new EventStore({
+        pool,
+        schema,
+        masterEncryptionKey: testMasterKey(),
+      });
       await store.setup();
 
       const mgr = new CryptoKeyManager(testMasterKey());
@@ -195,7 +227,11 @@ describe("CryptoKeyManager", () => {
       const masterKey1 = "a".repeat(64);
       const masterKey2 = "b".repeat(64);
 
-      const store = new EventStore({ pool, schema, masterEncryptionKey: masterKey1 });
+      const store = new EventStore({
+        pool,
+        schema,
+        masterEncryptionKey: masterKey1,
+      });
       await store.setup();
 
       const mgr1 = new CryptoKeyManager(masterKey1);
