@@ -9,23 +9,10 @@ The event store implements **envelope encryption** for GDPR-compliant PII handli
 
 ## Architecture
 
-```
-                  +----------------------------+
-                  |       Master Key            |
-                  |  (256-bit AES, from env)    |
-                  +-----------+----------------+
-                              | encrypts/decrypts
-                  +-----------v----------------+
-                  |  Per-Entity AES Key         |
-                  |  (stored in crypto_keys     |
-                  |   encrypted by master)      |
-                  +-----------+----------------+
-                              | encrypts/decrypts
-              +---------------v------------------+
-              |  Individual PII Fields            |
-              |  (each field encrypted with       |
-              |   AES-256-GCM, unique IV)         |
-              +----------------------------------+
+```mermaid
+graph TD
+  MK[Master Key\n256-bit AES, from env] -->|encrypts/decrypts| EK[Per-Entity AES Key\nstored in crypto_keys\nencrypted by master]
+  EK -->|encrypts/decrypts| PII[Individual PII Fields\neach field encrypted with\nAES-256-GCM, unique IV]
 ```
 
 **Two-layer envelope encryption:**
