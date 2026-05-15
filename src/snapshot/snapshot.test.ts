@@ -104,7 +104,7 @@ describe("Snapshots", () => {
     const { snapshot, events } = await store.loadWithSnapshot("Order-4");
     expect(snapshot!.streamVersion).toBe(2);
     expect(events).toHaveLength(1); // Only event 3 (version 3)
-    expect(events[0]!.type).toBe("C");
+    expect(events[0].type).toBe("C");
   });
 
   it("loadWithSnapshot with no snapshot returns all events", async () => {

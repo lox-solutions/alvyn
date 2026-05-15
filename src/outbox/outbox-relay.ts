@@ -17,11 +17,12 @@ interface OutboxRow {
  * concurrent relay workers (across replicas). Each worker gets a
  * disjoint set of entries — no double-processing.
  */
-export async function pollOutbox(
-  client: PoolClient,
-  schema: string,
-  limit: number,
-): Promise<OutboxEntry[]> {
+export async function pollOutbox(options: {
+  client: PoolClient;
+  schema: string;
+  limit: number;
+}): Promise<OutboxEntry[]> {
+  const { client, schema, limit } = options;
   const result = await client.query<OutboxRow>(
     `SELECT id, event_global_pos, topic, payload, created_at
      FROM ${schema}.outbox
@@ -45,11 +46,12 @@ export async function pollOutbox(
  * Marks outbox entries as processed by setting processed_at.
  * Call this after successfully dispatching the messages.
  */
-export async function markOutboxProcessed(
-  client: PoolClient,
-  schema: string,
-  ids: bigint[],
-): Promise<void> {
+export async function markOutboxProcessed(options: {
+  client: PoolClient;
+  schema: string;
+  ids: bigint[];
+}): Promise<void> {
+  const { client, schema, ids } = options;
   if (ids.length === 0) return;
 
   // Convert bigints to strings for the query parameter

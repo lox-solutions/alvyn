@@ -58,7 +58,7 @@ export interface ProjectionDefinition<TEvents extends EventMap> {
     [K in keyof TEvents & string]?: (
       data: TEvents[K],
       ctx: ProjectionHandlerContext,
-    ) => Promise<void>;
+    ) => void | Promise<void>;
   };
 }
 
