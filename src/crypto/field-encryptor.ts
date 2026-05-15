@@ -67,8 +67,9 @@ function setNestedField(options: {
   let current: Record<string, unknown> = obj;
   for (let i = 0; i < parts.length - 1; i++) {
     const part = parts[i];
+    const hasOwnPart = Object.prototype.hasOwnProperty.call(current, part);
     if (
-      !(part in current) ||
+      !hasOwnPart ||
       typeof current[part] !== "object" ||
       current[part] === null
     ) {
