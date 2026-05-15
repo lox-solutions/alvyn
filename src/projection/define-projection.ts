@@ -47,7 +47,9 @@ import type {
  * await eventStore.runProjection(orderProjection, 500);
  * ```
  */
-export function defineProjection<TEvents extends EventMap>() {
+export function defineProjection<TEvents extends EventMap>(): (
+  definition: ProjectionDefinition<TEvents>,
+) => ProjectionHandle {
   return function (
     definition: ProjectionDefinition<TEvents>,
   ): ProjectionHandle {

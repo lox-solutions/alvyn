@@ -95,7 +95,7 @@ describe("EventStore", () => {
       await expect(store.listStreams()).rejects.toThrow(
         EventStoreNotInitializedError,
       );
-      await expect(store.loadFrom("s-1", 1)).rejects.toThrow(
+      await expect(store.loadFrom("s-1", { fromVersion: 1 })).rejects.toThrow(
         EventStoreNotInitializedError,
       );
       await expect(store.loadWithSnapshot("s-1")).rejects.toThrow(
@@ -306,7 +306,7 @@ describe("EventStore", () => {
         ],
       });
 
-      const events = await store.loadFrom("LF-1", 2);
+      const events = await store.loadFrom("LF-1", { fromVersion: 2 });
       expect(events).toHaveLength(2);
       expect(events[0].type).toBe("B");
       expect(events[1].type).toBe("C");
@@ -506,9 +506,9 @@ describe("EventStore", () => {
           events: [{ type: "C", data: {} }],
         });
         expect.fail("Should have thrown");
-      } catch (e) {
-        expect(e).toBeInstanceOf(OptimisticConcurrencyError);
-        const err = e as OptimisticConcurrencyError;
+      } catch (error) {
+        expect(error).toBeInstanceOf(OptimisticConcurrencyError);
+        const err = error as OptimisticConcurrencyError;
         expect(err.streamId).toBe("OCC-4");
         expect(err.expectedVersion).toBe(1);
         expect(err.actualVersion).toBe(2);

@@ -13,6 +13,12 @@ const IV_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
 const KEY_LENGTH = 32; // 256 bits
 
+export interface CryptoKeyOptions {
+  client: PoolClient;
+  schema: string;
+  keyId: string;
+}
+
 /**
  * Manages per-entity AES-256 encryption keys using envelope encryption.
  *
@@ -39,11 +45,8 @@ export class CryptoKeyManager {
    * Creates a new per-entity encryption key and stores it encrypted in the database.
    * If a key with this ID already exists (and is not revoked), this is a no-op.
    */
-  async createKey(
-    client: PoolClient,
-    schema: string,
-    keyId: string,
-  ): Promise<void> {
+  async createKey(options: CryptoKeyOptions): Promise<void> {
+    const { client, schema, keyId } = options;
     const entityKey = randomBytes(KEY_LENGTH);
     const encryptedKey = this.encryptWithMasterKey(entityKey);
 
@@ -60,11 +63,8 @@ export class CryptoKeyManager {
    * Returns null if the key has been revoked (tombstone semantics).
    * Throws CryptoKeyNotFoundError if the key does not exist at all.
    */
-  async getKey(
-    client: PoolClient,
-    schema: string,
-    keyId: string,
-  ): Promise<Buffer | null> {
+  async getKey(options: CryptoKeyOptions): Promise<Buffer | null> {
+    const { client, schema, keyId } = options;
     const result = await client.query<{
       encrypted_key: Buffer;
       revoked_at: Date | null;
@@ -92,14 +92,10 @@ export class CryptoKeyManager {
    * Unlike getKey(), this throws if the key is revoked — you cannot
    * encrypt new events with a revoked key.
    */
-  async getKeyForEncryption(
-    client: PoolClient,
-    schema: string,
-    keyId: string,
-  ): Promise<Buffer> {
-    const key = await this.getKey(client, schema, keyId);
+  async getKeyForEncryption(options: CryptoKeyOptions): Promise<Buffer> {
+    const key = await this.getKey(options);
     if (key === null) {
-      throw new CryptoKeyRevokedError(keyId);
+      throw new CryptoKeyRevokedError(options.keyId);
     }
     return key;
   }
@@ -109,11 +105,8 @@ export class CryptoKeyManager {
    * Events encrypted with this key will be returned as tombstones on read.
    * The key is NOT deleted — this is intentional for audit trails.
    */
-  async revokeKey(
-    client: PoolClient,
-    schema: string,
-    keyId: string,
-  ): Promise<void> {
+  async revokeKey(options: CryptoKeyOptions): Promise<void> {
+    const { client, schema, keyId } = options;
     const result = await client.query(
       `UPDATE ${schema}.crypto_keys SET revoked_at = now() WHERE key_id = $1 AND revoked_at IS NULL`,
       [keyId],

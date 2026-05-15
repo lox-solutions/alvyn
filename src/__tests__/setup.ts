@@ -25,11 +25,10 @@ export async function startPostgres(): Promise<void> {
  * Call this in afterAll() of the last suite, or let process exit handle it.
  */
 export async function stopPostgres(): Promise<void> {
-  if (container) {
-    await container.stop();
-    container = null;
-    connectionUri = null;
-  }
+  if (!container) return;
+  await container.stop();
+  container = null;
+  connectionUri = null;
 }
 
 /**

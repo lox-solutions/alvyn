@@ -53,11 +53,12 @@ function isSafePathSegment(segment: string): boolean {
   );
 }
 
-function setNestedField(
-  obj: Record<string, unknown>,
-  path: string,
-  value: unknown,
-): void {
+function setNestedField(options: {
+  obj: Record<string, unknown>;
+  path: string;
+  value: unknown;
+}): void {
+  const { obj, path, value } = options;
   const parts = path.split(".");
   if (parts.length === 0 || !parts.every(isSafePathSegment)) {
     return;
@@ -110,11 +111,12 @@ function removeNestedField(obj: Record<string, unknown>, path: string): void {
  * @param fields - Dot-path field names to encrypt (e.g. ["name", "address.street"])
  * @param aesKey - 256-bit AES key (Buffer, 32 bytes)
  */
-export function encryptFields(
-  data: Record<string, unknown>,
-  fields: string[],
-  aesKey: Buffer,
-): EncryptResult {
+export function encryptFields(options: {
+  data: Record<string, unknown>;
+  fields: string[];
+  aesKey: Buffer;
+}): EncryptResult {
+  const { data, fields, aesKey } = options;
   // Deep-clone to avoid mutating the original
   const cleanData = JSON.parse(JSON.stringify(data)) as Record<string, unknown>;
   const encryptedData: Record<string, EncryptedFieldEntry> = {};
@@ -155,11 +157,12 @@ export function encryptFields(
  * @param aesKey - 256-bit AES key (Buffer, 32 bytes)
  * @returns The full event data with decrypted PII fields restored
  */
-export function decryptFields(
-  cleanData: Record<string, unknown>,
-  encryptedData: Record<string, EncryptedFieldEntry>,
-  aesKey: Buffer,
-): Record<string, unknown> {
+export function decryptFields(options: {
+  cleanData: Record<string, unknown>;
+  encryptedData: Record<string, EncryptedFieldEntry>;
+  aesKey: Buffer;
+}): Record<string, unknown> {
+  const { cleanData, encryptedData, aesKey } = options;
   const result = JSON.parse(JSON.stringify(cleanData)) as Record<
     string,
     unknown
@@ -181,7 +184,7 @@ export function decryptFields(
     ]).toString("utf8");
 
     const value: unknown = JSON.parse(decrypted);
-    setNestedField(result, field, value);
+    setNestedField({ obj: result, path: field, value });
   }
 
   return result;

@@ -42,10 +42,9 @@ describe("Outbox", () => {
     // 1 event × 2 topics = 2 outbox entries
     expect(count).toBe(2);
     expect(received).toHaveLength(2);
-    expect(received.map((e) => e.topic).sort()).toEqual([
-      "notifications",
-      "orders",
-    ]);
+    expect(
+      received.map((e) => e.topic).sort((a, b) => a.localeCompare(b)),
+    ).toEqual(["notifications", "orders"]);
 
     // Verify CloudEvents payload structure
     const payload = received[0].payload as Record<string, unknown>;

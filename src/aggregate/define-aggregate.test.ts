@@ -93,7 +93,8 @@ describe("defineAggregate", () => {
       const store = new EventStore({ pool, schema: uniqueSchema() });
       await store.setup();
 
-      const result = await Order.append(store, "a1", {
+      const result = await Order.append(store, {
+        entityId: "a1",
         expectedVersion: -1,
         events: [
           { type: "OrderPlaced", data: { total: 50 } },
@@ -345,7 +346,8 @@ describe("defineAggregate", () => {
       await store.setup();
       await store.createCryptoKey("user:enc1");
 
-      await EncryptedUser.append(store, "enc1", {
+      await EncryptedUser.append(store, {
+        entityId: "enc1",
         expectedVersion: -1,
         events: [
           {
@@ -392,7 +394,8 @@ describe("defineAggregate", () => {
       await store.createCryptoKey("mix:m1");
 
       // Public event — no encryption needed, no cryptoKeyId resolved
-      await MixedAgg.append(store, "m1", {
+      await MixedAgg.append(store, {
+        entityId: "m1",
         expectedVersion: -1,
         events: [{ type: "Public", data: { info: "hello" } }],
       });

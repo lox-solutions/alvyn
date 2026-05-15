@@ -28,11 +28,12 @@ function snapshotReplacer(_key: string, value: unknown): unknown {
  * Loads the latest snapshot for a stream.
  * Returns null if no snapshot exists.
  */
-export async function loadSnapshot<T = unknown>(
-  client: PoolClient,
-  schema: string,
-  streamId: string,
-): Promise<Snapshot<T> | null> {
+export async function loadSnapshot<T = unknown>(options: {
+  client: PoolClient;
+  schema: string;
+  streamId: string;
+}): Promise<Snapshot<T> | null> {
+  const { client, schema, streamId } = options;
   const result = await client.query<SnapshotRow>(
     `SELECT stream_id, stream_version, snapshot_type, data, created_at
      FROM ${schema}.snapshots
@@ -59,11 +60,12 @@ export async function loadSnapshot<T = unknown>(
  * Saves a snapshot for a stream.
  * Uses INSERT ... ON CONFLICT to always keep only the latest snapshot per stream.
  */
-export async function saveSnapshot<T = unknown>(
-  client: PoolClient,
-  schema: string,
-  input: SaveSnapshotInput<T>,
-): Promise<void> {
+export async function saveSnapshot<T = unknown>(options: {
+  client: PoolClient;
+  schema: string;
+  input: SaveSnapshotInput<T>;
+}): Promise<void> {
+  const { client, schema, input } = options;
   await client.query(
     `INSERT INTO ${schema}.snapshots (stream_id, stream_version, snapshot_type, data)
      VALUES ($1, $2, $3, $4)
@@ -86,11 +88,12 @@ export async function saveSnapshot<T = unknown>(
  * Used when a crypto key is revoked — the snapshot may contain PII
  * and should be invalidated to force a full replay (which will produce tombstones).
  */
-export async function deleteSnapshot(
-  client: PoolClient,
-  schema: string,
-  streamId: string,
-): Promise<void> {
+export async function deleteSnapshot(options: {
+  client: PoolClient;
+  schema: string;
+  streamId: string;
+}): Promise<void> {
+  const { client, schema, streamId } = options;
   await client.query(`DELETE FROM ${schema}.snapshots WHERE stream_id = $1`, [
     streamId,
   ]);

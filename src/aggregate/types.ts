@@ -123,8 +123,8 @@ export interface AggregateHandle<TEvents extends EventMap, TState> {
    */
   append(
     eventStore: EventStore,
-    entityId: string,
     input: {
+      entityId: string;
       expectedVersion: number;
       events: AggregateEventInput<TEvents>[];
       outboxTopics?: string[];
