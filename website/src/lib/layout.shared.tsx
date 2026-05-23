@@ -1,4 +1,5 @@
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
+import { VersionSwitcher } from '@/components/version-switcher';
 import { appName, basePath, gitConfig } from './shared';
 
 export function baseOptions(): BaseLayoutProps {
@@ -18,6 +19,13 @@ export function baseOptions(): BaseLayoutProps {
         </>
       ),
     },
+    links: [
+      {
+        type: 'custom',
+        children: <VersionSwitcher />,
+        secondary: true,
+      },
+    ],
     githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
   };
 }

@@ -6,7 +6,7 @@ const withMDX = createMDX();
 const config = {
   reactStrictMode: true,
   output: 'export',
-  basePath: '/alvyn',
+  basePath: process.env.BASE_PATH || '/alvyn',
 };
 
 export default withMDX(config);
