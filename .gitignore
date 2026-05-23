@@ -3,3 +3,4 @@ dist/
 *.tsbuildinfo
 .idea/
 coverage/
+.junie
