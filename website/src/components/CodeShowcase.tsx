@@ -86,6 +86,45 @@ const { state, version } = await Cart.load(eventStore, entityId);`,
   }
 ];
 
+function tokenizeLine(line: string) {
+  const commentIdx = line.indexOf('//');
+  let codePart = line;
+  let commentPart = '';
+  if (commentIdx !== -1) {
+    codePart = line.slice(0, commentIdx);
+    commentPart = line.slice(commentIdx);
+  }
+
+  const tokenRegex = /('[^']*'|`[^`]*`|"[^"]*"|\b(?:import|from|const|await|export|type|interface|new|return|as|string|number|boolean|any|void)\b|\b(?:true|false|[0-9]+(?:\.[0-9]+)?)\b|\b[A-Z][a-zA-Z0-9_]*\b)/g;
+
+  const parts = codePart.split(tokenRegex);
+  const elements: React.ReactNode[] = [];
+
+  parts.forEach((part, i) => {
+    if (!part) return;
+
+    if ((part.startsWith("'") && part.endsWith("'")) || 
+        (part.startsWith("`") && part.endsWith("`")) || 
+        (part.startsWith('"') && part.endsWith('"'))) {
+      elements.push(<span key={i} className="text-emerald-400 font-medium">{part}</span>);
+    } else if (['import', 'from', 'const', 'await', 'export', 'type', 'interface', 'new', 'return', 'as', 'string', 'number', 'boolean', 'any', 'void'].includes(part)) {
+      elements.push(<span key={i} className="text-purple-400 font-semibold">{part}</span>);
+    } else if (['true', 'false'].includes(part) || (part.trim() !== '' && !isNaN(Number(part)))) {
+      elements.push(<span key={i} className="text-amber-400 font-medium">{part}</span>);
+    } else if (/^[A-Z][a-zA-Z0-9_]*$/.test(part)) {
+      elements.push(<span key={i} className="text-blue-400 font-medium">{part}</span>);
+    } else {
+      elements.push(<span key={i}>{part}</span>);
+    }
+  });
+
+  if (commentPart) {
+    elements.push(<span key="comment" className="text-zinc-500/80 italic">{commentPart}</span>);
+  }
+
+  return elements;
+}
+
 export function CodeShowcase() {
   const [activeTab, setActiveTab] = useState('events');
   const [copied, setCopied] = useState(false);
@@ -167,34 +206,12 @@ export function CodeShowcase() {
           <pre className="whitespace-pre">
             <code>
               {activeData.code.split('\n').map((line, idx) => (
-                <div key={idx} className="table-row">
-                  <span className="table-cell text-right pr-4 text-zinc-700 select-none w-8 text-[10px]">
+                <div key={idx} className="flex items-start">
+                  <span className="w-8 select-none text-right pr-4 text-zinc-700 text-[10px] shrink-0">
                     {idx + 1}
                   </span>
-                  <span className="table-cell">
-                    {/* Basic visual coloring of strings and comments for premium presentation */}
-                    {line.trim().startsWith('//') ? (
-                      <span className="text-zinc-500/80 italic">{line}</span>
-                    ) : (line.includes('type ') || line.includes('interface ') || line.includes('import ') || line.includes('const ') || line.includes('await ') || line.includes('export ')) ? (
-                      <span>
-                        {line.split(' ').map((word, i) => {
-                          const cleanWord = word.replace(/[;,:{()}]/g, '');
-                          const isKeyword = ['type', 'interface', 'import', 'from', 'export', 'const', 'await', 'return', 'switch', 'case', 'default'].includes(cleanWord);
-                          return (
-                            <span key={i}>
-                              {isKeyword ? (
-                                <span className="text-purple-400 font-semibold">{word}</span>
-                              ) : (
-                                word
-                              )}
-                              {i < line.split(' ').length - 1 ? ' ' : ''}
-                            </span>
-                          );
-                        })}
-                      </span>
-                    ) : (
-                      line
-                    )}
+                  <span className="flex-1 whitespace-pre">
+                    {tokenizeLine(line).length > 0 ? tokenizeLine(line) : '\u200B'}
                   </span>
                 </div>
               ))}
