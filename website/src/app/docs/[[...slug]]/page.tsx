@@ -61,8 +61,22 @@ export async function generateMetadata(
   const page = source.getPage(params.slug);
   if (!page) notFound();
 
+  const slugPath = (params.slug || []).join("/");
+  const pageUrl = `/docs/${slugPath}`;
+
   return {
     title: page.data.title,
     description: page.data.description,
+    openGraph: {
+      title: `${page.data.title} | Alvyn`,
+      description: page.data.description,
+      type: "article",
+      url: pageUrl,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `${page.data.title} | Alvyn`,
+      description: page.data.description,
+    },
   };
 }
