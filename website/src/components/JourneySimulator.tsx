@@ -169,18 +169,17 @@ export function JourneySimulator() {
   const ai = getAiInsight();
 
   return (
-    <div className="w-full max-w-5xl bg-fd-background border border-fd-border rounded-2xl overflow-hidden shadow-2xl relative">
+    <div className="w-full max-w-5xl bg-zinc-950 border border-zinc-900 rounded-3xl overflow-hidden shadow-2xl relative">
       {/* Simulation Controller */}
-      <div className="p-6 border-b border-fd-border bg-fd-accent/20 flex flex-col md:flex-row justify-between items-center gap-4">
+      <div className="p-6 border-b border-zinc-900 bg-zinc-900/30 flex flex-col md:flex-row justify-between items-center gap-4">
         <div className="text-left">
-          <h3 className="text-sm font-bold uppercase tracking-wider text-fd-primary flex items-center gap-2">
+          <h3 className="text-sm font-semibold tracking-wide text-zinc-100 flex items-center gap-2">
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-fd-primary opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-fd-primary"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]"></span>
             </span>
             Live Domain Simulator
           </h3>
-          <p className="text-xs text-fd-muted-foreground mt-1">
+          <p className="text-xs text-zinc-400 mt-1">
             Simulate a member book-borrowing journey. Compare Traditional CRUD against Alvyn Event Sourcing.
           </p>
         </div>
@@ -188,10 +187,12 @@ export function JourneySimulator() {
           <button
             onClick={() => setStep(1)}
             disabled={step >= 1}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium transition-all ${
               step >= 1
-                ? 'bg-fd-muted/30 text-fd-muted-foreground cursor-not-allowed'
-                : 'bg-fd-accent hover:bg-fd-accent/80 text-fd-foreground border border-fd-border cursor-pointer'
+                ? 'bg-zinc-950 text-zinc-600 border border-zinc-900/50 cursor-not-allowed opacity-40'
+                : step === 0
+                ? 'bg-white text-black font-semibold shadow-md cursor-pointer hover:bg-zinc-200'
+                : 'bg-zinc-900 border border-zinc-800 text-zinc-300 hover:bg-zinc-800 cursor-pointer'
             }`}
           >
             <BookOpen size={13} />
@@ -200,10 +201,12 @@ export function JourneySimulator() {
           <button
             onClick={() => setStep(2)}
             disabled={step !== 1}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium transition-all ${
               step !== 1
-                ? 'bg-fd-muted/30 text-fd-muted-foreground cursor-not-allowed'
-                : 'bg-fd-accent hover:bg-fd-accent/80 text-fd-foreground border border-fd-border cursor-pointer'
+                ? 'bg-zinc-950 text-zinc-600 border border-zinc-900/50 cursor-not-allowed opacity-40'
+                : step === 1
+                ? 'bg-white text-black font-semibold shadow-md cursor-pointer hover:bg-zinc-200'
+                : 'bg-zinc-900 border border-zinc-800 text-zinc-300 hover:bg-zinc-800 cursor-pointer'
             }`}
           >
             <Calendar size={13} />
@@ -212,10 +215,12 @@ export function JourneySimulator() {
           <button
             onClick={() => setStep(3)}
             disabled={step !== 2}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium transition-all ${
               step !== 2
-                ? 'bg-fd-muted/30 text-fd-muted-foreground cursor-not-allowed'
-                : 'bg-fd-accent hover:bg-fd-accent/80 text-fd-foreground border border-fd-border cursor-pointer'
+                ? 'bg-zinc-950 text-zinc-600 border border-zinc-900/50 cursor-not-allowed opacity-40'
+                : step === 2
+                ? 'bg-white text-black font-semibold shadow-md cursor-pointer hover:bg-zinc-200'
+                : 'bg-zinc-900 border border-zinc-800 text-zinc-300 hover:bg-zinc-800 cursor-pointer'
             }`}
           >
             <ArrowLeftRight size={13} />
@@ -224,10 +229,10 @@ export function JourneySimulator() {
           <button
             onClick={() => setStep(4)}
             disabled={step !== 3}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium transition-all ${
               step !== 3
-                ? 'bg-fd-muted/30 text-fd-muted-foreground cursor-not-allowed'
-                : 'bg-fd-primary text-fd-primary-foreground hover:opacity-90 shadow-md cursor-pointer'
+                ? 'bg-zinc-950 text-zinc-600 border border-zinc-900/50 cursor-not-allowed opacity-40'
+                : 'bg-white text-black font-semibold shadow-md cursor-pointer hover:bg-zinc-200'
             }`}
           >
             <CheckCircle2 size={13} />
@@ -236,7 +241,7 @@ export function JourneySimulator() {
           {step > 0 && (
             <button
               onClick={reset}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/20 cursor-pointer"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold transition-all bg-red-950/20 text-red-400 border border-red-900/30 hover:bg-red-900/20 cursor-pointer"
             >
               <RefreshCw size={13} />
               Reset
@@ -246,15 +251,15 @@ export function JourneySimulator() {
       </div>
 
       {/* Main Panel grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-fd-border h-[460px] overflow-hidden">
+      <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-zinc-900 h-[460px] overflow-hidden">
         {/* CRUD Database */}
-        <div className="flex flex-col h-full bg-fd-background text-left">
-          <div className="px-5 py-3 border-b border-fd-border bg-fd-accent/10 flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-fd-muted-foreground flex items-center gap-2">
-              <Database size={14} className="text-red-400" />
+        <div className="flex flex-col h-full bg-zinc-950 text-left">
+          <div className="px-5 py-3 border-b border-zinc-900 bg-zinc-900/10 flex items-center justify-between">
+            <span className="text-xs font-semibold tracking-wide text-zinc-400 flex items-center gap-2">
+              <Database size={14} className="text-red-500/80" />
               Traditional CRUD PostgreSQL
             </span>
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20">
+            <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/10">
               State-Destructive
             </span>
           </div>
@@ -262,53 +267,53 @@ export function JourneySimulator() {
           <div className="flex-1 p-5 overflow-auto font-mono text-xs select-none">
             {crud ? (
               <div className="space-y-4">
-                <div className="flex items-center justify-between text-[11px] text-fd-muted-foreground pb-2 border-b border-fd-border/50">
+                <div className="flex items-center justify-between text-[11px] text-zinc-500 pb-2 border-b border-zinc-900">
                   <span>Table: {crud.table}</span>
-                  <span className="text-red-400 animate-pulse flex items-center gap-1">
+                  <span className="text-red-400 flex items-center gap-1">
                     <AlertTriangle size={10} /> Row Updated (Overwrite)
                   </span>
                 </div>
-                <div className="bg-fd-accent/25 border border-fd-border/50 rounded-lg p-4 space-y-2 relative overflow-hidden">
-                  <div className="absolute top-2 right-2 bg-fd-border px-1.5 py-0.5 rounded text-[9px] text-fd-muted-foreground font-semibold">
+                <div className="bg-zinc-900/10 border border-zinc-900 rounded-2xl p-4 space-y-2 relative overflow-hidden">
+                  <div className="absolute top-2 right-2 bg-zinc-900 px-2 py-0.5 rounded text-[9px] text-zinc-500 font-medium border border-zinc-800">
                     1 row in table
                   </div>
                   <div>
-                    <span className="text-purple-400">SELECT</span> * <span className="text-purple-400">FROM</span> {crud.table} <span className="text-purple-400">WHERE</span> id = <span className="text-amber-300">&apos;{crud.row.id}&apos;</span>;
+                    <span className="text-zinc-500">SELECT</span> * <span className="text-zinc-500">FROM</span> {crud.table} <span className="text-zinc-500">WHERE</span> id = <span className="text-zinc-300">&apos;{crud.row.id}&apos;</span>;
                   </div>
-                  <div className="text-fd-muted-foreground pt-3 space-y-1">
+                  <div className="text-zinc-400 pt-3 space-y-1">
                     <div>{`{`}</div>
-                    <div className="pl-4">id: <span className="text-amber-300">&apos;{crud.row.id}&apos;</span>,</div>
-                    <div className="pl-4">member_id: <span className="text-amber-300">&apos;{crud.row.member_id}&apos;</span>,</div>
+                    <div className="pl-4">id: <span className="text-zinc-300">&apos;{crud.row.id}&apos;</span>,</div>
+                    <div className="pl-4">member_id: <span className="text-zinc-300">&apos;{crud.row.member_id}&apos;</span>,</div>
                     <div className="pl-4">
-                      book_title: <span className="text-emerald-400 font-bold">&apos;{crud.row.book_title}&apos;</span>,{" "}
-                      {step >= 3 && <span className="text-red-400 text-[10px] font-semibold">(overwrote prompt book)</span>}
+                      book_title: <span className="text-white font-medium">&apos;{crud.row.book_title}&apos;</span>,{" "}
+                      {step >= 3 && <span className="text-red-500/60 text-[10px] font-medium">(overwrote prompt book)</span>}
                     </div>
                     <div className="pl-4">
-                      due_date: <span className="text-amber-300">&apos;{crud.row.due_date}&apos;</span>,{" "}
-                      {step >= 2 && <span className="text-red-400 text-[10px] font-semibold">(overwrote original date)</span>}
+                      due_date: <span className="text-zinc-300">&apos;{crud.row.due_date}&apos;</span>,{" "}
+                      {step >= 2 && <span className="text-red-500/60 text-[10px] font-medium">(overwrote original date)</span>}
                     </div>
                     <div className="pl-4">
-                      status: <span className="text-emerald-400 font-bold">&apos;{crud.row.status}&apos;</span>,{" "}
-                      {step === 4 && <span className="text-red-400 text-[10px] font-semibold">(overwrote active/borrowed)</span>}
+                      status: <span className="text-white font-medium">&apos;{crud.row.status}&apos;</span>,{" "}
+                      {step === 4 && <span className="text-red-500/60 text-[10px] font-medium">(overwrote active/borrowed)</span>}
                     </div>
                     <div className="pl-4">
-                      fine_assessed: <span className="text-amber-300">{crud.row.fine_assessed}.00</span>,{" "}
-                      {step >= 3 && <span className="text-red-400 text-[10px] font-semibold">(overwrote 0.00)</span>}
+                      fine_assessed: <span className="text-zinc-300">{crud.row.fine_assessed}.00</span>,{" "}
+                      {step >= 3 && <span className="text-red-500/60 text-[10px] font-medium">(overwrote 0.00)</span>}
                     </div>
-                    <div className="pl-4">updated_at: <span className="text-amber-300">&apos;{crud.row.updated_at}&apos;</span></div>
+                    <div className="pl-4">updated_at: <span className="text-zinc-300">&apos;{crud.row.updated_at}&apos;</span></div>
                     <div>{`}`}</div>
                   </div>
                 </div>
-                <div className="text-[11px] text-red-400/80 bg-red-500/5 rounded p-3 border border-red-500/10 flex gap-2">
-                  <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                <div className="text-[11px] text-red-400/80 bg-red-950/10 rounded-xl p-3 border border-red-950/20 flex gap-2 leading-relaxed">
+                  <AlertTriangle size={14} className="shrink-0 mt-0.5 text-red-400" />
                   <span>
                     No historical trajectory remains in the database. The system completely forgets the prompt engineering book, the extension, and the lost-then-returned saga.
                   </span>
                 </div>
               </div>
             ) : (
-              <div className="h-full flex flex-col items-center justify-center text-center text-fd-muted-foreground p-6">
-                <Database size={24} className="mb-3 text-fd-muted-foreground/50" />
+              <div className="h-full flex flex-col items-center justify-center text-center text-zinc-500 p-6">
+                <Database size={24} className="mb-3 text-zinc-700" />
                 <p>Database is empty.</p>
                 <p className="text-[11px] mt-1">Start the simulation by clicking "Borrow Book".</p>
               </div>
@@ -317,13 +322,13 @@ export function JourneySimulator() {
         </div>
 
         {/* Alvyn Event Sourcing */}
-        <div className="flex flex-col h-full bg-fd-accent/5 text-left">
-          <div className="px-5 py-3 border-b border-fd-border bg-fd-accent/10 flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-fd-primary flex items-center gap-2">
-              <Sparkles size={14} />
+        <div className="flex flex-col h-full bg-zinc-950/40 text-left">
+          <div className="px-5 py-3 border-b border-zinc-900 bg-zinc-900/10 flex items-center justify-between">
+            <span className="text-xs font-semibold tracking-wide text-zinc-100 flex items-center gap-2">
+              <Sparkles size={14} className="text-emerald-500" />
               Alvyn Immutable Event Log
             </span>
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/10">
               Append-Only (No Overwrites)
             </span>
           </div>
@@ -331,27 +336,27 @@ export function JourneySimulator() {
           <div className="flex-1 p-5 overflow-auto font-mono text-xs space-y-3">
             {events.length > 0 ? (
               <div className="space-y-3">
-                <div className="flex items-center justify-between text-[11px] text-fd-muted-foreground pb-2 border-b border-fd-border/50">
+                <div className="flex items-center justify-between text-[11px] text-zinc-500 pb-2 border-b border-zinc-900">
                   <span>Stream: loan-7b29</span>
                   <span className="text-emerald-400 font-semibold">{events.length} events recorded</span>
                 </div>
                 <div className="space-y-2 max-h-[340px] overflow-auto pr-1">
-                  {events.map((evt, i) => (
+                  {[...events].reverse().map((evt, i) => (
                     <div
                       key={evt.id}
-                      className="border border-emerald-500/10 bg-emerald-500/5 rounded-lg p-3 space-y-1 relative animate-in fade-in slide-in-from-bottom-2 duration-300"
+                      className="border border-zinc-900 bg-zinc-900/30 rounded-2xl p-4 space-y-1 relative animate-in fade-in slide-in-from-top-2 duration-300"
                     >
-                      <div className="flex items-center justify-between text-[10px] text-fd-muted-foreground">
+                      <div className="flex items-center justify-between text-[10px] text-zinc-500">
                         <div className="flex items-center gap-2">
                           <span className="text-emerald-400 font-bold">{evt.type}</span>
-                          <span className="text-[9px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1 rounded-sm">
-                            Event #{i+1}
+                          <span className="text-[9px] bg-emerald-950/40 text-emerald-400 border border-emerald-900/30 px-1.5 py-0.5 rounded">
+                            Event #{events.length - i}
                           </span>
                         </div>
                         <span>{evt.time}</span>
                       </div>
-                      <div className="text-fd-foreground font-semibold text-[11px]">{evt.desc}</div>
-                      <pre className="text-[10px] text-fd-muted-foreground bg-black/30 p-1.5 rounded mt-1.5 overflow-x-auto">
+                      <div className="text-zinc-200 font-medium text-[11px] mt-1">{evt.desc}</div>
+                      <pre className="text-[10px] text-zinc-400 bg-black/40 border border-zinc-900 p-2 rounded-xl mt-2 overflow-x-auto">
                         {JSON.stringify(evt.data, null, 2)}
                       </pre>
                     </div>
@@ -359,8 +364,8 @@ export function JourneySimulator() {
                 </div>
               </div>
             ) : (
-              <div className="h-full flex flex-col items-center justify-center text-center text-fd-muted-foreground p-6">
-                <Sparkles size={24} className="mb-3 text-fd-muted-foreground/30 animate-pulse" />
+              <div className="h-full flex flex-col items-center justify-center text-center text-zinc-500 p-6">
+                <Sparkles size={24} className="mb-3 text-zinc-700" />
                 <p>No events emitted yet.</p>
                 <p className="text-[11px] mt-1">Alvyn is ready to stream immutable timeline facts.</p>
               </div>
@@ -370,38 +375,38 @@ export function JourneySimulator() {
       </div>
 
       {/* AI Memory Agent Insights */}
-      <div className="p-6 border-t border-fd-border bg-fd-accent/10 flex flex-col md:flex-row gap-6 items-start text-left">
+      <div className="p-6 border-t border-zinc-900 bg-zinc-950 flex flex-col md:flex-row gap-6 items-start text-left">
         <div className="flex items-center gap-3 shrink-0">
-          <div className="p-2.5 rounded-xl bg-fd-primary/10 border border-fd-primary/20 text-fd-primary">
-            <Brain size={20} className="animate-pulse" />
+          <div className="p-3 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-300">
+            <Brain size={20} />
           </div>
           <div>
-            <h4 className="text-xs font-bold uppercase tracking-wider text-fd-foreground">
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-200">
               AI System Intelligence
             </h4>
-            <span className="text-[10px] text-fd-muted-foreground block font-mono">
+            <span className="text-[10px] text-zinc-500 block font-mono">
               Model Capacity Multiplier
             </span>
           </div>
         </div>
 
         <div className="flex-1 space-y-3">
-          <div className="text-sm font-bold text-fd-foreground flex items-center gap-1.5">
-            {step > 0 && <span className="inline-block w-2 h-2 rounded-full bg-fd-primary animate-ping" />}
+          <div className="text-sm font-semibold text-white flex items-center gap-1.5">
+            {step > 0 && <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" />}
             {ai.title}
           </div>
-          <p className="text-xs text-fd-muted-foreground leading-relaxed">
+          <p className="text-xs text-zinc-400 leading-relaxed font-light">
             {ai.text}
           </p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-fd-border/30">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-zinc-900">
             <div>
-              <span className="text-[10px] font-bold text-red-400 block mb-1">AI fed with CRUD snapshot:</span>
-              <span className="text-xs text-fd-muted-foreground block leading-relaxed">{ai.crudNote}</span>
+              <span className="text-[10px] font-semibold text-red-400 block mb-1 uppercase tracking-wider">AI fed with CRUD snapshot:</span>
+              <span className="text-xs text-zinc-500 block leading-relaxed">{ai.crudNote}</span>
             </div>
             <div>
-              <span className="text-[10px] font-bold text-emerald-400 block mb-1">AI fed with Alvyn Event Log:</span>
-              <span className="text-xs text-fd-muted-foreground block leading-relaxed font-semibold text-fd-foreground">{ai.eventNote}</span>
+              <span className="text-[10px] font-semibold text-emerald-400 block mb-1 uppercase tracking-wider">AI fed with Alvyn Event Log:</span>
+              <span className="text-xs text-zinc-300 block leading-relaxed font-semibold text-white">{ai.eventNote}</span>
             </div>
           </div>
         </div>
