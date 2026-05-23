@@ -1,0 +1,133 @@
+name: Docs Version
+
+on:
+  # Snapshot docs on minor releases (tag ends with .0)
+  release:
+    types: [published]
+  # Rebuild old version docs from docs/v* branches
+  push:
+    branches: ['docs/v*']
+    paths:
+      - 'website/**'
+  # Manual trigger for rebuilding a specific version
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (e.g. 0.1)'
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: deploy-gh-pages
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'release' && endsWith(github.event.release.tag_name, '.0'))
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            BRANCH="${GITHUB_REF#refs/heads/docs/v}"
+            echo "version=$BRANCH" >> "$GITHUB_OUTPUT"
+          else
+            TAG="${{ github.event.release.tag_name }}"
+            VERSION="${TAG#v}"
+            MINOR="${VERSION%.*}"
+            echo "version=$MINOR" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - name: Build versioned docs
+        run: pnpm run build
+        working-directory: website
+        env:
+          BASE_PATH: /alvyn/v${{ steps.version.outputs.version }}
+
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./website/out
+          destination_dir: v${{ steps.version.outputs.version }}
+          keep_files: true
+
+      # Create docs branch for future doc-only fixes (only on new minor release)
+      - name: Create docs branch
+        if: github.event_name == 'release'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git push origin HEAD:"refs/heads/docs/v${VERSION}" --force
+
+      # Update versions.json in source and open a PR (only on new minor release)
+      - name: Update versions.json
+        if: github.event_name == 'release'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          echo "Updating versions.json for v${VERSION}"
+
+      - uses: actions/checkout@v4
+        if: github.event_name == 'release'
+        with:
+          ref: main
+          path: main-checkout
+
+      - name: Commit and push versions.json
+        id: push
+        if: github.event_name == 'release'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          cd main-checkout
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "ci/add-docs-version-${VERSION}"
+
+          # Use jq to add the new version and re-mark latest, but only if it doesn't exist
+          jq --arg v "$VERSION" --arg url "/alvyn/v$VERSION/" '
+            if any(.[]; .version == $v) then
+              .
+            else
+              map(if .latest then .latest = false | .url = "/alvyn/v\(.version)/" else . end) |
+              [{"version": $v, "url": "/alvyn/", "latest": true}] + .
+            end
+          ' website/public/versions.json > tmp.json && mv tmp.json website/public/versions.json
+
+          if git diff --quiet website/public/versions.json; then
+            echo "No changes to versions.json"
+          else
+            git add website/public/versions.json
+            git commit -m "docs: add v${VERSION} to version list"
+            git push origin "ci/add-docs-version-${VERSION}"
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create PR
+        if: github.event_name == 'release' && steps.push.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          gh pr create \
+            --title "docs: add v${VERSION} to version switcher" \
+            --body "Automated PR to update the docs version switcher after v${VERSION}.0 release." \
+            --base main \
+            --head "ci/add-docs-version-${VERSION}"

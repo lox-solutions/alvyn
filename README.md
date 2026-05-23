@@ -127,6 +127,80 @@ The test suite uses [Testcontainers](https://testcontainers.com/) to spin up Pos
 
 Please open an [issue](https://github.com/lox-solutions/alvyn/issues) or [pull request](https://github.com/lox-solutions/alvyn/pulls) on GitHub.
 
+## Maintenance & Releases
+
+### Branch Conventions
+
+| Branch | Purpose |
+|--------|---------|
+| `main` | Active development (next release) |
+| `release/vX.Y` | Maintenance branch for patching older Alvyn versions (CVEs, bugfixes) |
+| `docs/vX.Y` | Docs source for version X.Y (doc-only fixes without a code release) |
+| `gh-pages` | Static built output served by GitHub Pages |
+
+### Versioned Documentation
+
+Documentation is versioned at the **minor** level. Each minor release (e.g. `v0.2.0`) creates a frozen docs snapshot at `/alvyn/v0.2/`. The latest version is always served at `/alvyn/`.
+
+A version switcher dropdown in the docs navbar allows users to navigate between versions.
+
+### How To: Fix a typo in old docs
+
+If you need to fix documentation for an older version (e.g. v0.1) without releasing a new Alvyn version:
+
+```bash
+git checkout docs/v0.1
+git checkout -b fix/docs-v0.1-typo
+# Make your fix in website/
+git commit -m "docs: fix typo in v0.1 docs"
+git push origin fix/docs-v0.1-typo
+# Open a PR targeting docs/v0.1 — requires approval
+```
+
+Once the PR is merged into `docs/v0.1`, CI will automatically rebuild and redeploy only the `v0.1` docs subfolder. The Alvyn package version remains unchanged.
+
+### How To: Patch an older Alvyn version (CVE/bugfix)
+
+When a security fix or critical bugfix needs to be backported to an older version:
+
+```bash
+# 1. Create maintenance branch from the release tag (if it doesn't exist)
+git checkout -b release/v0.1 v0.1.2  # from the latest patch tag of that minor
+
+# 2. Create a fix branch
+git checkout -b fix/cve-xxxx-release-v0.1
+
+# 3. Apply the fix
+git cherry-pick <commit-sha>  # or fix manually
+git push origin fix/cve-xxxx-release-v0.1
+
+# 4. Open a PR targeting release/v0.1 — requires approval
+#    release-please will create a PR to bump 0.1.2 → 0.1.3
+```
+
+After the release PR is merged and the new version is published:
+- Update the `docs/v0.1` branch if the docs need changes (via PR)
+- CI will trigger a docs rebuild for that version
+
+### How To: Deploy latest docs (no release)
+
+Push changes to `website/` on `main` (via PR). CI automatically rebuilds and deploys the latest docs while preserving all versioned snapshots.
+
+### Branch Protection
+
+All protected branches require pull requests with at least one approval before merging. Direct pushes are not allowed.
+
+| Branch pattern | Protection |
+|---|---|
+| `main` | Require PR + approval, status checks must pass |
+| `release/v*` | Require PR + approval, status checks must pass |
+| `docs/v*` | Require PR + approval |
+| `gh-pages` | CI-only (no manual pushes) |
+
+### GitHub Pages Setup
+
+GitHub Pages must be configured to deploy from the `gh-pages` branch (root). This is a one-time setting: **Settings > Pages > Source > Deploy from branch > `gh-pages` / `/ (root)`**.
+
 ## License
 
 [MIT](LICENSE)
