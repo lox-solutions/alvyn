@@ -1,12 +1,12 @@
-import { createMDX } from 'fumadocs-mdx/next';
+import { createMDX } from "fumadocs-mdx/next";
 
 const withMDX = createMDX();
 
 /** @type {import('next').NextConfig} */
 const config = {
   reactStrictMode: true,
-  output: 'export',
-  basePath: '/alvyn',
+  output: "export",
+  basePath: "/alvyn",
 };
 
 export default withMDX(config);

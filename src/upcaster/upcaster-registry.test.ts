@@ -15,7 +15,11 @@ describe("UpcasterRegistry", () => {
         }),
       });
 
-      const result = registry.upcast("OrderPlaced", 1, { total: 100 });
+      const result = registry.upcast({
+        eventType: "OrderPlaced",
+        storedSchemaVersion: 1,
+        data: { total: 100 },
+      });
       expect(result).toEqual({ total: 100, currency: "EUR" });
     });
 
@@ -40,14 +44,22 @@ describe("UpcasterRegistry", () => {
         }),
       });
 
-      const result = registry.upcast("UserCreated", 1, { name: "Alice" });
+      const result = registry.upcast({
+        eventType: "UserCreated",
+        storedSchemaVersion: 1,
+        data: { name: "Alice" },
+      });
       expect(result).toEqual({ name: "Alice", role: "user", active: true });
     });
 
     it("returns data unchanged when no upcasters registered for event type", () => {
       const registry = new UpcasterRegistry();
       const data = { foo: "bar" };
-      const result = registry.upcast("UnknownEvent", 1, data);
+      const result = registry.upcast({
+        eventType: "UnknownEvent",
+        storedSchemaVersion: 1,
+        data,
+      });
       expect(result).toBe(data); // same reference
     });
 
@@ -64,7 +76,11 @@ describe("UpcasterRegistry", () => {
       });
 
       const data = { total: 100, currency: "EUR" };
-      const result = registry.upcast("OrderPlaced", 2, data);
+      const result = registry.upcast({
+        eventType: "OrderPlaced",
+        storedSchemaVersion: 2,
+        data,
+      });
       expect(result).toBe(data); // no transformation applied
     });
 
@@ -82,7 +98,11 @@ describe("UpcasterRegistry", () => {
       });
 
       const data = { total: 100 };
-      const result = registry.upcast("OrderPlaced", 1, data);
+      const result = registry.upcast({
+        eventType: "OrderPlaced",
+        storedSchemaVersion: 1,
+        data,
+      });
       // Gap: no v1->v2, so v2->v3 is never reached
       expect(result).toBe(data);
     });
@@ -106,7 +126,9 @@ describe("UpcasterRegistry", () => {
         },
       ]);
 
-      expect(registry.upcast("A", 1, {})).toEqual({ v: 3 });
+      expect(
+        registry.upcast({ eventType: "A", storedSchemaVersion: 1, data: {} }),
+      ).toEqual({ v: 3 });
     });
 
     it("sorts by fromSchemaVersion regardless of registration order", () => {
@@ -133,7 +155,11 @@ describe("UpcasterRegistry", () => {
         },
       ]);
 
-      const result = registry.upcast("A", 1, { a: true });
+      const result = registry.upcast({
+        eventType: "A",
+        storedSchemaVersion: 1,
+        data: { a: true },
+      });
       expect(result).toEqual({ a: true, b: true, c: true });
     });
   });

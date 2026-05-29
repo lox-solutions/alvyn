@@ -78,9 +78,7 @@ const order = await Order.load(eventStore, "order-123");
 // Append events with optimistic concurrency
 await Order.append(eventStore, "order-123", {
   expectedVersion: order.version,
-  events: [
-    { type: "OrderShipped", data: { trackingNumber: "TRACK-456" } },
-  ],
+  events: [{ type: "OrderShipped", data: { trackingNumber: "TRACK-456" } }],
 });
 ```
 

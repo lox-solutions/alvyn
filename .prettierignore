@@ -2,4 +2,7 @@ dist/
 node_modules/
 pnpm-lock.yaml
 CHANGELOG.md
+.next
+out
+.source
 .junie

@@ -55,8 +55,14 @@ describe("defineProjection (unit)", () => {
     await proj.handle(event, fakeClient);
 
     expect(handler).toHaveBeenCalledOnce();
-    expect(handler.mock.calls[0][0]).toEqual({ total: 42 });
-    const ctx = handler.mock.calls[0][1];
+    expect(handler.mock.calls[0]?.[0]).toEqual({ total: 42 });
+    const ctx = handler.mock.calls[0]?.[1] as {
+      entityId: string;
+      streamId: string;
+      streamVersion: number;
+      globalPosition: bigint;
+      client: PoolClient;
+    };
     expect(ctx.entityId).toBe("abc");
     expect(ctx.streamId).toBe("Order-abc");
     expect(ctx.streamVersion).toBe(3);
@@ -101,11 +107,10 @@ describe("defineProjection (unit)", () => {
     });
 
     // Multi-segment entity ID
-    await proj.handle(
-      fakeEvent({ streamId: "Order-abc-def-ghi" }),
-      fakeClient,
-    );
+    await proj.handle(fakeEvent({ streamId: "Order-abc-def-ghi" }), fakeClient);
 
-    expect(handler.mock.calls[0][1].entityId).toBe("abc-def-ghi");
+    expect((handler.mock.calls[0]?.[1] as { entityId: string }).entityId).toBe(
+      "abc-def-ghi",
+    );
   });
 });

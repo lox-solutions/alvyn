@@ -1,5 +1,5 @@
-import Link from 'next/link';
-import { basePath } from '@/lib/shared';
+import Link from "next/link";
+import { basePath } from "@/lib/shared";
 
 export default function HomePage() {
   return (
@@ -15,9 +15,7 @@ export default function HomePage() {
       <p className="text-sm font-medium text-fd-muted-foreground mb-4 tracking-wide uppercase">
         Event Sourcing for Node.js
       </p>
-      <h1 className="text-5xl font-bold tracking-tight mb-6">
-        Alvyn
-      </h1>
+      <h1 className="text-5xl font-bold tracking-tight mb-6">Alvyn</h1>
       <p className="text-lg text-fd-muted-foreground max-w-xl mb-8 leading-relaxed">
         A production-grade event store for PostgreSQL. Type-safe aggregates,
         GDPR crypto-shredding, projections, transactional outbox, and schema
@@ -48,8 +46,8 @@ export default function HomePage() {
         <div className="rounded-lg border border-fd-border p-5">
           <h3 className="font-semibold mb-2">GDPR Crypto-Shredding</h3>
           <p className="text-sm text-fd-muted-foreground">
-            Per-entity AES-256-GCM envelope encryption. Revoke a key and all
-            PII becomes cryptographically irrecoverable.
+            Per-entity AES-256-GCM envelope encryption. Revoke a key and all PII
+            becomes cryptographically irrecoverable.
           </p>
         </div>
         <div className="rounded-lg border border-fd-border p-5">

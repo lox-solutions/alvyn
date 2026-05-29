@@ -53,11 +53,12 @@ function isSafePathSegment(segment: string): boolean {
   );
 }
 
-function setNestedField(
-  obj: Record<string, unknown>,
-  path: string,
-  value: unknown,
-): void {
+function setNestedField(options: {
+  obj: Record<string, unknown>;
+  path: string;
+  value: unknown;
+}): void {
+  const { obj, path, value } = options;
   const parts = path.split(".");
   if (parts.length === 0 || !parts.every(isSafePathSegment)) {
     return;
@@ -65,9 +66,10 @@ function setNestedField(
 
   let current: Record<string, unknown> = obj;
   for (let i = 0; i < parts.length - 1; i++) {
-    const part = parts[i]!;
+    const part = parts[i];
+    const hasOwnPart = Object.prototype.hasOwnProperty.call(current, part);
     if (
-      !(part in current) ||
+      !hasOwnPart ||
       typeof current[part] !== "object" ||
       current[part] === null
     ) {
@@ -75,7 +77,7 @@ function setNestedField(
     }
     current = current[part] as Record<string, unknown>;
   }
-  current[parts[parts.length - 1]!] = value;
+  current[parts[parts.length - 1]] = value;
 }
 
 /**
@@ -87,7 +89,7 @@ function removeNestedField(obj: Record<string, unknown>, path: string): void {
   if (!parts.every(isSafePathSegment)) return;
   let current: Record<string, unknown> = obj;
   for (let i = 0; i < parts.length - 1; i++) {
-    const part = parts[i]!;
+    const part = parts[i];
     if (
       !(part in current) ||
       typeof current[part] !== "object" ||
@@ -97,7 +99,9 @@ function removeNestedField(obj: Record<string, unknown>, path: string): void {
     }
     current = current[part] as Record<string, unknown>;
   }
-  delete current[parts[parts.length - 1]!];
+  const lastKey = parts[parts.length - 1];
+
+  delete current[lastKey];
 }
 
 /**
@@ -108,11 +112,12 @@ function removeNestedField(obj: Record<string, unknown>, path: string): void {
  * @param fields - Dot-path field names to encrypt (e.g. ["name", "address.street"])
  * @param aesKey - 256-bit AES key (Buffer, 32 bytes)
  */
-export function encryptFields(
-  data: Record<string, unknown>,
-  fields: string[],
-  aesKey: Buffer,
-): EncryptResult {
+export function encryptFields(options: {
+  data: Record<string, unknown>;
+  fields: string[];
+  aesKey: Buffer;
+}): EncryptResult {
+  const { data, fields, aesKey } = options;
   // Deep-clone to avoid mutating the original
   const cleanData = JSON.parse(JSON.stringify(data)) as Record<string, unknown>;
   const encryptedData: Record<string, EncryptedFieldEntry> = {};
@@ -153,11 +158,12 @@ export function encryptFields(
  * @param aesKey - 256-bit AES key (Buffer, 32 bytes)
  * @returns The full event data with decrypted PII fields restored
  */
-export function decryptFields(
-  cleanData: Record<string, unknown>,
-  encryptedData: Record<string, EncryptedFieldEntry>,
-  aesKey: Buffer,
-): Record<string, unknown> {
+export function decryptFields(options: {
+  cleanData: Record<string, unknown>;
+  encryptedData: Record<string, EncryptedFieldEntry>;
+  aesKey: Buffer;
+}): Record<string, unknown> {
+  const { cleanData, encryptedData, aesKey } = options;
   const result = JSON.parse(JSON.stringify(cleanData)) as Record<
     string,
     unknown
@@ -179,7 +185,7 @@ export function decryptFields(
     ]).toString("utf8");
 
     const value: unknown = JSON.parse(decrypted);
-    setNestedField(result, field, value);
+    setNestedField({ obj: result, path: field, value });
   }
 
   return result;
