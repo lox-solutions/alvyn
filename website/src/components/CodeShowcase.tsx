@@ -1,14 +1,22 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Terminal, Copy, Check, FileCode, Server, Play, ShieldAlert } from 'lucide-react';
+import { useState } from "react";
+import {
+  Terminal,
+  Copy,
+  Check,
+  FileCode,
+  Server,
+  Play,
+  ShieldAlert,
+} from "lucide-react";
 
 const TABS = [
   {
-    id: 'events',
-    title: '1. Define Events',
+    id: "events",
+    title: "1. Define Events",
     icon: FileCode,
-    language: 'typescript',
+    language: "typescript",
     code: `// Define type-safe event payload contracts
 export type CartEvents = {
   CartCreated: { cartId: string; userId: string };
@@ -16,13 +24,14 @@ export type CartEvents = {
   CouponApplied: { code: string; discount: number };
   CheckoutCompleted: { paymentId: string; totalPaid: number };
 };`,
-    explanation: 'Define event payloads explicitly using standard TypeScript types. Your codebase represents business reality without translation-loss.'
+    explanation:
+      "Define event payloads explicitly using standard TypeScript types. Your codebase represents business reality without translation-loss.",
   },
   {
-    id: 'postgres',
-    title: '2. Native PG Connection',
+    id: "postgres",
+    title: "2. Native PG Connection",
     icon: Server,
-    language: 'typescript',
+    language: "typescript",
     code: `import { EventStore } from 'alvyn';
 import { Pool } from 'pg';
 
@@ -34,13 +43,14 @@ const eventStore = new EventStore({
 
 // Run idempotent schema migrations on startup
 await eventStore.setup();`,
-    explanation: 'Zero deployment overhead. Runs directly on PostgreSQL. The .setup() method creates all required tables and indexes natively and safely.'
+    explanation:
+      "Zero deployment overhead. Runs directly on PostgreSQL. The .setup() method creates all required tables and indexes natively and safely.",
   },
   {
-    id: 'evolve',
-    title: '3. Define Aggregate',
+    id: "evolve",
+    title: "3. Define Aggregate",
     icon: Play,
-    language: 'typescript',
+    language: "typescript",
     code: `import { defineAggregate } from 'alvyn';
 
 interface CartState {
@@ -60,13 +70,14 @@ export const Cart = defineAggregate<CartEvents>()({
     CheckoutCompleted: (state) => ({ ...state, isCompleted: true }),
   },
 });`,
-    explanation: 'State evolution is purely mathematical and deterministic. Zero side effects, easy to test, and perfectly typed.'
+    explanation:
+      "State evolution is purely mathematical and deterministic. Zero side effects, easy to test, and perfectly typed.",
   },
   {
-    id: 'append',
-    title: '4. Append & Replay',
+    id: "append",
+    title: "4. Append & Replay",
     icon: ShieldAlert,
-    language: 'typescript',
+    language: "typescript",
     code: `const entityId = '8f2a'; // resolves to stream_id: 'Cart-8f2a'
 
 // 1. Append type-safe event facts with optimistic concurrency
@@ -82,20 +93,22 @@ await Cart.append(eventStore, entityId, {
 
 // 2. Load aggregate state with automatic snapshotting
 const { state, version } = await Cart.load(eventStore, entityId);`,
-    explanation: 'Appended facts are saved to Postgres. State queries replay history at ultra-high speed, utilizing automatic snapshotting and crypto-shredding hooks under the hood.'
-  }
+    explanation:
+      "Appended facts are saved to Postgres. State queries replay history at ultra-high speed, utilizing automatic snapshotting and crypto-shredding hooks under the hood.",
+  },
 ];
 
 function tokenizeLine(line: string) {
-  const commentIdx = line.indexOf('//');
+  const commentIdx = line.indexOf("//");
   let codePart = line;
-  let commentPart = '';
+  let commentPart = "";
   if (commentIdx !== -1) {
     codePart = line.slice(0, commentIdx);
     commentPart = line.slice(commentIdx);
   }
 
-  const tokenRegex = /('[^']*'|`[^`]*`|"[^"]*"|\b(?:import|from|const|await|export|type|interface|new|return|as|string|number|boolean|any|void)\b|\b(?:true|false|[0-9]+(?:\.[0-9]+)?)\b|\b[A-Z][a-zA-Z0-9_]*\b)/g;
+  const tokenRegex =
+    /('[^']*'|`[^`]*`|"[^"]*"|\b(?:import|from|const|await|export|type|interface|new|return|as|string|number|boolean|any|void)\b|\b(?:true|false|[0-9]+(?:\.[0-9]+)?)\b|\b[A-Z][a-zA-Z0-9_]*\b)/g;
 
   const parts = codePart.split(tokenRegex);
   const elements: React.ReactNode[] = [];
@@ -103,30 +116,73 @@ function tokenizeLine(line: string) {
   parts.forEach((part, i) => {
     if (!part) return;
 
-    if ((part.startsWith("'") && part.endsWith("'")) || 
-        (part.startsWith("`") && part.endsWith("`")) || 
-        (part.startsWith('"') && part.endsWith('"'))) {
-      elements.push(<span key={i} className="text-emerald-400 font-medium">{part}</span>);
-    } else if (['import', 'from', 'const', 'await', 'export', 'type', 'interface', 'new', 'return', 'as', 'string', 'number', 'boolean', 'any', 'void'].includes(part)) {
-      elements.push(<span key={i} className="text-purple-400 font-semibold">{part}</span>);
-    } else if (['true', 'false'].includes(part) || (part.trim() !== '' && !isNaN(Number(part)))) {
-      elements.push(<span key={i} className="text-amber-400 font-medium">{part}</span>);
+    if (
+      (part.startsWith("'") && part.endsWith("'")) ||
+      (part.startsWith("`") && part.endsWith("`")) ||
+      (part.startsWith('"') && part.endsWith('"'))
+    ) {
+      elements.push(
+        <span key={i} className="text-emerald-400 font-medium">
+          {part}
+        </span>,
+      );
+    } else if (
+      [
+        "import",
+        "from",
+        "const",
+        "await",
+        "export",
+        "type",
+        "interface",
+        "new",
+        "return",
+        "as",
+        "string",
+        "number",
+        "boolean",
+        "any",
+        "void",
+      ].includes(part)
+    ) {
+      elements.push(
+        <span key={i} className="text-purple-400 font-semibold">
+          {part}
+        </span>,
+      );
+    } else if (
+      ["true", "false"].includes(part) ||
+      (part.trim() !== "" && !isNaN(Number(part)))
+    ) {
+      elements.push(
+        <span key={i} className="text-amber-400 font-medium">
+          {part}
+        </span>,
+      );
     } else if (/^[A-Z][a-zA-Z0-9_]*$/.test(part)) {
-      elements.push(<span key={i} className="text-blue-400 font-medium">{part}</span>);
+      elements.push(
+        <span key={i} className="text-blue-400 font-medium">
+          {part}
+        </span>,
+      );
     } else {
       elements.push(<span key={i}>{part}</span>);
     }
   });
 
   if (commentPart) {
-    elements.push(<span key="comment" className="text-zinc-500/80 italic">{commentPart}</span>);
+    elements.push(
+      <span key="comment" className="text-zinc-500/80 italic">
+        {commentPart}
+      </span>,
+    );
   }
 
   return elements;
 }
 
 export function CodeShowcase() {
-  const [activeTab, setActiveTab] = useState('events');
+  const [activeTab, setActiveTab] = useState("events");
   const [copied, setCopied] = useState(false);
 
   const activeData = TABS.find((t) => t.id === activeTab) || TABS[0];
@@ -156,11 +212,18 @@ export function CodeShowcase() {
                   onClick={() => setActiveTab(tab.id)}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-semibold transition-all text-left border cursor-pointer ${
                     isSelected
-                      ? 'bg-fd-accent text-fd-accent-foreground border-fd-border shadow-md'
-                      : 'bg-transparent text-fd-muted-foreground border-transparent hover:bg-fd-accent/40 hover:text-fd-accent-foreground'
+                      ? "bg-fd-accent text-fd-accent-foreground border-fd-border shadow-md"
+                      : "bg-transparent text-fd-muted-foreground border-transparent hover:bg-fd-accent/40 hover:text-fd-accent-foreground"
                   }`}
                 >
-                  <Icon size={14} className={isSelected ? 'text-fd-accent-foreground' : 'text-fd-muted-foreground'} />
+                  <Icon
+                    size={14}
+                    className={
+                      isSelected
+                        ? "text-fd-accent-foreground"
+                        : "text-fd-muted-foreground"
+                    }
+                  />
                   {tab.title}
                 </button>
               );
@@ -197,7 +260,11 @@ export function CodeShowcase() {
             className="p-1.5 rounded-md hover:bg-zinc-900 text-zinc-500 hover:text-zinc-200 transition-all cursor-pointer"
             title="Copy Code"
           >
-            {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+            {copied ? (
+              <Check size={14} className="text-emerald-400" />
+            ) : (
+              <Copy size={14} />
+            )}
           </button>
         </div>
 
@@ -205,13 +272,15 @@ export function CodeShowcase() {
         <div className="flex-1 p-6 overflow-auto font-mono text-xs text-left leading-relaxed text-zinc-300">
           <pre className="whitespace-pre">
             <code>
-              {activeData.code.split('\n').map((line, idx) => (
+              {activeData.code.split("\n").map((line, idx) => (
                 <div key={idx} className="flex items-start">
                   <span className="w-8 select-none text-right pr-4 text-zinc-700 text-[10px] shrink-0">
                     {idx + 1}
                   </span>
                   <span className="flex-1 whitespace-pre">
-                    {tokenizeLine(line).length > 0 ? tokenizeLine(line) : '\u200B'}
+                    {tokenizeLine(line).length > 0
+                      ? tokenizeLine(line)
+                      : "\u200B"}
                   </span>
                 </div>
               ))}
