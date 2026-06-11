@@ -15,15 +15,16 @@ import {
 
 export default function HomePage() {
   return (
-    <div className="flex flex-col items-center flex-1 overflow-hidden bg-black text-white selection:bg-zinc-800">
+    <div className="flex flex-col items-center flex-1 overflow-hidden bg-fd-background text-fd-foreground selection:bg-zinc-800">
       {/* ── HERO SECTION ─────────────────────────────────────────────────── */}
       <section className="relative w-full min-h-[92vh] flex flex-col items-center justify-center px-6 text-center py-24 overflow-hidden">
         {/* Soft, premium radial glow targeting the headline */}
         <div
           aria-hidden
-          className="pointer-events-none absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] rounded-full opacity-[0.05] blur-[120px]"
+          className="pointer-events-none absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] rounded-full opacity-[0.1] dark:opacity-[0.05] blur-[120px]"
           style={{
-            background: "radial-gradient(circle, #ffffff 0%, transparent 70%)",
+            background:
+              "radial-gradient(circle, var(--color-neon-glow) 0%, transparent 70%)",
           }}
         />
 
@@ -39,39 +40,35 @@ export default function HomePage() {
           />
 
           {/* Clean monochromatic pill badge */}
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/40 px-4 py-2 text-[10px] font-mono tracking-widest uppercase text-zinc-400">
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-fd-zinc-800 bg-fd-zinc-900/40 px-4 py-2 text-[10px] font-mono tracking-widest uppercase text-fd-zinc-400">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
             Event Sourcing · Domain-Driven
           </div>
 
-          <NeonHeadline
-            line1="Your data tells"
-            line2="the whole story."
-            glowColor="rgba(255,255,255,0.75)"
-          />
+          <NeonHeadline line1="Your data tells" line2="the whole story." />
 
           <p className="text-base md:text-lg text-zinc-400 max-w-2xl mb-12 leading-relaxed tracking-normal font-normal text-center px-4">
-            In the agentic AI era, features are commodity wrappers. The only
-            defensible moat is{" "}
-            <span className="font-semibold text-white border-b border-white/20 pb-0.5">
-              domain-specific, high-fidelity business data
-            </span>
-            . Alvyn captures every business intent as an immutable append-only
-            fact. Your AI systems remember everything, forever.
+            CRUD applications capture what happened, but they often lose the
+            reason why. Alvyn records the{" "}
+            <span className="font-semibold text-fd-foreground border-b border-fd-foreground/20 pb-0.5">
+              full narrative
+            </span>{" "}
+            of your business logic as an immutable stream of events. Stop
+            settling for snapshots; start building on the truth of your history.
           </p>
 
           {/* Action CTAs in Apple Style */}
           <div className="flex flex-wrap justify-center gap-4 mb-24">
             <Link
               href="/docs"
-              className="inline-flex items-center gap-2 rounded-full px-8 py-3.5 text-sm font-semibold bg-white text-black hover:bg-zinc-200 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer shadow-[0_8px_30px_rgba(255,255,255,0.15)]"
+              className="inline-flex items-center gap-2 rounded-full px-8 py-3.5 text-sm font-semibold bg-fd-primary text-fd-primary-foreground hover:opacity-90 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer shadow-[0_8px_30px_rgba(var(--color-fd-primary),0.15)]"
             >
               Get Started
               <ArrowRight size={15} />
             </Link>
             <Link
               href="https://github.com/lox-solutions/alvyn"
-              className="inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-950/40 backdrop-blur-sm px-8 py-3.5 text-sm font-semibold text-zinc-300 hover:bg-zinc-900/60 hover:text-white transition-all cursor-pointer"
+              className="inline-flex items-center gap-2 rounded-full border border-fd-border bg-fd-secondary/40 backdrop-blur-sm px-8 py-3.5 text-sm font-semibold text-fd-secondary-foreground hover:bg-fd-secondary/60 transition-all cursor-pointer"
             >
               <svg
                 width="15"
@@ -88,10 +85,10 @@ export default function HomePage() {
           {/* Live Domain Simulator Showcase */}
           <div className="w-full flex flex-col items-center mt-6 z-20">
             <div className="text-center mb-12 max-w-xl">
-              <h2 className="text-3xl font-semibold tracking-tight text-white mb-3">
+              <h2 className="text-3xl font-semibold tracking-tight text-fd-foreground mb-3">
                 Experience the Paradigm Shift
               </h2>
-              <p className="text-sm text-zinc-400 leading-relaxed max-w-md mx-auto">
+              <p className="text-sm text-fd-muted-foreground leading-relaxed max-w-md mx-auto">
                 Click the library actions below to see why Traditional CRUD
                 loses data and how Alvyn builds an AI-ready domain journey
                 narrative.
@@ -103,90 +100,89 @@ export default function HomePage() {
       </section>
 
       {/* ── THESIS SECTION ───────────────────────────────────────────────── */}
-      <section className="w-full border-t border-zinc-900 bg-zinc-950/20 backdrop-blur-xl relative">
+      <section className="w-full border-t border-fd-border bg-fd-secondary/20 backdrop-blur-xl relative">
         <div className="max-w-6xl mx-auto px-6 py-32 grid grid-cols-1 md:grid-cols-2 gap-24 relative z-10">
           {/* Pillar 1 */}
           <div className="flex flex-col text-left">
-            <span className="text-xs font-mono font-medium uppercase tracking-[0.2em] text-zinc-500 mb-4 flex items-center gap-2">
-              <span className="w-6 h-px bg-zinc-850" /> 01 — The AI Shift
+            <span className="text-xs font-mono font-medium uppercase tracking-[0.2em] text-fd-muted-foreground mb-4 flex items-center gap-2">
+              <span className="w-6 h-px bg-fd-border" /> 01 — Beyond the Four
+              Verbs
             </span>
-            <h2 className="text-4xl md:text-5xl font-semibold tracking-tight leading-tight mb-6 text-white">
-              Software is a commodity.
+            <h2 className="text-4xl md:text-5xl font-semibold tracking-tight leading-tight mb-6 text-fd-foreground">
+              The database shouldn&apos;t
               <br />
-              <span className="text-zinc-500 font-normal">
-                Data is your moat.
+              <span className="text-fd-muted-foreground font-normal">
+                dictate your domain.
               </span>
             </h2>
-            <div className="space-y-6 text-zinc-400 leading-relaxed text-base font-normal">
+            <div className="space-y-6 text-fd-muted-foreground leading-relaxed text-base font-normal">
               <p>
-                Vibe-coding tools can ship a feature in minutes. Foundation
-                models can replicate your entire application interface
-                overnight. The landmark a16z 2025 findings are absolute:{" "}
-                <em className="not-italic text-zinc-200">
-                  as model capabilities commoditize, competitive scarcity shifts
-                  entirely to proprietary data.
-                </em>
+                Traditional CRUD architectures collapse complex business logic
+                into generic operations. A single &ldquo;Update&rdquo; might
+                represent upgrading a subscription, correcting a billing error,
+                or adjusting a delivery window. When these are flattened into a
+                table row, the context is lost forever.
               </p>
               <p>
-                The enterprises leading the next decade are moving up the value
-                stack — from basic{" "}
-                <strong className="font-semibold text-white">
-                  Software Features
+                In an era where data is the ultimate competitive advantage,
+                discarding meaning is a strategic risk. You can always derive
+                state from events, but you can never reconstruct the{" "}
+                <strong className="font-semibold text-fd-foreground">
+                  original intent
                 </strong>{" "}
-                to integrated{" "}
-                <strong className="font-semibold text-white">
-                  Platform Infrastructure
-                </strong>
-                , and ultimately to a private, high-fidelity{" "}
-                <strong className="font-semibold text-white">
-                  Domain Data Ecosystem
-                </strong>
-                .
+                from a modified row.
               </p>
               <p>
-                Alvyn provides the event-driven storage framework that records
-                raw business actions as they happen, yielding an irreplaceable
-                dataset no model can synthesize for you.
+                Alvyn ensures that every business action is preserved with its
+                full context, creating a high-fidelity record that serves your
+                users today and your AI models tomorrow.
               </p>
             </div>
           </div>
 
           {/* Pillar 2 */}
           <div className="flex flex-col text-left">
-            <span className="text-xs font-mono font-medium uppercase tracking-[0.2em] text-zinc-500 mb-4 flex items-center gap-2">
-              <span className="w-6 h-px bg-zinc-850" /> 02 — Domain Reality
+            <span className="text-xs font-mono font-medium uppercase tracking-[0.2em] text-fd-muted-foreground mb-4 flex items-center gap-2">
+              <span className="w-6 h-px bg-fd-border" /> 02 — Semantic Precision
             </span>
-            <h2 className="text-4xl md:text-5xl font-semibold tracking-tight leading-tight mb-6 text-white">
-              Your business
+            <h2 className="text-4xl md:text-5xl font-semibold tracking-tight leading-tight mb-6 text-fd-foreground">
+              Code that speaks
               <br />
-              <span className="text-zinc-500 font-normal">
-                isn&apos;t CRUD.
+              <span className="text-fd-muted-foreground font-normal">
+                your business language.
               </span>
             </h2>
-            <div className="space-y-6 text-zinc-400 leading-relaxed text-base font-normal">
+            <div className="space-y-6 text-fd-muted-foreground leading-relaxed text-base font-normal">
               <p>
-                When you translate complex business events into static tables
-                and rows, you erase the{" "}
-                <em className="not-italic text-zinc-200">
-                  narrative and intent
-                </em>{" "}
-                of your actions. A library member didn&apos;t just &ldquo;mark
-                loan returned&rdquo; — they checked out a trending topic,
-                extended their study, resolved a misplaced asset, and pivoted to
-                deep platform engineering books.
+                When your codebase uses the same vocabulary as your domain
+                experts, complexity disappears. Instead of generic functions,
+                Alvyn encourages verbs that mean something:{" "}
+                <code className="text-fd-secondary-foreground">
+                  onboardCustomer
+                </code>
+                ,{" "}
+                <code className="text-fd-secondary-foreground">
+                  approveClaim
+                </code>
+                , or{" "}
+                <code className="text-fd-secondary-foreground">
+                  suspendAccess
+                </code>
+                .
               </p>
               <p>
-                In the era of AI engineering, syntax and code writing are solved
-                problems.{" "}
-                <strong className="font-semibold text-white">
-                  Domain modeling and software architecting
-                </strong>{" "}
-                are the new high-value frontiers.
+                Naming isn&apos;t just about style; it&apos;s about{" "}
+                <strong className="font-semibold text-fd-foreground">
+                  system integrity
+                </strong>
+                . By capturing the language of the business directly in your
+                events, you eliminate the translation layer that causes most
+                software failures.
               </p>
               <p>
-                Engineers who leverage Event-Sourcing build systems that
-                perfectly capture business truth, elevating themselves from
-                feature coders to domain architects.
+                Event Sourcing with Alvyn turns your audit log into a living
+                document that any stakeholder can understand, ensuring your
+                architecture stays aligned with reality as you scale.
               </p>
             </div>
           </div>
@@ -194,16 +190,16 @@ export default function HomePage() {
       </section>
 
       {/* ── CODE SHOWCASE SECTION ───────────────────────────────────────── */}
-      <section className="w-full border-t border-zinc-900 bg-black relative py-32">
+      <section className="w-full border-t border-fd-border bg-fd-background relative py-32">
         <div className="max-w-5xl mx-auto px-6 flex flex-col items-center">
           <div className="text-center mb-16 max-w-xl">
-            <span className="text-xs font-mono font-medium uppercase tracking-[0.2em] text-zinc-500 mb-3 block">
+            <span className="text-xs font-mono font-medium uppercase tracking-[0.2em] text-fd-muted-foreground mb-3 block">
               Type-Safe, PostgreSQL-Native
             </span>
-            <h2 className="text-3xl md:text-4xl font-semibold tracking-tight text-white mb-4">
+            <h2 className="text-3xl md:text-4xl font-semibold tracking-tight text-fd-foreground mb-4">
               Event streams as simple as standard DB queries.
             </h2>
-            <p className="text-sm text-zinc-400 leading-relaxed max-w-md mx-auto">
+            <p className="text-sm text-fd-muted-foreground leading-relaxed max-w-md mx-auto">
               No complex external message brokers or distributed consensus
               clusters. Alvyn runs directly inside your existing PostgreSQL
               database with total compile-time safety.
@@ -214,12 +210,12 @@ export default function HomePage() {
       </section>
 
       {/* ── FEATURES SECTION ────────────────────────────────────────────── */}
-      <section className="w-full border-t border-zinc-900 bg-[#040406]/30">
+      <section className="w-full border-t border-fd-border bg-fd-secondary/30">
         <div className="max-w-6xl mx-auto px-6 py-32 text-left">
-          <span className="text-xs font-mono font-medium uppercase tracking-[0.2em] text-zinc-500 mb-3 block">
+          <span className="text-xs font-mono font-medium uppercase tracking-[0.2em] text-fd-muted-foreground mb-3 block">
             The Engine
           </span>
-          <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mb-20 text-white max-w-xl">
+          <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mb-20 text-fd-foreground max-w-xl">
             Everything you need for enterprise-grade streams.
           </h2>
 
@@ -228,8 +224,8 @@ export default function HomePage() {
               {
                 icon: Sparkles,
                 n: "01",
-                title: "Immutable Event Log",
-                body: "Every state transition is stored as an immutable, append-only historical fact. Feed downstream AI pipelines with flawless ground truth.",
+                title: "Preserve Business Intent",
+                body: "Every state transition is stored as an immutable, append-only historical fact. Never lose the 'why' behind a change again.",
               },
               {
                 icon: Database,
@@ -258,26 +254,26 @@ export default function HomePage() {
               {
                 icon: Activity,
                 n: "06",
-                title: "AI-Ready Audit Trail",
-                body: "An absolute record of every algorithmic decision, user action, and agent intent. The foundational core of auditable AI systems.",
+                title: "High-Fidelity History",
+                body: "An absolute record of every business decision and user action. The foundational core for auditable systems and AI-ready datasets.",
               },
             ].map(({ icon: Icon, n, title, body }) => (
               <div
                 key={n}
-                className="group relative rounded-3xl border border-zinc-900 bg-[#09090b]/40 p-8 hover:border-zinc-800 hover:bg-zinc-900/20 transition-all duration-300"
+                className="group relative rounded-3xl border border-fd-border bg-fd-secondary/40 p-8 hover:border-fd-accent hover:bg-fd-accent/20 transition-all duration-300"
               >
                 <div className="flex items-center justify-between mb-6">
-                  <div className="p-3 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-200 group-hover:text-white group-hover:border-zinc-700 transition-all duration-300 shadow-sm">
+                  <div className="p-3 rounded-2xl bg-fd-secondary border border-fd-border text-fd-secondary-foreground group-hover:text-fd-foreground group-hover:border-fd-accent transition-all duration-300 shadow-sm">
                     <Icon size={18} />
                   </div>
-                  <span className="text-xs font-mono font-bold tracking-widest text-zinc-700 group-hover:text-zinc-500 transition-all duration-300">
+                  <span className="text-xs font-mono font-bold tracking-widest text-fd-muted-foreground group-hover:text-fd-secondary-foreground transition-all duration-300">
                     {n}
                   </span>
                 </div>
-                <h3 className="text-lg font-semibold mb-3 text-white transition-all duration-300">
+                <h3 className="text-lg font-semibold mb-3 text-fd-foreground transition-all duration-300">
                   {title}
                 </h3>
-                <p className="text-sm text-zinc-400 leading-relaxed font-light">
+                <p className="text-sm text-fd-muted-foreground leading-relaxed font-light">
                   {body}
                 </p>
               </div>
@@ -287,40 +283,38 @@ export default function HomePage() {
       </section>
 
       {/* ── MANIFESTO & CLOSING CTA ─────────────────────────────────────── */}
-      <section className="relative w-full border-t border-zinc-900 overflow-hidden bg-gradient-to-b from-transparent to-black">
+      <section className="relative w-full border-t border-fd-border overflow-hidden bg-gradient-to-b from-transparent to-fd-background">
         {/* Soft, premium highlight mask */}
         <div
           aria-hidden
           className="pointer-events-none absolute bottom-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] rounded-full opacity-[0.03] blur-[120px]"
           style={{
-            background: "radial-gradient(circle, #ffffff 0%, transparent 70%)",
+            background:
+              "radial-gradient(circle, var(--color-fd-primary) 0%, transparent 70%)",
           }}
         />
 
         <div className="max-w-4xl mx-auto px-6 py-40 text-center relative z-10">
-          <p className="text-4xl md:text-6xl font-semibold tracking-tight leading-tight mb-8 text-white">
+          <p className="text-4xl md:text-6xl font-semibold tracking-tight leading-tight mb-8 text-fd-foreground">
             &ldquo;The event log is not a side effect.
             <br />
-            <span className="text-zinc-500">It is your system.&rdquo;</span>
+            <span className="text-fd-muted-foreground">
+              It is your system.&rdquo;
+            </span>
           </p>
-          <p className="text-zinc-400 text-base max-w-xl mx-auto mb-14 leading-relaxed font-normal">
-            Stop overwriting the present. Accumulate history to command the
-            future. Your AI, your compliance auditors, and your product
-            engineering metrics will thank you.
+          <p className="text-fd-muted-foreground text-base max-w-xl mx-auto mb-14 leading-relaxed font-normal">
+            Stop treating your data like a draft. Every action in your system is
+            a permanent piece of your business history. By recording the truth
+            of how your application evolves, you build a foundation that
+            empowers your logic, your auditors, and your AI future.
           </p>
           <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
             <Link
               href="/docs"
-              className="inline-flex items-center gap-2 rounded-full px-10 py-4 text-sm font-semibold bg-white text-black hover:bg-zinc-200 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-[0_8px_30px_rgba(255,255,255,0.15)] cursor-pointer"
+              className="inline-flex items-center gap-2 rounded-full px-10 py-4 text-sm font-semibold bg-fd-primary text-fd-primary-foreground hover:opacity-90 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-[0_8px_30px_rgba(var(--color-fd-primary),0.15)] cursor-pointer"
             >
               Start Building Now
               <ArrowRight size={16} />
-            </Link>
-            <Link
-              href="/docs/introduction"
-              className="inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-950/20 backdrop-blur-md px-10 py-4 text-sm font-semibold text-zinc-300 hover:bg-zinc-900/60 hover:text-white transition-all cursor-pointer"
-            >
-              Read Philosophy
             </Link>
           </div>
         </div>

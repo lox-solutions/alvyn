@@ -138,11 +138,11 @@ export function CodeShowcase() {
   };
 
   return (
-    <div className="w-full max-w-5xl bg-zinc-950 border border-zinc-900 rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row h-auto md:h-[500px]">
+    <div className="w-full max-w-5xl bg-fd-secondary/30 border border-fd-border rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row h-auto md:h-[500px]">
       {/* Sidebar Navigation */}
-      <div className="w-full md:w-1/3 bg-[#09090b] border-b md:border-b-0 md:border-r border-zinc-900 p-6 flex flex-col justify-between">
+      <div className="w-full md:w-1/3 bg-fd-secondary/50 border-b md:border-b-0 md:border-r border-fd-border p-6 flex flex-col justify-between">
         <div className="space-y-4">
-          <div className="flex items-center gap-2 text-xs font-mono font-medium text-zinc-500 uppercase tracking-widest mb-6">
+          <div className="flex items-center gap-2 text-xs font-mono font-medium text-fd-muted-foreground uppercase tracking-widest mb-6">
             <Terminal size={14} />
             Declarative Engine
           </div>
@@ -156,11 +156,11 @@ export function CodeShowcase() {
                   onClick={() => setActiveTab(tab.id)}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-semibold transition-all text-left border cursor-pointer ${
                     isSelected
-                      ? 'bg-zinc-900 text-white border-zinc-800 shadow-md'
-                      : 'bg-transparent text-zinc-400 border-transparent hover:bg-zinc-900/40 hover:text-zinc-200'
+                      ? 'bg-fd-accent text-fd-accent-foreground border-fd-border shadow-md'
+                      : 'bg-transparent text-fd-muted-foreground border-transparent hover:bg-fd-accent/40 hover:text-fd-accent-foreground'
                   }`}
                 >
-                  <Icon size={14} className={isSelected ? 'text-zinc-100' : 'text-zinc-500'} />
+                  <Icon size={14} className={isSelected ? 'text-fd-accent-foreground' : 'text-fd-muted-foreground'} />
                   {tab.title}
                 </button>
               );
@@ -168,18 +168,18 @@ export function CodeShowcase() {
           </div>
         </div>
 
-        <div className="mt-8 md:mt-0 p-4 rounded-2xl bg-zinc-900/30 border border-zinc-900">
-          <p className="text-[10px] font-mono font-semibold text-zinc-500 uppercase tracking-wider mb-1">
+        <div className="mt-8 md:mt-0 p-4 rounded-2xl bg-fd-secondary/30 border border-fd-border">
+          <p className="text-[10px] font-mono font-semibold text-fd-muted-foreground uppercase tracking-wider mb-1">
             Engineers as domain experts
           </p>
-          <p className="text-xs text-zinc-400 leading-relaxed font-light">
+          <p className="text-xs text-fd-muted-foreground leading-relaxed font-light">
             {activeData.explanation}
           </p>
         </div>
       </div>
 
       {/* Code Editor View */}
-      <div className="flex-1 bg-[#040406] flex flex-col relative h-[320px] md:h-full">
+      <div className="flex-1 bg-black flex flex-col relative h-[320px] md:h-full">
         {/* Editor Tab Bar */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-zinc-900/60 bg-black/40">
           <div className="flex items-center gap-2">

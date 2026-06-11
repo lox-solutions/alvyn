@@ -2,14 +2,20 @@
 @import "fumadocs-ui/css/neutral.css";
 @import "fumadocs-ui/css/preset.css";
 
+:root {
+  --color-neon-glow: hsl(174, 80%, 45%);
+}
+
 @theme inline {
   --color-fd-primary: hsl(174, 60%, 35%);
   --color-fd-primary-foreground: hsl(0, 0%, 100%);
+  --color-neon-glow: var(--color-neon-glow);
 }
 
 .dark {
   --color-fd-primary: hsl(174, 60%, 55%);
   --color-fd-primary-foreground: hsl(174, 40%, 10%);
+  --color-neon-glow: hsl(174, 60%, 55%);
 }
 
 html {

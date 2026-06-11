@@ -12,7 +12,7 @@ interface NeonHeadlineProps {
 export function NeonHeadline({
   line1,
   line2,
-  glowColor = 'var(--color-fd-primary)',
+  glowColor = 'var(--color-neon-glow)',
 }: NeonHeadlineProps) {
   const containerRef = useRef<HTMLHeadingElement>(null);
   const rafRef = useRef<number>(0);
@@ -84,7 +84,7 @@ export function NeonHeadline({
         ref={containerRef}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
-        className="text-5xl sm:text-6xl md:text-8xl font-black tracking-[-0.04em] leading-[0.95] mb-8 max-w-5xl cursor-default select-none"
+        className="text-5xl sm:text-6xl md:text-8xl font-black tracking-[-0.04em] leading-[0.95] mb-8 max-w-5xl cursor-default select-none text-fd-foreground"
         style={{ fontVariantNumeric: 'tabular-nums' }}
       >
         <span>{renderLine(line1, 'l1')}</span>
