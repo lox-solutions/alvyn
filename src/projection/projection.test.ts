@@ -244,6 +244,63 @@ describe("Projections", () => {
       expect(ctx.streamVersion).toBe(1);
     });
 
+    it("does not skip a lower position that commits after a higher one", async () => {
+      // Regression: global_position (BIGSERIAL) is reserved at INSERT but only
+      // visible at COMMIT. If a transaction holding a lower position commits
+      // *after* one holding a higher position, a naive cursor would advance
+      // past the higher position and permanently skip the lower one. The safe
+      // watermark must prevent this.
+      const store = new EventStore({ pool, schema: uniqueSchema() });
+      await store.setup();
+
+      const handled: string[] = [];
+      const projection = defineProjection<OrderEvents>()({
+        projectionName: "late-commit",
+        streamPrefix: "Order",
+        handlers: {
+          OrderPlaced: (_data, ctx) => {
+            handled.push(ctx.streamId);
+          },
+        },
+      });
+
+      // Transaction A reserves the LOWER position but stays open (uncommitted).
+      const txA = await pool.connect();
+      try {
+        await txA.query("BEGIN");
+        await store.append(
+          {
+            streamId: "Order-low",
+            expectedVersion: -1,
+            events: [{ type: "OrderPlaced", data: { total: 1 } }],
+          },
+          { client: txA },
+        );
+
+        // Transaction B reserves the HIGHER position and commits first.
+        await store.append({
+          streamId: "Order-high",
+          expectedVersion: -1,
+          events: [{ type: "OrderPlaced", data: { total: 2 } }],
+        });
+
+        // The projection must NOT advance past the still-in-flight lower
+        // position, so nothing is processed yet.
+        const processedWhileInFlight = await store.runProjection(projection);
+        expect(processedWhileInFlight).toBe(0);
+        expect(handled).toEqual([]);
+
+        await txA.query("COMMIT");
+      } finally {
+        txA.release();
+      }
+
+      // Once the lower position commits, both events are processed in order.
+      const processedAfterCommit = await store.runProjection(projection);
+      expect(processedAfterCommit).toBe(2);
+      expect(handled).toEqual(["Order-low", "Order-high"]);
+    });
+
     it("rolls back checkpoint if handler throws", async () => {
       const store = new EventStore({ pool, schema: uniqueSchema() });
       await store.setup();

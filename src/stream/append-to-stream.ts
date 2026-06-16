@@ -3,6 +3,7 @@ import type { CryptoKeyManager } from "../crypto/crypto-key-manager";
 import { OptimisticConcurrencyError } from "../errors";
 import type { AppendEventInput, AppendResult } from "../types";
 import { buildOutboxRows, insertOutboxChunks } from "./outbox-insert";
+import { notifyChannel } from "./notify-channel";
 import { prepareEventRow } from "./prepare-event-row";
 import type { PreparedRow } from "./prepare-event-row";
 
@@ -120,6 +121,47 @@ async function insertEventChunks(options: {
   return globalPositions;
 }
 
+async function prepareRows(options: {
+  events: AppendEventInput[];
+  streamId: string;
+  fromVersion: number;
+  defaultSource: string;
+  cryptoKeyManager: CryptoKeyManager | null;
+  client: PoolClient;
+  schema: string;
+}): Promise<PreparedRow[]> {
+  const { events, streamId, fromVersion, defaultSource } = options;
+  const preparedRows: PreparedRow[] = [];
+  for (let i = 0; i < events.length; i++) {
+    preparedRows.push(
+      await prepareEventRow({
+        event: events[i],
+        streamId,
+        version: fromVersion + i,
+        defaultSource,
+        cryptoKeyManager: options.cryptoKeyManager,
+        client: options.client,
+        schema: options.schema,
+      }),
+    );
+  }
+  return preparedRows;
+}
+
+async function writeOutbox(options: {
+  client: PoolClient;
+  schema: string;
+  preparedRows: PreparedRow[];
+  globalPositions: bigint[];
+  outboxTopics?: string[];
+}): Promise<void> {
+  const { client, schema, preparedRows, globalPositions, outboxTopics } =
+    options;
+  if (!outboxTopics || outboxTopics.length === 0) return;
+  const rows = buildOutboxRows({ preparedRows, globalPositions, outboxTopics });
+  await insertOutboxChunks({ client, schema, rows });
+}
+
 /** Appends events to a stream. CloudEvents v1.0.2 compliant. */
 export async function appendToStream(
   options: AppendToStreamOptions,
@@ -136,20 +178,15 @@ export async function appendToStream(
     expectedVersion,
   });
   const fromVersion = currentVersion + 1;
-  const preparedRows: PreparedRow[] = [];
-  for (let i = 0; i < events.length; i++) {
-    preparedRows.push(
-      await prepareEventRow({
-        event: events[i],
-        streamId,
-        version: fromVersion + i,
-        defaultSource,
-        cryptoKeyManager,
-        client,
-        schema,
-      }),
-    );
-  }
+  const preparedRows = await prepareRows({
+    events,
+    streamId,
+    fromVersion,
+    defaultSource,
+    cryptoKeyManager,
+    client,
+    schema,
+  });
   const globalPositions = await insertEventChunks({
     client,
     schema,
@@ -157,14 +194,17 @@ export async function appendToStream(
     preparedRows,
   });
 
-  if (outboxTopics && outboxTopics.length > 0) {
-    const outboxRows = buildOutboxRows({
-      preparedRows,
-      globalPositions,
-      outboxTopics,
-    });
-    await insertOutboxChunks({ client, schema, rows: outboxRows });
-  }
+  await writeOutbox({
+    client,
+    schema,
+    preparedRows,
+    globalPositions,
+    outboxTopics,
+  });
+
+  // Wake live subscribers. Issued on the append client so the notification is
+  // delivered when (and only when) this transaction commits.
+  await client.query(`SELECT pg_notify($1, '')`, [notifyChannel(schema)]);
 
   return {
     streamId,

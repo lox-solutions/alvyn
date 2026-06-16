@@ -1,6 +1,10 @@
 import type { Pool, PoolClient } from "pg";
 import { CryptoKeyManager } from "./crypto/crypto-key-manager";
 import {
+  createCryptoKey as createCryptoKeyOp,
+  revokeCryptoKey as revokeCryptoKeyOp,
+} from "./crypto/crypto-key-operations";
+import {
   EventStoreNotInitializedError,
   InvalidSchemaNameError,
   MasterKeyRequiredError,
@@ -15,15 +19,18 @@ import { runProjection as runProjectionFn } from "./projection/run-projection";
 import { runMigrations } from "./schema/run-migrations";
 import {
   deleteSnapshot as deleteSnapshotFn,
-  loadSnapshot as loadSnapshotFn,
   saveSnapshot as saveSnapshotFn,
 } from "./snapshot/snapshot-store";
+import { loadWithSnapshot as loadWithSnapshotFn } from "./snapshot/load-with-snapshot";
 import {
   listStreams as listStreamsFn,
   readStream,
 } from "./stream/stream-reader";
 import { appendToStream } from "./stream/append-to-stream";
 import { getStreamVersion as getStreamVersionFn } from "./stream/get-stream-version";
+import { subscribe as subscribeFn } from "./subscription/subscribe";
+import { createNotifyWaker } from "./subscription/create-notify-waker";
+import type { SubscribeOptions } from "./subscription/subscribe-options";
 import type {
   AppendInput,
   AppendResult,
@@ -34,6 +41,7 @@ import type {
   ReplayedEvent,
   SaveSnapshotInput,
   Snapshot,
+  StoredEvent,
   Upcaster,
 } from "./types";
 import { UpcasterRegistry } from "./upcaster/upcaster-registry";
@@ -133,22 +141,12 @@ export class EventStore {
     streamId: string,
   ): Promise<{ snapshot: Snapshot<T> | null; events: ReplayedEvent<T>[] }> {
     this.ensureInitialized();
-    return withClient(this.pool, async (client) => {
-      const snapshot = await loadSnapshotFn<T>({
-        client,
-        schema: this.schema,
-        streamId,
-      });
-      const fromVersion = snapshot ? snapshot.streamVersion + 1 : 1;
-      const events = await readStream<T>({
-        client,
-        schema: this.schema,
-        streamId,
-        fromVersion,
-        cryptoKeyManager: this.cryptoKeyManager,
-        upcasterRegistry: this.upcasterRegistry,
-      });
-      return { snapshot, events };
+    return loadWithSnapshotFn<T>({
+      pool: this.pool,
+      schema: this.schema,
+      streamId,
+      cryptoKeyManager: this.cryptoKeyManager,
+      upcasterRegistry: this.upcasterRegistry,
     });
   }
 
@@ -181,28 +179,22 @@ export class EventStore {
   async createCryptoKey(keyId: string): Promise<void> {
     this.ensureInitialized();
     this.ensureCryptoAvailable();
-    return withClient(this.pool, (c) =>
-      this.cryptoKeyManager!.createKey({
-        client: c,
-        schema: this.schema,
-        keyId,
-      }),
-    );
+    return createCryptoKeyOp({
+      pool: this.pool,
+      schema: this.schema,
+      manager: this.cryptoKeyManager!,
+      keyId,
+    });
   }
 
   async revokeKey(keyId: string): Promise<void> {
     this.ensureInitialized();
     this.ensureCryptoAvailable();
-    return inTransaction(this.pool, async (c) => {
-      await this.cryptoKeyManager!.revokeKey({
-        client: c,
-        schema: this.schema,
-        keyId,
-      });
-      await c.query(
-        `DELETE FROM ${this.schema}.snapshots WHERE stream_id IN (SELECT DISTINCT stream_id FROM ${this.schema}.events WHERE crypto_key_id = $1)`,
-        [keyId],
-      );
+    return revokeCryptoKeyOp({
+      pool: this.pool,
+      schema: this.schema,
+      manager: this.cryptoKeyManager!,
+      keyId,
     });
   }
 
@@ -242,6 +234,16 @@ export class EventStore {
         batchSize: batchSize ?? DEFAULT_PROJECTION_BATCH_SIZE,
       }),
     );
+  }
+
+  subscribe(options?: SubscribeOptions): AsyncIterable<StoredEvent> {
+    this.ensureInitialized();
+    return subscribeFn({
+      pool: this.pool,
+      schema: this.schema,
+      options,
+      createWaker: () => createNotifyWaker(this.pool, this.schema),
+    });
   }
 
   registerUpcaster(upcaster: Upcaster): void {

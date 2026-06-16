@@ -50,7 +50,18 @@ export type { SaveSnapshotInput, Snapshot } from "./types";
 export type { ListStreamsOptions } from "./types";
 
 // Types — projections & outbox
+//
+// NOTE: the outbox (OutboxHandler / processOutbox) is a *competing-consumer*
+// adapter — each event is handled exactly once across the fleet — intended for
+// bridging events to an external broker (e.g. NATS). For in-process fan-out,
+// where every replica observes every event, use `EventStore.subscribe()`.
 export type { OutboxEntry, OutboxHandler, Projection } from "./types";
+
+// Types — subscriptions (fan-out)
+export type {
+  SubscribeOptions,
+  SubscriptionLowerBound,
+} from "./subscription/subscribe-options";
 
 // Types — projection builder
 export type {

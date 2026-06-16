@@ -60,6 +60,23 @@ async function createEventsTable(
     CREATE INDEX IF NOT EXISTS idx_events_source_id
       ON ${schema}.events (source, id)
   `);
+
+  await addEventTxidColumn(client, schema);
+}
+
+/**
+ * Gap-safe ordering: record the appending transaction id so cursor-based
+ * consumers can compute a commit-safe high-water position and never skip a
+ * lower global_position that commits late (see compute-safe-watermark.ts).
+ */
+async function addEventTxidColumn(
+  client: PoolClient,
+  schema: string,
+): Promise<void> {
+  await client.query(`
+    ALTER TABLE ${schema}.events
+      ADD COLUMN IF NOT EXISTS txid XID8 NOT NULL DEFAULT pg_current_xact_id()
+  `);
 }
 
 async function createSupportTables(

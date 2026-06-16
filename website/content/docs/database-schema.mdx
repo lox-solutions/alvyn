@@ -48,30 +48,32 @@ CREATE TABLE IF NOT EXISTS {schema}.events (
   crypto_key_id    TEXT             NULL,
   schema_version   INTEGER          NOT NULL,
   created_at       TIMESTAMPTZ      NOT NULL DEFAULT now(),
+  txid             XID8             NOT NULL DEFAULT pg_current_xact_id(),
 
   PRIMARY KEY (global_position),
   UNIQUE (stream_id, stream_version)
 );
 ```
 
-| Column            | Type                   | Description                                              |
-| ----------------- | ---------------------- | -------------------------------------------------------- |
-| `global_position` | `BIGSERIAL PK`         | Monotonically increasing global ordering                 |
-| `stream_id`       | `TEXT NOT NULL`        | Stream identifier (e.g. `"Order-123"`)                   |
-| `stream_version`  | `INTEGER NOT NULL`     | Sequential version within the stream (1, 2, 3, ...)      |
-| `id`              | `TEXT NOT NULL`        | CloudEvents `id` — `"{streamId}/{streamVersion}"`        |
-| `source`          | `TEXT NOT NULL`        | CloudEvents `source` — URI-reference                     |
-| `specversion`     | `TEXT NOT NULL`        | Always `"1.0"`                                           |
-| `event_type`      | `TEXT NOT NULL`        | CloudEvents `type` — event type name                     |
-| `subject`         | `TEXT NOT NULL`        | CloudEvents `subject` — the stream ID                    |
-| `time`            | `TIMESTAMPTZ NOT NULL` | CloudEvents `time` — ISO 8601 timestamp                  |
-| `datacontenttype` | `TEXT NOT NULL`        | Always `"application/json"`                              |
-| `data`            | `JSONB NOT NULL`       | Event payload (PII fields removed if encryption is used) |
-| `extensions`      | `JSONB NOT NULL`       | CloudEvents extension attributes                         |
-| `encrypted_data`  | `JSONB NULL`           | Encrypted PII field blobs                                |
-| `crypto_key_id`   | `TEXT NULL`            | Reference to `crypto_keys.key_id`                        |
-| `schema_version`  | `INTEGER NOT NULL`     | Schema version for upcasting                             |
-| `created_at`      | `TIMESTAMPTZ NOT NULL` | Auto-set by the database                                 |
+| Column            | Type                   | Description                                                                                                                         |
+| ----------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `global_position` | `BIGSERIAL PK`         | Monotonically increasing global ordering                                                                                            |
+| `stream_id`       | `TEXT NOT NULL`        | Stream identifier (e.g. `"Order-123"`)                                                                                              |
+| `stream_version`  | `INTEGER NOT NULL`     | Sequential version within the stream (1, 2, 3, ...)                                                                                 |
+| `id`              | `TEXT NOT NULL`        | CloudEvents `id` — `"{streamId}/{streamVersion}"`                                                                                   |
+| `source`          | `TEXT NOT NULL`        | CloudEvents `source` — URI-reference                                                                                                |
+| `specversion`     | `TEXT NOT NULL`        | Always `"1.0"`                                                                                                                      |
+| `event_type`      | `TEXT NOT NULL`        | CloudEvents `type` — event type name                                                                                                |
+| `subject`         | `TEXT NOT NULL`        | CloudEvents `subject` — the stream ID                                                                                               |
+| `time`            | `TIMESTAMPTZ NOT NULL` | CloudEvents `time` — ISO 8601 timestamp                                                                                             |
+| `datacontenttype` | `TEXT NOT NULL`        | Always `"application/json"`                                                                                                         |
+| `data`            | `JSONB NOT NULL`       | Event payload (PII fields removed if encryption is used)                                                                            |
+| `extensions`      | `JSONB NOT NULL`       | CloudEvents extension attributes                                                                                                    |
+| `encrypted_data`  | `JSONB NULL`           | Encrypted PII field blobs                                                                                                           |
+| `crypto_key_id`   | `TEXT NULL`            | Reference to `crypto_keys.key_id`                                                                                                   |
+| `schema_version`  | `INTEGER NOT NULL`     | Schema version for upcasting                                                                                                        |
+| `created_at`      | `TIMESTAMPTZ NOT NULL` | Auto-set by the database                                                                                                            |
+| `txid`            | `XID8 NOT NULL`        | Appending transaction id, used to compute the commit-safe watermark so cursor consumers never skip a late-committing lower position |
 
 **Constraints:**
 
