@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type pg from "pg";
 import type { AggregateReplayedEvent, AggregateStoredEvent } from "./types";
 import { EventStore } from "../event-store";
+import { ReservedSnapshotEventTypeError } from "../errors";
 import { defineAggregate } from "./define-aggregate";
 import {
   startPostgres,
@@ -92,6 +93,34 @@ describe("defineAggregate", () => {
       expect(agg.version).toBe(2);
       expect(agg.state).toEqual({ status: "shipped", total: 99 });
     });
+
+    it("ignores snapshot events while preserving the true stream version", async () => {
+      const store = new EventStore({ pool, schema: uniqueSchema() });
+      await store.setup();
+
+      await Order.append(store, {
+        entityId: "mixed-snapshot-load",
+        expectedVersion: -1,
+        events: [{ type: "OrderPlaced", data: { total: 75 } }],
+      });
+      await store.appendSnapshot({
+        streamId: "Order-mixed-snapshot-load",
+        expectedVersion: 1,
+        events: [
+          { type: "OrderSummarySnapshot", data: { status: "placed" } },
+        ],
+      });
+      await Order.append(store, {
+        entityId: "mixed-snapshot-load",
+        expectedVersion: 2,
+        events: [{ type: "OrderShipped", data: { tracking: "T2" } }],
+      });
+
+      const agg = await Order.load(store, "mixed-snapshot-load");
+
+      expect(agg.version).toBe(3);
+      expect(agg.state).toEqual({ status: "shipped", total: 75 });
+    });
   });
 
   describe("loadEvents", () => {
@@ -116,6 +145,34 @@ describe("defineAggregate", () => {
       ]);
       const placed = events.find(isOrderPlacedEvent);
       expect(placed?.data.total).toBe(50);
+    });
+
+    it("filters generated snapshot events from typed aggregate events", async () => {
+      const store = new EventStore({ pool, schema: uniqueSchema() });
+      await store.setup();
+
+      await Order.append(store, {
+        entityId: "typed-events-with-snapshot",
+        expectedVersion: -1,
+        events: [{ type: "OrderPlaced", data: { total: 60 } }],
+      });
+      await store.appendSnapshot({
+        streamId: "Order-typed-events-with-snapshot",
+        expectedVersion: 1,
+        events: [{ type: "OrderStateSnapshot", data: { status: "placed" } }],
+      });
+      await Order.append(store, {
+        entityId: "typed-events-with-snapshot",
+        expectedVersion: 2,
+        events: [{ type: "OrderShipped", data: { tracking: "T3" } }],
+      });
+
+      const events = await Order.loadEvents(store, "typed-events-with-snapshot");
+
+      expect(events.map((event) => event.type)).toEqual([
+        "OrderPlaced",
+        "OrderShipped",
+      ]);
     });
   });
 
@@ -167,6 +224,33 @@ describe("defineAggregate", () => {
 
       const agg = await Order.load(store, "a1");
       expect(agg.state?.status).toBe("shipped");
+    });
+
+    it("rejects aggregate events ending in Snapshot", async () => {
+      type ReservedEvents = {
+        OrderSnapshot: { status: string };
+      };
+
+      const ReservedOrder = defineAggregate<OrderState, ReservedEvents>()({
+        streamPrefix: "ReservedOrder",
+        evolve: {
+          OrderSnapshot: (state, event) => ({
+            ...state,
+            status: event.data?.status ?? "unknown",
+            total: 0,
+          }),
+        },
+      });
+      const store = new EventStore({ pool, schema: uniqueSchema() });
+      await store.setup();
+
+      await expect(
+        ReservedOrder.append(store, {
+          entityId: "reserved",
+          expectedVersion: -1,
+          events: [{ type: "OrderSnapshot", data: { status: "reserved" } }],
+        }),
+      ).rejects.toThrow(ReservedSnapshotEventTypeError);
     });
   });
 

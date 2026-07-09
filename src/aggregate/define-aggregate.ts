@@ -9,6 +9,26 @@ import type {
   EventMap,
 } from "./types";
 import { loadFromReplay, mapEventsForAppend } from "./aggregate-helpers";
+import { isReservedSnapshotEventType } from "../snapshot/reserved-event-type";
+
+async function loadDomainEvents<TEvents extends EventMap>(
+  eventStore: EventStore,
+  streamId: string,
+  maxEvents?: number,
+): Promise<AggregateReplayedEvent<TEvents>[]> {
+  const events = await eventStore.load(streamId, maxEvents);
+  return events.filter(
+    (event) => !isReservedSnapshotEventType(event.type),
+  ) as AggregateReplayedEvent<TEvents>[];
+}
+
+async function* filterDomainSubscription<TEvents extends EventMap>(
+  source: AsyncIterable<AggregateStoredEvent<TEvents>>,
+): AsyncIterable<AggregateStoredEvent<TEvents>> {
+  for await (const event of source) {
+    if (!isReservedSnapshotEventType(event.type)) yield event;
+  }
+}
 
 function createAggregateHandle<TState, TEvents extends EventMap>(
   def: AggregateDefinition<TEvents, TState>,
@@ -31,9 +51,7 @@ function createAggregateHandle<TState, TEvents extends EventMap>(
         evolveMap,
       }),
     loadEvents: (eventStore, entityId, maxEvents) =>
-      eventStore.load(buildStreamId(entityId), maxEvents) as Promise<
-        AggregateReplayedEvent<TEvents>[]
-      >,
+      loadDomainEvents<TEvents>(eventStore, buildStreamId(entityId), maxEvents),
     append: (eventStore, input) =>
       appendAggregate({
         eventStore,
@@ -42,10 +60,12 @@ function createAggregateHandle<TState, TEvents extends EventMap>(
         encryption,
       }),
     subscribe: (eventStore, entityId, options) =>
-      eventStore.subscribe({
-        ...options,
-        subject: buildStreamId(entityId),
-      }) as AsyncIterable<AggregateStoredEvent<TEvents>>,
+      filterDomainSubscription<TEvents>(
+        eventStore.subscribe({
+          ...options,
+          subject: buildStreamId(entityId),
+        }) as AsyncIterable<AggregateStoredEvent<TEvents>>,
+      ),
     getUpcasters: (): Upcaster[] => upcasters ?? [],
   };
 }

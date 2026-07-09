@@ -1,6 +1,6 @@
 ---
 title: Database Schema
-description: PostgreSQL table structure for the event store — events, outbox, crypto keys, and projections.
+description: PostgreSQL table structure for the event store — events, event-backed snapshots, outbox, crypto keys, and projections.
 ---
 
 # Database Schema
@@ -28,7 +28,7 @@ const eventStore = new EventStore({
 
 ### `events`
 
-The core append-only event log. Columns are aligned with the **CloudEvents v1.0.2** specification.
+The core append-only event log. Columns are aligned with the **CloudEvents v1.0.2** specification. Event-backed snapshots are stored here as generated events with event types ending in `Snapshot`.
 
 ```sql
 CREATE TABLE IF NOT EXISTS {schema}.events (
@@ -92,6 +92,12 @@ CREATE INDEX IF NOT EXISTS idx_events_event_type
 CREATE INDEX IF NOT EXISTS idx_events_created_at
   ON {schema}.events (created_at);
 ```
+
+### Event-backed snapshots
+
+Snapshots do not use a separate table. They are normal rows in `{schema}.events`, written to the same stream they optimize.
+
+For example, a `BankAccountBalance` snapshot for stream `Transaction-account-123` is stored as an event with `event_type = 'BankAccountBalanceSnapshot'` in that same stream. Because it is a real event row, it advances `stream_version` and participates in the normal stream ordering and OCC rules.
 
 ### `outbox`
 

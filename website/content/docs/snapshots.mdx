@@ -1,0 +1,157 @@
+---
+title: Snapshots
+description: Define event-backed snapshots for derived state without a separate snapshot table.
+---
+
+# Snapshots
+
+Snapshots are **domain-defined performance helpers**. They cache calculated state that can be derived from events, then use that cached state as the replay base on future loads.
+
+Unlike projections, snapshots are not separate read models and do not require a worker. A snapshot is stored as a generated event in the same stream it optimizes.
+
+Snapshots are independent from aggregates. They can snapshot aggregate-like state, but they can also snapshot derived state that is not the aggregate state itself.
+
+## When to Use Snapshots
+
+Use `defineSnapshot` when all of these are true:
+
+- The state can be derived from events in one stream.
+- Replaying the full stream becomes expensive over time.
+- The cached state is only a replay optimization, not a separately queried read model.
+
+Use projections instead when you need cross-stream views, query tables, filtering, search, or asynchronous read models.
+
+### Snapshots vs Projections
+
+| Use case | Prefer | Why |
+| --- | --- | --- |
+| Current balance for one bank account from one `Transaction-{accountId}` stream | Snapshot | It speeds up replay of one stream and can be loaded as `latest snapshot + later events`. |
+| Dashboard table with all accounts, owners, balances, and risk status | Projection | It is a query model that combines and filters data for reads. |
+| Customer total wealth across many account streams | Projection | It depends on multiple streams, so there is no single same-stream snapshot version. |
+| Current aggregate state after thousands of address changes in one `BankAccount-{id}` stream | Snapshot | It is still a one-stream replay optimization. |
+
+## Snapshot Relation to Aggregates
+
+The relation between aggregates and snapshots is not always `1:1`.
+
+One aggregate stream can have multiple snapshots when different calculations become expensive:
+
+```typescript
+const BankAccountBalance = defineSnapshot<
+  { balance: number },
+  TransactionEvents
+>()({
+  streamPrefix: Transaction.streamPrefix,
+  snapshotName: "BankAccountBalance",
+  every: 50,
+  initialState: { balance: 0 },
+  evolve: {
+    Deposit: (state, event) => ({
+      balance: state.balance + Number(event.data?.amount ?? 0),
+    }),
+    Withdrawal: (state, event) => ({
+      balance: state.balance - Number(event.data?.amount ?? 0),
+    }),
+  },
+});
+
+const BankAccountTransactionCount = defineSnapshot<
+  { count: number },
+  TransactionEvents
+>()({
+  streamPrefix: Transaction.streamPrefix,
+  snapshotName: "BankAccountTransactionCount",
+  every: 100,
+  initialState: { count: 0 },
+  evolve: {
+    Deposit: (state) => ({ count: state.count + 1 }),
+    Withdrawal: (state) => ({ count: state.count + 1 }),
+  },
+});
+```
+
+This is why snapshots are defined with `defineSnapshot` instead of only as a `snapshot` option on `defineAggregate`. The snapshot belongs to a stream prefix and a domain calculation, not necessarily to the aggregate state object.
+
+You can still keep the DX clean by grouping related snapshots near the aggregate:
+
+```typescript
+export const transactionSnapshots = [
+  BankAccountBalance,
+  BankAccountTransactionCount,
+];
+```
+
+## Define a Snapshot
+
+```typescript
+import { EventStore, defineSnapshot } from "@lox-solutions/alvyn";
+
+type TransactionEvents = {
+  Deposit: { amount: number };
+  Withdrawal: { amount: number };
+};
+
+const BankAccountBalance = defineSnapshot<
+  { balance: number },
+  TransactionEvents
+>()({
+  streamPrefix: "Transaction",
+  snapshotName: "BankAccountBalance",
+  every: 50,
+  initialState: { balance: 0 },
+  evolve: {
+    Deposit: (state, event) => ({
+      balance: state.balance + Number(event.data?.amount ?? 0),
+    }),
+    Withdrawal: (state, event) => ({
+      balance: state.balance - Number(event.data?.amount ?? 0),
+    }),
+  },
+});
+```
+
+`snapshotName` generates the snapshot event type. In this example Alvyn writes `BankAccountBalanceSnapshot` events.
+
+## Register Snapshots on the EventStore
+
+Register snapshot handles once when creating the store. Alvyn then maintains matching snapshots synchronously after public appends.
+
+```typescript
+const eventStore = new EventStore({
+  pool,
+  snapshots: transactionSnapshots,
+});
+```
+
+When a `Deposit` or `Withdrawal` is appended to `Transaction-{accountId}`, Alvyn checks the registered `BankAccountBalance` snapshot in the same transaction. Once `every` handled source events have been appended after the latest snapshot, Alvyn writes a generated `BankAccountBalanceSnapshot` event immediately.
+
+## Load a Snapshot
+
+```typescript
+const result = await BankAccountBalance.load(eventStore, accountId);
+
+result.state.balance;
+result.version; // true latest stream version, including snapshot events
+result.snapshotVersion; // stream version of the snapshot event used
+result.replayedEvents; // source events replayed after the snapshot base
+```
+
+Loading follows this process:
+
+1. Read the latest matching snapshot event in `Transaction-{accountId}`.
+2. Use its saved state as the replay base, or `initialState` when none exists.
+3. Replay only later source events with handlers in `evolve`.
+
+Loading is read-only. Snapshot events are generated during appends when the snapshot is registered on the `EventStore`.
+
+## Reserved Event Names
+
+Event types ending in `Snapshot` are reserved for Alvyn-generated snapshot events. Public `EventStore.append()` and aggregate append helpers reject user-supplied event names such as `OrderSnapshot`.
+
+This prevents domain events from colliding with generated snapshot events in the same stream.
+
+## Storage Model
+
+Snapshots are stored in the normal `{schema}.events` table. There is no `snapshots` table and no separate migration.
+
+Because snapshot events share the source stream, they also advance `stream_version`. Use `eventStore.getStreamVersion()` or aggregate `load().version` when calculating expected versions after snapshot loads.

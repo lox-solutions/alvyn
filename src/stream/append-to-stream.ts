@@ -2,6 +2,10 @@ import type { PoolClient } from "pg";
 import type { CryptoKeyManager } from "../crypto/crypto-key-manager";
 import { OptimisticConcurrencyError } from "../errors";
 import type { AppendEventInput, AppendResult } from "../types";
+import {
+  assertNoReservedSnapshotEventTypes,
+  assertOnlyReservedSnapshotEventTypes,
+} from "../snapshot/reserved-event-type";
 import { buildOutboxRows, insertOutboxChunks } from "./outbox-insert";
 import { notifyChannel } from "./notify-channel";
 import { prepareEventRow } from "./prepare-event-row";
@@ -22,6 +26,7 @@ export interface AppendToStreamOptions {
     defaultSource?: string;
   };
   cryptoKeyManager: CryptoKeyManager | null;
+  allowReservedEventTypes?: boolean;
 }
 
 async function acquireLockAndValidateVersion(options: {
@@ -166,10 +171,13 @@ async function writeOutbox(options: {
 export async function appendToStream(
   options: AppendToStreamOptions,
 ): Promise<AppendResult> {
-  const { client, schema, input, cryptoKeyManager } = options;
+  const { client, schema, input, cryptoKeyManager, allowReservedEventTypes } =
+    options;
   const { streamId, expectedVersion, events, outboxTopics } = input;
   const defaultSource = input.defaultSource ?? "event-store";
   if (events.length === 0) throw new Error("Cannot append zero events");
+  if (allowReservedEventTypes) assertOnlyReservedSnapshotEventTypes(events);
+  else assertNoReservedSnapshotEventTypes(events);
 
   const currentVersion = await acquireLockAndValidateVersion({
     client,

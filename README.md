@@ -10,7 +10,7 @@
 
 > **Beta** — Alvyn is under active development. The API may change before v1.0. We encourage contributions and feedback to help make this a battle-tested library.
 
-A production-grade event sourcing library for **Node.js** and **PostgreSQL**. Type-safe aggregates, GDPR crypto-shredding, projections, transactional outbox, and schema evolution — all in one package.
+A production-grade event sourcing library for **Node.js** and **PostgreSQL**. Type-safe aggregates, event-backed snapshots, GDPR crypto-shredding, projections, transactional outbox, and schema evolution — all in one package.
 
 [![CI](https://github.com/lox-solutions/alvyn/actions/workflows/ci.yml/badge.svg)](https://github.com/lox-solutions/alvyn/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@lox-solutions/alvyn)](https://www.npmjs.com/package/@lox-solutions/alvyn)
@@ -22,6 +22,7 @@ Most event sourcing libraries for Node.js are either too minimal (just an append
 
 - **PostgreSQL only** — No abstraction over multiple databases. This lets Alvyn use advisory locks, `FOR UPDATE SKIP LOCKED`, transactional outbox, and schema isolation as first-class features.
 - **TypeScript first** — `defineAggregate` and `defineProjection` use curried generics for full type inference. No casting, no `any`.
+- **Event-backed snapshots** — Define domain-specific performance snapshots that are stored as generated events in the optimized stream.
 - **GDPR built-in** — Per-entity AES-256-GCM envelope encryption with key revocation. Revoking a key makes all PII for that entity cryptographically irrecoverable.
 - **CloudEvents v1.0.2** — Every stored event complies with the CloudEvents specification.
 
@@ -73,6 +74,50 @@ await Order.append(eventStore, "order-123", {
   events: [{ type: "OrderShipped", data: { trackingNumber: "TRACK-456" } }],
 });
 ```
+
+## Event-backed snapshots
+
+Use `defineSnapshot` when a calculated state becomes expensive to rebuild from a long event stream. Snapshots are stored as normal generated events in the same stream they optimize, using the reserved event type suffix `Snapshot`.
+
+Snapshots are not necessarily aggregate snapshots. They are independent, domain-defined performance helpers for any state that can be derived from events in one stream. A single aggregate stream can have multiple useful snapshots, and some snapshots can be decoupled from the aggregate's own state:
+
+- `BankAccountBalance` for fast balance checks from `Deposit` and `Withdrawal` events.
+- `BankAccountTransactionCount` for fast transaction counting in the same stream.
+- `LastBankAccountActivity` for quickly reading the latest relevant activity.
+
+Use a projection instead when the result is a query/read model, needs its own table, combines multiple streams, powers search/filtering, or should be processed asynchronously.
+
+```typescript
+import { EventStore, defineSnapshot } from "@lox-solutions/alvyn";
+
+const BankAccountBalance = defineSnapshot<
+  { balance: number },
+  TransactionEvents
+>()({
+  streamPrefix: Transaction.streamPrefix,
+  snapshotName: "BankAccountBalance",
+  every: 50,
+  initialState: { balance: 0 },
+  evolve: {
+    Deposit: (state, event) => ({
+      balance: state.balance + Number(event.data?.amount ?? 0),
+    }),
+    Withdrawal: (state, event) => ({
+      balance: state.balance - Number(event.data?.amount ?? 0),
+    }),
+  },
+});
+
+const eventStore = new EventStore({
+  pool,
+  snapshots: [BankAccountBalance],
+});
+
+const balance = await BankAccountBalance.load(eventStore, accountId);
+console.log(balance.state.balance);
+```
+
+When `BankAccountBalance` is registered on the `EventStore`, matching incoming events update the snapshot synchronously during append and write `BankAccountBalanceSnapshot` once the threshold is reached. Loading finds the latest snapshot event in `Transaction-{accountId}` and replays only later source events; user-supplied events ending in `Snapshot` are rejected so generated snapshot event names cannot collide with domain event names.
 
 ## Subscriptions (fan-out)
 
@@ -201,13 +246,12 @@ where each event must be published once (use-case 2).
 
 | Feature                  | Description                                                                  |
 | ------------------------ | ---------------------------------------------------------------------------- |
-| **Aggregates**           | `defineAggregate` with full TypeScript inference, OCC, and auto-snapshots    |
+| **Aggregates**           | `defineAggregate` with full TypeScript inference and OCC                     |
 | **Subscriptions**        | `subscribe()` fan-out async iterator: catch-up + live tail via LISTEN/NOTIFY |
 | **Projections**          | `defineProjection` for typed read models with checkpoint tracking            |
 | **Crypto-Shredding**     | Per-entity AES-256-GCM envelope encryption for GDPR compliance               |
 | **Transactional Outbox** | At-least-once delivery to external systems, atomic with event writes         |
 | **Schema Evolution**     | Read-time upcasters that transform old event shapes without migrations       |
-| **Snapshots**            | Automatic snapshot management with Map/Set serialization support             |
 | **CloudEvents**          | All events comply with CloudEvents v1.0.2 specification                      |
 
 ## Documentation

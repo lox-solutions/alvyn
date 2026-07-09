@@ -40,6 +40,15 @@ export interface ReadStreamOptions {
   maxEvents?: number;
 }
 
+export interface ReadLatestEventByTypeOptions {
+  client: PoolClient;
+  schema: string;
+  streamId: string;
+  eventType: string;
+  cryptoKeyManager: CryptoKeyManager | null;
+  upcasterRegistry: UpcasterRegistry | null;
+}
+
 interface BaseEventContext {
   id: string;
   source: string;
@@ -237,6 +246,38 @@ export async function readStream<T = unknown>(
     );
   }
   return events;
+}
+
+/** Reads the latest event of a specific type for a stream. Handles decryption + upcasting. */
+export async function readLatestEventByType<T = unknown>(
+  options: ReadLatestEventByTypeOptions,
+): Promise<ReplayedEvent<T> | null> {
+  const {
+    client,
+    schema,
+    streamId,
+    eventType,
+    cryptoKeyManager,
+    upcasterRegistry,
+  } = options;
+  const result = await client.query<EventRow>(
+    `SELECT global_position, stream_id, stream_version, id, source, specversion, event_type,
+            subject, time, datacontenttype, data, extensions, encrypted_data, crypto_key_id, schema_version, created_at
+     FROM ${schema}.events WHERE stream_id = $1 AND event_type = $2 ORDER BY stream_version DESC LIMIT 1`,
+    [streamId, eventType],
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+
+  return processRow<T>({
+    row,
+    ctx: buildBaseContext(row),
+    cryptoKeyManager,
+    upcasterRegistry,
+    keyCache: new Map<string, Buffer | null>(),
+    client,
+    schema,
+  });
 }
 
 const DEFAULT_LIST_STREAMS_LIMIT = 100;

@@ -5,7 +5,7 @@ description: Complete reference for the EventStore class, all exported types, an
 
 # API Reference
 
-Complete reference for the `EventStore` class, all exported types, and error classes.
+Complete reference for the `EventStore` class, all exported builders, exported types, and error classes.
 
 ## EventStore Class
 
@@ -23,15 +23,19 @@ interface EventStoreConfig {
   schema?: string;
   masterEncryptionKey?: string;
   defaultSource?: string;
+  snapshots?: SnapshotHandle<unknown>[];
 }
 ```
 
-| Parameter             | Type     | Required | Description                                              |
-| --------------------- | -------- | -------- | -------------------------------------------------------- |
-| `pool`                | `Pool`   | Yes      | PostgreSQL connection pool (caller manages lifecycle)    |
-| `schema`              | `string` | No       | PostgreSQL schema name (default: `"event_store"`)        |
-| `masterEncryptionKey` | `string` | No       | 256-bit hex key (64 chars) for envelope encryption       |
-| `defaultSource`       | `string` | No       | CloudEvents `source` URI-reference applied to all events |
+| Parameter             | Type                        | Required | Description                                                       |
+| --------------------- | --------------------------- | -------- | ----------------------------------------------------------------- |
+| `pool`                | `Pool`                      | Yes      | PostgreSQL connection pool (caller manages lifecycle)             |
+| `schema`              | `string`                    | No       | PostgreSQL schema name (default: `"event_store"`)                 |
+| `masterEncryptionKey` | `string`                    | No       | 256-bit hex key (64 chars) for envelope encryption                |
+| `defaultSource`       | `string`                    | No       | CloudEvents `source` URI-reference applied to all events          |
+| `snapshots`           | `SnapshotHandle<unknown>[]` | No       | Snapshot definitions maintained synchronously after matching appends |
+
+Register independent snapshot handles here when you want Alvyn to maintain them on incoming writes. A snapshot is tied to a `streamPrefix`, but it is not always a `1:1` aggregate feature; one stream prefix can have multiple snapshots for different expensive calculations.
 
 The schema name is validated against `/^[a-z_][a-z0-9_]{0,62}$/`. Invalid names throw `InvalidSchemaNameError`.
 
@@ -75,7 +79,9 @@ const result = await eventStore.append({
 
 **Returns:** `AppendResult` with `streamId`, `fromVersion`, `toVersion`, `globalPositions[]`.
 
-**Throws:** `OptimisticConcurrencyError`, `CryptoKeyRevokedError`.
+**Throws:** `OptimisticConcurrencyError`, `CryptoKeyRevokedError`, `ReservedSnapshotEventTypeError`.
+
+Event types ending in `Snapshot` are reserved for Alvyn-generated snapshot events and cannot be appended through public write APIs.
 
 #### `load(streamId): Promise<ReplayedEvent[]>`
 
@@ -100,6 +106,52 @@ const orderStreams = await eventStore.listStreams({
 | -------- | -------- | ------- | ------------------------------------------------------------ |
 | `prefix` | `string` | -       | Stream ID prefix (separator `"-"` is appended automatically) |
 | `limit`  | `number` | `100`   | Maximum number of stream IDs to return                       |
+
+### Snapshot Builder
+
+#### `defineSnapshot<TState, TEvents>()(definition)`
+
+Defines an event-backed snapshot over one source stream prefix.
+
+```typescript
+const BankAccountBalance = defineSnapshot<
+  { balance: number },
+  TransactionEvents
+>()({
+  streamPrefix: "Transaction",
+  snapshotName: "BankAccountBalance",
+  every: 50,
+  initialState: { balance: 0 },
+  evolve: {
+    Deposit: (state, event) => ({
+      balance: state.balance + Number(event.data?.amount ?? 0),
+    }),
+    Withdrawal: (state, event) => ({
+      balance: state.balance - Number(event.data?.amount ?? 0),
+    }),
+  },
+});
+```
+
+`snapshotName` generates the snapshot event type `${snapshotName}Snapshot`. Snapshot events are stored in the same stream and advance `stream_version` like any other event.
+
+Register snapshot handles on the `EventStore` to maintain them on incoming events:
+
+```typescript
+const eventStore = new EventStore({
+  pool,
+  snapshots: [BankAccountBalance],
+});
+```
+
+#### `snapshot.load(eventStore, entityId): Promise<SnapshotLoadResult<TState>>`
+
+Finds the latest generated snapshot event and replays only later handled source events. Loading is read-only; registered snapshots are updated synchronously after matching public appends.
+
+```typescript
+const result = await BankAccountBalance.load(eventStore, "account-123");
+result.state.balance;
+```
 
 ### Crypto / GDPR
 
@@ -255,6 +307,35 @@ interface ProjectionHandlerContext {
 }
 ```
 
+### Snapshot Types
+
+```typescript
+interface SnapshotDefinition<TState, TEvents extends EventMap> {
+  streamPrefix: string;
+  snapshotName: string;
+  every: number;
+  initialState: TState;
+  evolve: Partial<{
+    [K in keyof TEvents & string]: (
+      state: TState,
+      event: ReplayedEvent<TEvents[K]>,
+    ) => TState;
+  }>;
+  encryption?: {
+    cryptoKeyId: (entityId: string) => string;
+    encryptedFields: string[];
+  };
+}
+
+interface SnapshotLoadResult<TState> {
+  state: TState;
+  streamId: string;
+  version: number;
+  snapshotVersion: number | null;
+  replayedEvents: number;
+}
+```
+
 ### Outbox Type
 
 ```typescript
@@ -326,3 +407,7 @@ Thrown when any method is called before `setup()`.
 ### `InvalidSchemaNameError`
 
 Thrown when the schema name does not match `/^[a-z_][a-z0-9_]{0,62}$/`.
+
+### `ReservedSnapshotEventTypeError`
+
+Thrown when user code attempts to append an event type ending in `Snapshot`. The suffix is reserved for Alvyn-generated snapshot events.

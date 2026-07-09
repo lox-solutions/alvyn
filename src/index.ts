@@ -11,6 +11,9 @@ export { defineAggregate } from "./aggregate/define-aggregate";
 // Projection builder
 export { defineProjection } from "./projection/define-projection";
 
+// Snapshot builder
+export { defineSnapshot } from "./snapshot/define-snapshot";
+
 // Types — configuration
 export type { EventStoreConfig } from "./types";
 
@@ -68,6 +71,14 @@ export type {
   ProjectionHandlerContext,
 } from "./projection/types";
 
+// Types — snapshot builder
+export type {
+  SnapshotDefinition,
+  SnapshotEncryptionConfig,
+  SnapshotHandle,
+  SnapshotLoadResult,
+} from "./snapshot/types";
+
 // Types — upcasting
 export type { Upcaster } from "./types";
 
@@ -82,5 +93,6 @@ export {
   InvalidSchemaNameError,
   MasterKeyRequiredError,
   OptimisticConcurrencyError,
+  ReservedSnapshotEventTypeError,
   StreamNotFoundError,
 } from "./errors";
