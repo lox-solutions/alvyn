@@ -1,11 +1,11 @@
 ---
 title: Aggregates
-description: Define type-safe event-sourced aggregates with full TypeScript inference, automatic snapshots, encryption, and schema evolution.
+description: Define type-safe event-sourced aggregates with full TypeScript inference, encryption, and schema evolution.
 ---
 
 # Aggregates
 
-The `defineAggregate` function is the **primary DX surface** for working with event-sourced aggregates. It produces a type-safe `AggregateHandle` that encapsulates stream ID derivation, state replay, automatic snapshot management, and encryption configuration.
+The `defineAggregate` function is the **primary DX surface** for working with event-sourced aggregates. It produces a type-safe `AggregateHandle` that encapsulates stream ID derivation, state replay, and encryption configuration.
 
 ## Defining an Aggregate
 
@@ -70,7 +70,6 @@ interface AggregateDefinition<TEvents, TState> {
     ) => TState;
   };
   encryption?: EncryptionConfig;
-  snapshot?: SnapshotConfig;
   upcasters?: Upcaster[];
 }
 ```
@@ -103,16 +102,6 @@ encryption: {
 }
 ```
 
-### `snapshot` (optional)
-
-Configures automatic snapshotting. When `load()` replays more events than the threshold since the last snapshot, a new snapshot is saved automatically.
-
-```typescript
-snapshot: {
-  every: 100;
-} // Auto-snapshot every 100 events
-```
-
 ### `upcasters` (optional)
 
 See [Schema Evolution](/docs/schema-evolution) for details.
@@ -134,7 +123,7 @@ The `defineAggregate` call returns an `AggregateHandle` with the following inter
 
 ### `load(eventStore, entityId)`
 
-Loads the aggregate by replaying all events (or from snapshot + remaining events if snapshot config is set).
+Loads the aggregate by replaying all events.
 
 ```typescript
 const order = await Order.load(eventStore, "order-123");
@@ -144,8 +133,6 @@ order.version; // 5 (current stream version)
 order.exists; // true (stream has at least one event)
 order.streamId; // "Order-order-123"
 ```
-
-**Snapshot optimization:** If `snapshot` is configured, `load()` uses `loadWithSnapshot()` internally. When the number of replayed events since the last snapshot exceeds `snapshot.every`, a new snapshot is saved automatically.
 
 ### `append(eventStore, entityId, input)`
 
@@ -277,8 +264,6 @@ const User = defineAggregate<UserEvents>()({
       UserRenamed: ["name"],
     },
   },
-
-  snapshot: { every: 50 },
 
   upcasters: [userRenamedV1ToV2],
 });

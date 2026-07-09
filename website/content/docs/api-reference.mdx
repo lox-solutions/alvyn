@@ -85,14 +85,6 @@ Loads all events for a stream from version 1. Handles decryption and upcasting a
 
 Loads events starting from a specific version.
 
-#### `loadWithSnapshot(streamId): Promise<{ snapshot, events }>`
-
-Loads the snapshot (if any) plus events after the snapshot version. Most efficient way to rebuild aggregate state.
-
-```typescript
-const { snapshot, events } = await eventStore.loadWithSnapshot("Order-123");
-```
-
 #### `listStreams(options?): Promise<string[]>`
 
 Lists distinct stream IDs, optionally filtered by prefix.
@@ -109,25 +101,6 @@ const orderStreams = await eventStore.listStreams({
 | `prefix` | `string` | -       | Stream ID prefix (separator `"-"` is appended automatically) |
 | `limit`  | `number` | `100`   | Maximum number of stream IDs to return                       |
 
-### Snapshots
-
-#### `saveSnapshot(input): Promise<void>`
-
-Saves a snapshot for a stream. Upserts — one snapshot per stream.
-
-```typescript
-await eventStore.saveSnapshot({
-  streamId: "Order-123",
-  streamVersion: 100,
-  snapshotType: "Order",
-  data: { status: "shipped", total: 99.99 },
-});
-```
-
-#### `deleteSnapshot(streamId): Promise<void>`
-
-Deletes the snapshot for a stream.
-
 ### Crypto / GDPR
 
 #### `createCryptoKey(keyId): Promise<void>`
@@ -138,7 +111,7 @@ Creates a per-entity AES-256 encryption key. Idempotent.
 
 #### `revokeKey(keyId): Promise<void>`
 
-Revokes a crypto key (GDPR erasure). Encrypted events become tombstones on read. Deletes snapshots for affected streams.
+Revokes a crypto key (GDPR erasure). Encrypted events become tombstones on read.
 
 **Throws:** `MasterKeyRequiredError`, `CryptoKeyNotFoundError`.
 
@@ -250,25 +223,6 @@ interface AppendResult {
   fromVersion: number;
   toVersion: number;
   globalPositions: bigint[];
-}
-```
-
-### Snapshot Types
-
-```typescript
-interface Snapshot<T = unknown> {
-  streamId: string;
-  streamVersion: number;
-  snapshotType: string;
-  data: T;
-  createdAt: Date;
-}
-
-interface SaveSnapshotInput<T = unknown> {
-  streamId: string;
-  streamVersion: number;
-  snapshotType: string;
-  data: T;
 }
 ```
 

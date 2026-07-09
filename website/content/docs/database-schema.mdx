@@ -1,6 +1,6 @@
 ---
 title: Database Schema
-description: PostgreSQL table structure for the event store — events, snapshots, outbox, crypto keys, and projections.
+description: PostgreSQL table structure for the event store — events, outbox, crypto keys, and projections.
 ---
 
 # Database Schema
@@ -92,30 +92,6 @@ CREATE INDEX IF NOT EXISTS idx_events_event_type
 CREATE INDEX IF NOT EXISTS idx_events_created_at
   ON {schema}.events (created_at);
 ```
-
-### `snapshots`
-
-One snapshot per stream. Used to optimize aggregate loading.
-
-```sql
-CREATE TABLE IF NOT EXISTS {schema}.snapshots (
-  stream_id        TEXT             NOT NULL,
-  stream_version   INTEGER          NOT NULL,
-  snapshot_type    TEXT             NOT NULL,
-  data             JSONB            NOT NULL,
-  created_at       TIMESTAMPTZ      NOT NULL DEFAULT now(),
-
-  PRIMARY KEY (stream_id)
-);
-```
-
-| Column           | Type                   | Description                        |
-| ---------------- | ---------------------- | ---------------------------------- |
-| `stream_id`      | `TEXT PK`              | One snapshot per stream (upserted) |
-| `stream_version` | `INTEGER NOT NULL`     | Stream version at snapshot time    |
-| `snapshot_type`  | `TEXT NOT NULL`        | Aggregate type name                |
-| `data`           | `JSONB NOT NULL`       | Serialized aggregate state         |
-| `created_at`     | `TIMESTAMPTZ NOT NULL` | Auto-set / updated on upsert       |
 
 ### `outbox`
 

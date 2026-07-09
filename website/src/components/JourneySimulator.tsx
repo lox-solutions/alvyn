@@ -158,7 +158,7 @@ export function JourneySimulator() {
           title: "Initial Intent Decoded",
           text: "The library member is researching AI and prompt engineering. They are exploring commodity-level AI software builders.",
           crudNote:
-            "CRUD stores one static snapshot. Represents current status 'borrowed'.",
+            "CRUD stores one static record. Represents current status 'borrowed'.",
           eventNote:
             "Alvyn captures the atomic sequence: BookBorrowed event with metadata.",
         };
@@ -510,7 +510,7 @@ export function JourneySimulator() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-fd-border">
             <div>
               <span className="text-[10px] font-semibold text-red-400 block mb-1 uppercase tracking-wider">
-                AI fed with CRUD snapshot:
+                AI fed with CRUD record:
               </span>
               <span className="text-xs text-fd-muted-foreground block leading-relaxed">
                 {ai.crudNote}

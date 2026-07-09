@@ -8,30 +8,12 @@ import type {
   AggregateStoredEvent,
   EventMap,
 } from "./types";
-import {
-  loadFromReplay,
-  loadWithSnapshotSupport,
-  mapEventsForAppend,
-} from "./aggregate-helpers";
+import { loadFromReplay, mapEventsForAppend } from "./aggregate-helpers";
 
 function createAggregateHandle<TState, TEvents extends EventMap>(
   def: AggregateDefinition<TEvents, TState>,
 ): AggregateHandle<TState, TEvents> {
-  const {
-    streamPrefix,
-    evolve,
-    encryption,
-    snapshot,
-    deserializeSnapshot,
-    upcasters,
-  } = def;
-  const { mapFields, setFields } =
-    snapshot && !deserializeSnapshot
-      ? {
-          mapFields: snapshot.mapFields ?? [],
-          setFields: snapshot.setFields ?? [],
-        }
-      : { mapFields: [] as string[], setFields: [] as string[] };
+  const { streamPrefix, evolve, encryption, upcasters } = def;
   const buildStreamId = (entityId: string): string =>
     `${streamPrefix}-${entityId}`;
   const evolveMap = evolve as Record<
@@ -45,19 +27,20 @@ function createAggregateHandle<TState, TEvents extends EventMap>(
       loadAggregate({
         eventStore,
         entityId,
-        def,
         buildStreamId,
         evolveMap,
-        mapFields,
-        setFields,
-        snapshot,
       }),
     loadEvents: (eventStore, entityId, maxEvents) =>
       eventStore.load(buildStreamId(entityId), maxEvents) as Promise<
         AggregateReplayedEvent<TEvents>[]
       >,
     append: (eventStore, input) =>
-      appendAggregate({ eventStore, input, buildStreamId, encryption }),
+      appendAggregate({
+        eventStore,
+        input,
+        buildStreamId,
+        encryption,
+      }),
     subscribe: (eventStore, entityId, options) =>
       eventStore.subscribe({
         ...options,
@@ -70,33 +53,11 @@ function createAggregateHandle<TState, TEvents extends EventMap>(
 async function loadAggregate<TState, TEvents extends EventMap>(options: {
   eventStore: EventStore;
   entityId: string;
-  def: AggregateDefinition<TEvents, TState>;
   buildStreamId: (id: string) => string;
   evolveMap: Record<string, (s: TState, e: ReplayedEvent) => TState>;
-  mapFields: string[];
-  setFields: string[];
-  snapshot: AggregateDefinition<TEvents, TState>["snapshot"];
 }): Promise<AggregateInstance<TState>> {
-  const {
-    eventStore,
-    entityId,
-    def,
-    buildStreamId,
-    evolveMap,
-    mapFields,
-    setFields,
-    snapshot,
-  } = options;
+  const { eventStore, entityId, buildStreamId, evolveMap } = options;
   const streamId = buildStreamId(entityId);
-  if (snapshot) {
-    return loadWithSnapshotSupport({
-      eventStore,
-      streamId,
-      definition: def,
-      mapFields,
-      setFields,
-    });
-  }
   return loadFromReplay({
     eventStore,
     streamId,
@@ -104,7 +65,7 @@ async function loadAggregate<TState, TEvents extends EventMap>(options: {
   });
 }
 
-async function appendAggregate<TEvents extends EventMap>(options: {
+async function appendAggregate<TState, TEvents extends EventMap>(options: {
   eventStore: EventStore;
   input: {
     entityId: string;
@@ -113,7 +74,7 @@ async function appendAggregate<TEvents extends EventMap>(options: {
     outboxTopics?: string[];
   };
   buildStreamId: (id: string) => string;
-  encryption: AggregateDefinition<TEvents, unknown>["encryption"];
+  encryption: AggregateDefinition<TEvents, TState>["encryption"];
 }): Promise<{ fromVersion: number; toVersion: number }> {
   const { eventStore, input, buildStreamId, encryption } = options;
   const streamId = buildStreamId(input.entityId);

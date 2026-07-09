@@ -198,40 +198,6 @@ describe("EventStore crypto / GDPR", () => {
       expect(tombstone.extensions).toBeDefined();
     });
 
-    it("revokeKey deletes snapshots for affected streams", async () => {
-      const store = makeStore();
-      await store.setup();
-      await store.createCryptoKey("user:eve");
-
-      await store.append({
-        streamId: "User-eve",
-        expectedVersion: -1,
-        events: [
-          {
-            type: "UserRegistered",
-            data: { name: "Eve" },
-            encryptedFields: ["name"],
-            cryptoKeyId: "user:eve",
-          },
-        ],
-      });
-
-      // Save a snapshot
-      await store.saveSnapshot({
-        streamId: "User-eve",
-        streamVersion: 1,
-        snapshotType: "User",
-        data: { name: "Eve" },
-      });
-
-      // Revoke key — should delete snapshot
-      await store.revokeKey("user:eve");
-
-      // loadWithSnapshot should return no snapshot
-      const { snapshot } = await store.loadWithSnapshot("User-eve");
-      expect(snapshot).toBeNull();
-    });
-
     it("revokeKey is idempotent", async () => {
       const store = makeStore();
       await store.setup();

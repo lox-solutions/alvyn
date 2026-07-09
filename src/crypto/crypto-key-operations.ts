@@ -20,20 +20,12 @@ export function createCryptoKey(
   );
 }
 
-/**
- * Revokes a crypto key and crypto-shreds dependent data: it also deletes any
- * snapshots derived from events encrypted with that key, since those snapshots
- * may contain now-irrecoverable PII.
- */
+/** Revokes a crypto key and crypto-shreds dependent event data. */
 export function revokeCryptoKey(
   options: CryptoKeyOperationOptions,
 ): Promise<void> {
   const { pool, schema, manager, keyId } = options;
   return inTransaction(pool, async (c) => {
     await manager.revokeKey({ client: c, schema, keyId });
-    await c.query(
-      `DELETE FROM ${schema}.snapshots WHERE stream_id IN (SELECT DISTINCT stream_id FROM ${schema}.events WHERE crypto_key_id = $1)`,
-      [keyId],
-    );
   });
 }

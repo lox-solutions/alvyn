@@ -84,18 +84,6 @@ async function createSupportTables(
   schema: string,
 ): Promise<void> {
   await client.query(`
-    CREATE TABLE IF NOT EXISTS ${schema}.snapshots (
-      stream_id        TEXT             NOT NULL,
-      stream_version   INTEGER          NOT NULL,
-      snapshot_type    TEXT             NOT NULL,
-      data             JSONB            NOT NULL,
-      created_at       TIMESTAMPTZ      NOT NULL DEFAULT now(),
-
-      PRIMARY KEY (stream_id)
-    )
-  `);
-
-  await client.query(`
     CREATE TABLE IF NOT EXISTS ${schema}.outbox (
       id               BIGSERIAL        PRIMARY KEY,
       event_global_pos BIGINT           NOT NULL,

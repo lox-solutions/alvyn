@@ -91,10 +91,10 @@ await Cart.append(eventStore, entityId, {
   ]
 });
 
-// 2. Load aggregate state with automatic snapshotting
+// 2. Load aggregate state from event history
 const { state, version } = await Cart.load(eventStore, entityId);`,
     explanation:
-      "Appended facts are saved to Postgres. State queries replay history at ultra-high speed, utilizing automatic snapshotting and crypto-shredding hooks under the hood.",
+      "Appended facts are saved to Postgres. State queries replay history with type-safe aggregate logic and crypto-shredding hooks under the hood.",
   },
 ];
 

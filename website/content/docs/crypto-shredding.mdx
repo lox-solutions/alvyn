@@ -184,8 +184,6 @@ const user = await User.load(eventStore, "abc123");
 Within a single transaction:
 
 1. Sets `revoked_at = now()` on the crypto key (the key is **not deleted** — kept for audit trail)
-2. Finds all streams that used this crypto key
-3. Deletes snapshots for those streams (snapshots may contain cached PII)
 
 The key is never deleted from the database. This is intentional — the `revoked_at` timestamp provides an audit trail for GDPR compliance.
 

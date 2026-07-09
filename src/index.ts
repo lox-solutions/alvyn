@@ -24,7 +24,6 @@ export type {
   AggregateStoredEvent,
   EncryptionConfig,
   EventMap,
-  SnapshotConfig,
 } from "./aggregate/types";
 
 // Types — CloudEvents v1.0.2
@@ -44,9 +43,6 @@ export type {
   StoredEvent,
   TombstonedEvent,
 } from "./types";
-
-// Types — snapshots
-export type { SaveSnapshotInput, Snapshot } from "./types";
 
 // Types — stream discovery
 export type { ListStreamsOptions } from "./types";

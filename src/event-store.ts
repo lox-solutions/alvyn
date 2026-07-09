@@ -18,11 +18,6 @@ import {
 import { runProjection as runProjectionFn } from "./projection/run-projection";
 import { runMigrations } from "./schema/run-migrations";
 import {
-  deleteSnapshot as deleteSnapshotFn,
-  saveSnapshot as saveSnapshotFn,
-} from "./snapshot/snapshot-store";
-import { loadWithSnapshot as loadWithSnapshotFn } from "./snapshot/load-with-snapshot";
-import {
   listStreams as listStreamsFn,
   readStream,
 } from "./stream/stream-reader";
@@ -39,8 +34,6 @@ import type {
   OutboxHandler,
   Projection,
   ReplayedEvent,
-  SaveSnapshotInput,
-  Snapshot,
   StoredEvent,
   Upcaster,
 } from "./types";
@@ -137,19 +130,6 @@ export class EventStore {
     );
   }
 
-  async loadWithSnapshot<T = unknown>(
-    streamId: string,
-  ): Promise<{ snapshot: Snapshot<T> | null; events: ReplayedEvent<T>[] }> {
-    this.ensureInitialized();
-    return loadWithSnapshotFn<T>({
-      pool: this.pool,
-      schema: this.schema,
-      streamId,
-      cryptoKeyManager: this.cryptoKeyManager,
-      upcasterRegistry: this.upcasterRegistry,
-    });
-  }
-
   async listStreams(options?: ListStreamsOptions): Promise<string[]> {
     this.ensureInitialized();
     return withClient(this.pool, (c) =>
@@ -159,20 +139,6 @@ export class EventStore {
         prefix: options?.prefix,
         limit: options?.limit,
       }),
-    );
-  }
-
-  async saveSnapshot<T = unknown>(input: SaveSnapshotInput<T>): Promise<void> {
-    this.ensureInitialized();
-    return withClient(this.pool, (c) =>
-      saveSnapshotFn({ client: c, schema: this.schema, input }),
-    );
-  }
-
-  async deleteSnapshot(streamId: string): Promise<void> {
-    this.ensureInitialized();
-    return withClient(this.pool, (c) =>
-      deleteSnapshotFn({ client: c, schema: this.schema, streamId }),
     );
   }
 

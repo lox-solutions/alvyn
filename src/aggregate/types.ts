@@ -44,27 +44,6 @@ export interface EncryptionConfig<TEvents extends EventMap> {
   encryptedFields: Partial<Record<EventTypeNames<TEvents>, string[]>>;
 }
 
-export interface SnapshotConfig {
-  /**
-   * Auto-create a snapshot every N events.
-   *
-   * Map and Set fields in aggregate state are handled automatically
-   * when `mapFields` / `setFields` are specified:
-   * - On save: a custom JSON replacer converts Map → object, Set → array
-   * - On load: fields are auto-restored using the provided field names
-   *
-   * Limitations:
-   * - Only top-level Map/Set fields are auto-restored. Nested structures
-   *   (e.g. `Map<string, Set<string>>`) require `deserializeSnapshot`.
-   * - Map keys are always restored as strings (JSON limitation).
-   */
-  every: number;
-  /** Top-level field names that are `Map` instances */
-  mapFields?: string[];
-  /** Top-level field names that are `Set` instances */
-  setFields?: string[];
-}
-
 export interface AggregateDefinition<TEvents extends EventMap, TState> {
   /** Prefix for stream IDs (e.g. "Order" → stream_id = "Order-{id}") */
   streamPrefix: string;
@@ -88,18 +67,6 @@ export interface AggregateDefinition<TEvents extends EventMap, TState> {
   };
   /** Optional: GDPR encryption configuration */
   encryption?: EncryptionConfig<TEvents>;
-  /** Optional: automatic snapshot configuration */
-  snapshot?: SnapshotConfig;
-  /**
-   * Optional: custom snapshot deserialization.
-   *
-   * By default, the framework auto-restores top-level Map and Set fields
-   * when `snapshot.mapFields` / `snapshot.setFields` are specified.
-   *
-   * Use this hook only for advanced cases like nested Map/Set structures or
-   * custom class instances that need manual reconstruction.
-   */
-  deserializeSnapshot?: (raw: unknown) => TState;
   /** Optional: schema evolution upcasters */
   upcasters?: Upcaster[];
 }
@@ -126,7 +93,7 @@ export interface AggregateHandle<TState, TEvents extends EventMap> {
   readonly streamPrefix: string;
 
   /**
-   * Loads the aggregate state by replaying events (with snapshot optimization).
+   * Loads the aggregate state by replaying events.
    */
   load(
     eventStore: EventStore,

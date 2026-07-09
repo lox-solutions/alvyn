@@ -150,25 +150,6 @@ export interface AppendResult {
 }
 
 // ---------------------------------------------------------------------------
-// Snapshots
-// ---------------------------------------------------------------------------
-
-export interface Snapshot<T = unknown> {
-  streamId: string;
-  streamVersion: number;
-  snapshotType: string;
-  data: T;
-  createdAt: Date;
-}
-
-export interface SaveSnapshotInput<T = unknown> {
-  streamId: string;
-  streamVersion: number;
-  snapshotType: string;
-  data: T;
-}
-
-// ---------------------------------------------------------------------------
 // Upcasters
 // ---------------------------------------------------------------------------
 

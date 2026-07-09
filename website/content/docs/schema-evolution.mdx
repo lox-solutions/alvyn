@@ -218,18 +218,7 @@ await Order.append(eventStore, orderId, {
 });
 ```
 
-### Step 5: Delete stale snapshots
-
-If the aggregate uses snapshots, existing snapshots contain the old state shape:
-
-```typescript
-const streams = await eventStore.listStreams({ prefix: "Order" });
-for (const streamId of streams) {
-  await eventStore.deleteSnapshot(streamId);
-}
-```
-
-### Step 6: Deploy
+### Step 5: Deploy
 
 Upcasters are backward-compatible by design. The deployment order does not matter:
 
