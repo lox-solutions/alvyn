@@ -20,6 +20,8 @@ export type {
   AggregateEventInput,
   AggregateHandle,
   AggregateInstance,
+  AggregateReplayedEvent,
+  AggregateStoredEvent,
   EncryptionConfig,
   EventMap,
   SnapshotConfig,

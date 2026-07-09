@@ -46,10 +46,10 @@ export function detectCollectionFields(state: Record<string, unknown>): {
 }
 
 export function applyEvents<TState>(options: {
-  state: TState;
+  state: TState | null;
   events: ReplayedEvent[];
   evolve: Record<string, (state: TState, event: ReplayedEvent) => TState>;
-}): TState {
+}): TState | null {
   const { events, evolve } = options;
   let current = options.state;
   for (const event of events) {
@@ -57,21 +57,20 @@ export function applyEvents<TState>(options: {
       | ((state: TState, event: ReplayedEvent) => TState)
       | undefined;
     if (handler) {
-      current = handler(current, event);
+      current = handler(current as TState, event);
     }
   }
   return current;
 }
 
 export function buildInstance<TState>(options: {
-  state: TState;
+  state: TState | null;
   version: number;
   streamId: string;
 }): AggregateInstance<TState> {
   return {
     state: options.state,
     version: options.version,
-    exists: options.version > 0,
     streamId: options.streamId,
   };
 }
@@ -119,14 +118,13 @@ export async function loadWithSnapshotSupport<
   setFields: string[];
 }): Promise<AggregateInstance<TState>> {
   const { eventStore, streamId, definition, mapFields, setFields } = options;
-  const { initialState, evolve, snapshot, deserializeSnapshot } = definition;
+  const { evolve, snapshot, deserializeSnapshot } = definition;
 
   const { snapshot: snap, events } =
     await eventStore.loadWithSnapshot(streamId);
 
   const baseState = resolveBaseState({
     snap,
-    initialState,
     deserializeSnapshot,
     mapFields,
     setFields,
@@ -156,14 +154,12 @@ export async function loadWithSnapshotSupport<
 
 function resolveBaseState<TState>(options: {
   snap: { data: unknown; streamVersion: number } | null;
-  initialState: () => TState;
   deserializeSnapshot?: (data: unknown) => TState;
   mapFields: string[];
   setFields: string[];
-}): TState {
-  const { snap, initialState, deserializeSnapshot, mapFields, setFields } =
-    options;
-  if (!snap) return initialState();
+}): TState | null {
+  const { snap, deserializeSnapshot, mapFields, setFields } = options;
+  if (!snap) return null;
   if (deserializeSnapshot) return deserializeSnapshot(snap.data);
   return restoreSnapshot({ raw: snap.data as TState, mapFields, setFields });
 }
@@ -201,12 +197,11 @@ export function mapEventsForAppend<TEvents extends EventMap>(options: {
 export async function loadFromReplay<TState>(options: {
   eventStore: EventStore;
   streamId: string;
-  initialState: () => TState;
   evolve: Record<string, (s: TState, e: ReplayedEvent) => TState>;
 }): Promise<AggregateInstance<TState>> {
-  const { eventStore, streamId, initialState, evolve } = options;
+  const { eventStore, streamId, evolve } = options;
   const events = await eventStore.load(streamId);
-  const state = applyEvents({ state: initialState(), events, evolve });
+  const state = applyEvents({ state: null, events, evolve });
   const version =
     events.length > 0 ? events[events.length - 1].streamVersion : 0;
   return buildInstance({ state, version, streamId });

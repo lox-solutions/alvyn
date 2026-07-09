@@ -4,21 +4,21 @@ import type {
   AggregateDefinition,
   AggregateHandle,
   AggregateInstance,
+  AggregateReplayedEvent,
+  AggregateStoredEvent,
   EventMap,
 } from "./types";
 import {
-  detectCollectionFields,
   loadFromReplay,
   loadWithSnapshotSupport,
   mapEventsForAppend,
 } from "./aggregate-helpers";
 
-function createAggregateHandle<TEvents extends EventMap, TState>(
+function createAggregateHandle<TState, TEvents extends EventMap>(
   def: AggregateDefinition<TEvents, TState>,
-): AggregateHandle<TEvents, TState> {
+): AggregateHandle<TState, TEvents> {
   const {
     streamPrefix,
-    initialState,
     evolve,
     encryption,
     snapshot,
@@ -27,7 +27,10 @@ function createAggregateHandle<TEvents extends EventMap, TState>(
   } = def;
   const { mapFields, setFields } =
     snapshot && !deserializeSnapshot
-      ? detectCollectionFields(initialState() as Record<string, unknown>)
+      ? {
+          mapFields: snapshot.mapFields ?? [],
+          setFields: snapshot.setFields ?? [],
+        }
       : { mapFields: [] as string[], setFields: [] as string[] };
   const buildStreamId = (entityId: string): string =>
     `${streamPrefix}-${entityId}`;
@@ -49,13 +52,22 @@ function createAggregateHandle<TEvents extends EventMap, TState>(
         setFields,
         snapshot,
       }),
+    loadEvents: (eventStore, entityId, maxEvents) =>
+      eventStore.load(buildStreamId(entityId), maxEvents) as Promise<
+        AggregateReplayedEvent<TEvents>[]
+      >,
     append: (eventStore, input) =>
       appendAggregate({ eventStore, input, buildStreamId, encryption }),
+    subscribe: (eventStore, entityId, options) =>
+      eventStore.subscribe({
+        ...options,
+        subject: buildStreamId(entityId),
+      }) as AsyncIterable<AggregateStoredEvent<TEvents>>,
     getUpcasters: (): Upcaster[] => upcasters ?? [],
   };
 }
 
-async function loadAggregate<TEvents extends EventMap, TState>(options: {
+async function loadAggregate<TState, TEvents extends EventMap>(options: {
   eventStore: EventStore;
   entityId: string;
   def: AggregateDefinition<TEvents, TState>;
@@ -88,7 +100,6 @@ async function loadAggregate<TEvents extends EventMap, TState>(options: {
   return loadFromReplay({
     eventStore,
     streamId,
-    initialState: def.initialState,
     evolve: evolveMap,
   });
 }
@@ -120,9 +131,9 @@ async function appendAggregate<TEvents extends EventMap>(options: {
 }
 
 /** Defines a typed aggregate with full TypeScript inference. */
-export function defineAggregate<TEvents extends EventMap>(): <TState>(
+export function defineAggregate<TState, TEvents extends EventMap>(): (
   definition: AggregateDefinition<TEvents, TState>,
-) => AggregateHandle<TEvents, TState> {
-  return <TState>(def: AggregateDefinition<TEvents, TState>) =>
+) => AggregateHandle<TState, TEvents> {
+  return (def: AggregateDefinition<TEvents, TState>) =>
     createAggregateHandle(def);
 }
