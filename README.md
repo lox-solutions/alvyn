@@ -53,9 +53,13 @@ type OrderEvents = {
   OrderShipped: { trackingNumber: string };
 };
 
-const Order = defineAggregate<OrderEvents>()({
+type OrderState = {
+  status: "pending" | "placed" | "shipped";
+  total: number;
+};
+
+const Order = defineAggregate<OrderState, OrderEvents>()({
   streamPrefix: "Order",
-  initialState: () => ({ status: "pending", total: 0 }),
   evolve: {
     OrderPlaced: (state, event) => ({
       ...state,
@@ -69,7 +73,8 @@ const Order = defineAggregate<OrderEvents>()({
 // 3. Use it
 const order = await Order.load(eventStore, "order-123");
 
-await Order.append(eventStore, "order-123", {
+await Order.append(eventStore, {
+  entityId: "order-123",
   expectedVersion: order.version,
   events: [{ type: "OrderShipped", data: { trackingNumber: "TRACK-456" } }],
 });

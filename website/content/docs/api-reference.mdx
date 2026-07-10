@@ -47,6 +47,10 @@ Runs idempotent schema migrations (`CREATE TABLE IF NOT EXISTS`). Safe on every 
 
 Throws `EventStoreNotInitializedError` if other methods are called before `setup()`.
 
+#### `getStreamVersion(streamId): Promise<number>`
+
+Returns the current stream version, or `0` when the stream does not exist.
+
 ### Stream Operations
 
 #### `append(input, options?): Promise<AppendResult>`
@@ -87,9 +91,16 @@ Event types ending in `Snapshot` are reserved for Alvyn-generated snapshot event
 
 Loads all events for a stream from version 1. Handles decryption and upcasting automatically.
 
-#### `loadFrom(streamId, fromVersion): Promise<ReplayedEvent[]>`
+#### `loadFrom(streamId, options): Promise<ReplayedEvent[]>`
 
 Loads events starting from a specific version.
+
+```typescript
+const events = await eventStore.loadFrom("Order-123", {
+  fromVersion: 4,
+  maxEvents: 100,
+});
+```
 
 #### `listStreams(options?): Promise<string[]>`
 
@@ -106,6 +117,35 @@ const orderStreams = await eventStore.listStreams({
 | -------- | -------- | ------- | ------------------------------------------------------------ |
 | `prefix` | `string` | -       | Stream ID prefix (separator `"-"` is appended automatically) |
 | `limit`  | `number` | `100`   | Maximum number of stream IDs to return                       |
+
+### Subscriptions
+
+#### `subscribe(options?): AsyncIterable<StoredEvent>`
+
+Creates an independent fan-out subscription. It catches up on matching
+historical events and then tails live events in `globalPosition` order. Each
+subscriber receives its own copy of matching events; use the transactional
+outbox instead for competing-consumer delivery.
+
+```typescript
+const controller = new AbortController();
+
+for await (const event of eventStore.subscribe({
+  subject: "Order-",
+  recursive: true,
+  eventTypes: ["OrderPlaced"],
+  lowerBound: { id: "42", type: "exclusive" },
+  signal: controller.signal,
+})) {
+  await handle(event);
+}
+```
+
+Successful appends wake subscribers through transactional PostgreSQL
+`LISTEN/NOTIFY`, with polling as a fallback. Delivery is at least once, so
+persist a cursor after processing and make consumers idempotent. The read side
+uses a commit-safe watermark to avoid skipping events from late-committing
+transactions.
 
 ### Snapshot Builder
 
@@ -153,6 +193,38 @@ const result = await BankAccountBalance.load(eventStore, "account-123");
 result.state.balance;
 ```
 
+### Aggregate Builder
+
+#### `defineAggregate<TState, TEvents>()(definition): AggregateHandle<TState, TEvents>`
+
+Defines a typed aggregate. Empty streams load with `state: null` and
+`version: 0`; the first evolve handler receives the runtime `null` state.
+
+```typescript
+const Order = defineAggregate<OrderState, OrderEvents>()({
+  streamPrefix: "Order",
+  evolve: {
+    OrderPlaced: (state, event) => ({
+      ...state,
+      status: "placed",
+      total: event.data?.total ?? 0,
+    }),
+  },
+});
+
+const order = await Order.load(eventStore, "order-123");
+await Order.append(eventStore, {
+  entityId: "order-123",
+  expectedVersion: order.version,
+  events: [{ type: "OrderPlaced", data: { total: 99.99 } }],
+});
+```
+
+The handle also exposes typed `loadEvents(eventStore, entityId, maxEvents?)`
+and `subscribe(eventStore, entityId, options?)` methods. Aggregate event maps
+infer stored and replayed payloads, and generated snapshot events are filtered
+from those domain-facing methods.
+
 ### Crypto / GDPR
 
 #### `createCryptoKey(keyId): Promise<void>`
@@ -171,13 +243,17 @@ See [Crypto-Shredding](/docs/crypto-shredding) for details.
 
 ### Outbox
 
-#### `pollOutbox(limit?): Promise<OutboxEntry[]>`
+#### `processOutbox(handler, limit?): Promise<number>`
 
-Polls pending outbox entries (default limit: 100). Uses `FOR UPDATE SKIP LOCKED` for replica-safe concurrent processing.
+Claims and processes a batch of pending outbox entries in one transaction.
+The handler receives the entries and the transaction client; entries are marked
+processed only after the handler succeeds. Uses `FOR UPDATE SKIP LOCKED` for
+replica-safe concurrent processing.
 
-#### `markOutboxProcessed(ids): Promise<void>`
+#### `cleanupOutbox(olderThanMs?, batchSize?): Promise<number>`
 
-Marks outbox entries as processed.
+Deletes processed outbox entries older than the supplied age (seven days by
+default) in bounded batches and returns the number deleted.
 
 See [Projections & Outbox](/docs/projections) for details.
 
@@ -363,10 +439,27 @@ type AggregateEventInput<TEvents extends EventMap> = {
 }[keyof TEvents & string];
 
 interface AggregateInstance<TState> {
-  state: TState;
+  state: TState | null;
   version: number;
-  exists: boolean;
   streamId: string;
+}
+
+type AggregateStoredEvent<TEvents extends EventMap> = {
+  [K in keyof TEvents & string]: StoredEvent<TEvents[K]> & { type: K };
+}[keyof TEvents & string];
+
+type AggregateReplayedEvent<TEvents extends EventMap> =
+  | AggregateStoredEvent<TEvents>
+  | TombstonedEvent;
+
+interface SubscribeOptions {
+  subject?: string;
+  recursive?: boolean;
+  eventTypes?: string[];
+  lowerBound?: { id: string; type?: "exclusive" | "inclusive" };
+  signal?: AbortSignal;
+  batchSize?: number;
+  pollIntervalMs?: number;
 }
 ```
 

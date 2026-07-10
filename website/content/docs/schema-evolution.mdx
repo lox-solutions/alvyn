@@ -105,11 +105,10 @@ A v1 event stored as `{ street: "123 Main St" }` is automatically transformed th
 Define upcasters in the aggregate definition to keep them co-located with the domain logic:
 
 ```typescript
-const Order = defineAggregate<OrderEvents>()({
+type OrderState = { total: number; currency: string };
+
+const Order = defineAggregate<OrderState, OrderEvents>()({
   streamPrefix: "Order",
-  initialState: () => ({
-    /* ... */
-  }),
   evolve: {
     /* ... */
   },
@@ -135,7 +134,8 @@ eventStore.registerUpcasters(Order.getUpcasters());
 When you create a new schema version, set the `schemaVersion` on new events so they don't get upcasted unnecessarily:
 
 ```typescript
-await Order.append(eventStore, orderId, {
+await Order.append(eventStore, {
+  entityId: orderId,
   expectedVersion: order.version,
   events: [
     {
@@ -164,9 +164,10 @@ When you need to change the shape of an existing event type:
 ### Step 1: Define the upcaster
 
 ```typescript
-const Order = defineAggregate<OrderEvents>()({
+type OrderState = { total: number; currency: string };
+
+const Order = defineAggregate<OrderState, OrderEvents>()({
   streamPrefix: "Order",
-  initialState: () => ({ total: 0, currency: "EUR" }),
   evolve: {
     OrderPlaced: (state, event) => ({
       ...state,
@@ -206,7 +207,8 @@ eventStore.registerUpcasters(Order.getUpcasters());
 ### Step 4: Update new event writes
 
 ```typescript
-await Order.append(eventStore, orderId, {
+await Order.append(eventStore, {
+  entityId: orderId,
   expectedVersion: order.version,
   events: [
     {

@@ -60,11 +60,10 @@ interface CartState {
 }
 
 // Group related events into a highly cohesive Domain Aggregate
-export const Cart = defineAggregate<CartEvents>()({
+export const Cart = defineAggregate<CartState, CartEvents>()({
   streamPrefix: 'Cart',
-  initialState: () => ({ items: [], discount: 0, isCompleted: false }),
   evolve: {
-    CartCreated: (state) => state,
+    CartCreated: () => ({ items: [], discount: 0, isCompleted: false }),
     ItemAdded: (state, event) => ({ ...state, items: [...state.items, event.data] }),
     CouponApplied: (state, event) => ({ ...state, discount: event.data.discount }),
     CheckoutCompleted: (state) => ({ ...state, isCompleted: true }),
@@ -81,7 +80,8 @@ export const Cart = defineAggregate<CartEvents>()({
     code: `const entityId = '8f2a'; // resolves to stream_id: 'Cart-8f2a'
 
 // 1. Append type-safe event facts with optimistic concurrency
-await Cart.append(eventStore, entityId, {
+await Cart.append(eventStore, {
+  entityId,
   expectedVersion: 0, // Ensure concurrency guarantees
   events: [
     {

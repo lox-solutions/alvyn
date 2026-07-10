@@ -3,11 +3,15 @@
   "pages": [
     "---Getting Started---",
     "index",
-    "aggregates",
     "---Features---",
+    "aggregates",
+    "snapshots",
+    "subscriptions",
     "crypto-shredding",
     "projections",
     "schema-evolution",
+    "---Examples---",
+    "full-stack-example",
     "---Reference---",
     "api-reference",
     "database-schema"

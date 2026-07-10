@@ -320,7 +320,8 @@ await eventStore.append({
 Or through the aggregate builder:
 
 ```typescript
-await Order.append(eventStore, "order-123", {
+await Order.append(eventStore, {
+  entityId: "order-123",
   expectedVersion: order.version,
   events: [{ type: "OrderPlaced", data: { total: 99.99 } }],
   outboxTopics: ["orders"],
@@ -353,15 +354,11 @@ Build a relay worker that polls and dispatches:
 
 ```typescript
 async function relayOutbox() {
-  const entries = await eventStore.pollOutbox(100);
-
-  if (entries.length === 0) return;
-
-  for (const entry of entries) {
-    await messageBroker.publish(entry.topic, entry.payload);
-  }
-
-  await eventStore.markOutboxProcessed(entries.map((e) => e.id));
+  await eventStore.processOutbox(async (entries) => {
+    for (const entry of entries) {
+      await messageBroker.publish(entry.topic, entry.payload);
+    }
+  }, 100);
 }
 
 setInterval(relayOutbox, 2000);

@@ -80,9 +80,15 @@ This is **idempotent** — if the key already exists, it's a no-op.
 In the aggregate definition, specify which fields contain PII per event type:
 
 ```typescript
-const User = defineAggregate<UserEvents>()({
+type UserState = {
+  name: string;
+  email: string;
+  address: { street: string; city: string };
+};
+
+const User = defineAggregate<UserState, UserEvents>()({
   streamPrefix: "User",
-  // ... initialState, evolve ...
+  // ... evolve ...
 
   encryption: {
     cryptoKeyId: (entityId) => `user:${entityId}`,
@@ -156,7 +162,8 @@ The complete flow for handling a user deletion request:
 await eventStore.createCryptoKey("user:abc123");
 
 // 2. Normal operation — append events with encrypted PII
-await User.append(eventStore, "abc123", {
+await User.append(eventStore, {
+  entityId: "abc123",
   expectedVersion: -1,
   events: [
     {
@@ -175,8 +182,7 @@ await eventStore.revokeKey("user:abc123");
 
 // 4. All future reads return tombstones for encrypted events
 const user = await User.load(eventStore, "abc123");
-// user.state.name  -> "" (from initialState, since event.data is null)
-// user.state.email -> "" (from initialState)
+// user.state contains the result of your null-safe evolve handlers
 ```
 
 ### What `revokeKey` Does
