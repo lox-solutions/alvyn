@@ -20,6 +20,7 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
+    "test:load": "tsx src/load-tests/runner.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint .",
@@ -68,7 +69,8 @@
     "pg": "^8.20.0",
     "prettier": "^3.8.3",
     "testcontainers": "^11.14.0",
-    "typescript": "^5.9.3",
+    "tsx": "^4.22.5",
+    "typescript": "7.0.2",
     "typescript-eslint": "^8.59.0",
     "vitest": "^4.1.5"
   }

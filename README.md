@@ -277,6 +277,155 @@ Full documentation is available at **[lox-solutions.github.io/alvyn](https://lox
 - PostgreSQL >= 14
 - `pg` ^8 (peer dependency)
 
+## Parallel load tests
+
+The opt-in load-test harness models multiple independent application replicas
+using Node.js child processes. Each worker owns its own `pg.Pool` and
+`EventStore`, while all workers share one PostgreSQL primary and an isolated
+schema in a PostgreSQL 16 Testcontainers instance. This exercises parallel
+append/load traffic, hot-stream optimistic concurrency, and replay of seeded
+history; it does not provision PostgreSQL read replicas, failover, or an HA
+cluster.
+
+Docker must be running because the harness starts PostgreSQL through
+[Testcontainers](https://testcontainers.com/). The load run is deliberately
+separate from the normal Vitest suite and is never included in `pnpm test` or
+coverage runs.
+
+### How the workload works
+
+The harness creates deterministic append-only event streams named
+`load-test-stream-0`, `load-test-stream-1`, and so on. Each stream represents a
+different aggregate or entity history. Every worker receives its own process,
+connection pool, and `EventStore`, but all workers write to the same streams in
+the shared PostgreSQL database.
+
+There are two kinds of streams in a run:
+
+- **Hot streams** are the first `--hot-streams` streams. Most generated
+  operations (approximately 75%) target this small subset, which makes several
+  workers append to the same histories at the same time. Each hot-stream
+  append reads the current version and writes with that version as
+  `expectedVersion`. Concurrent writers can therefore observe a stale version,
+  produce an optimistic-concurrency conflict, and retry through Alvyn's normal
+  retry path. This is how the scenario exercises per-stream advisory-lock
+  serialization and OCC behavior.
+- **Cold streams** are the remaining streams. Operations are distributed
+  across them, so they generally have less contention and represent traffic
+  spread across many independent entities. Set `--hot-streams 0` to run without
+  a hot subset, or set it equal to `--streams` when all streams should be
+  contention-heavy.
+
+The history and live workload are separate phases:
+
+- `--history` controls how many existing events are created **per stream**
+  before worker traffic starts. For example, `--streams 100 --history 10000`
+  creates 1,000,000 existing events. This simulates an application that has
+  been running for a long time and makes replay/load operations work against
+  realistic stream lengths. History is written in bounded `--batch-size`
+  append calls, so increasing it does not require keeping the whole history in
+  memory. Seed events are not worker operations.
+- `--seed` is a reproducibility seed, not the history size. It determines the
+  generated stream choices, append-versus-load choices, and logical event
+  tokens. Reusing the same seed and configuration produces the same logical
+  workload, which makes reports easier to compare across code changes. Change
+  it to generate a different deterministic workload.
+
+During the live phase, `--operations` is the number of operations **per
+worker**, not the total for the run. `--append-percent` chooses the approximate
+share of those operations that append; the rest load a stream. One append
+operation writes `--batch-size` events. For example, 4 workers with 100
+operations each and `--append-percent 60 --batch-size 2` attempt 400 live
+operations, roughly 240 appends, and roughly 480 live events. The exact split
+is deterministic and can differ slightly from the percentage because each
+operation is generated individually.
+
+### Show live progress
+
+Pass `--verbose` when you want to see where a long run is spending its time:
+
+```bash
+pnpm test:load -- --history 10000 --operations 1000 --verbose
+```
+
+Verbose mode reuses one terminal line instead of printing a new line for every
+batch or operation. It shows PostgreSQL startup, history-seeding counts, live
+worker totals, and verification progress; the final report is printed normally
+after the progress line. The same option can be enabled with
+`ALVYN_LOAD_VERBOSE=true`. Without `--verbose`, the harness keeps the console
+quiet until the final report.
+
+### Run a smoke scenario
+
+```bash
+pnpm test:load -- \
+  --workers 2 \
+  --pool-size 2 \
+  --streams 4 \
+  --hot-streams 2 \
+  --history 100 \
+  --operations 50 \
+  --append-percent 60 \
+  --batch-size 2 \
+  --max-retries 20 \
+  --output .load-smoke-report.json
+```
+
+The command uses deterministic stream selection and event tokens for a given
+`--seed`, so the same workload parameters can be compared across changes.
+
+### Run a large-history scenario
+
+```bash
+pnpm test:load -- \
+  --workers 4 \
+  --pool-size 8 \
+  --streams 100 \
+  --hot-streams 4 \
+  --history 10000 \
+  --operations 1000 \
+  --append-percent 60 \
+  --batch-size 10 \
+  --max-retries 30 \
+  --seed 42 \
+  --output load-report.json
+```
+
+History is seeded in bounded append batches before the measured phase. The
+post-run verifier reads streams in pages, checks contiguous versions and event
+ordering, reconciles every successful logical append, and rejects missing or
+duplicate event tokens. Worker crashes, setup failures, exhausted writes, and
+integrity mismatches return a non-zero exit code.
+
+### Configuration
+
+Every numeric option can be supplied as a command-line option or environment
+variable; command-line values take precedence. `--verbose` is a boolean flag
+and can also be enabled with `ALVYN_LOAD_VERBOSE=true`.
+
+| Option             | Environment variable        | Description                                                           |
+| ------------------ | --------------------------- | --------------------------------------------------------------------- |
+| `--workers`        | `ALVYN_LOAD_WORKERS`        | Number of independent application workers.                            |
+| `--pool-size`      | `ALVYN_LOAD_POOL_SIZE`      | Maximum pool size per worker and coordinator.                         |
+| `--streams`        | `ALVYN_LOAD_STREAMS`        | Total number of streams; the first hot-streams belong to the hot set. |
+| `--hot-streams`    | `ALVYN_LOAD_HOT_STREAMS`    | Number of streams receiving most contention-heavy operations.         |
+| `--history`        | `ALVYN_LOAD_HISTORY`        | Existing seed events created per stream before live traffic.          |
+| `--operations`     | `ALVYN_LOAD_OPERATIONS`     | Number of measured operations executed by each worker.                |
+| `--append-percent` | `ALVYN_LOAD_APPEND_PERCENT` | Approximate share of live operations that append instead of load.     |
+| `--batch-size`     | `ALVYN_LOAD_BATCH_SIZE`     | Number of events written by each append operation and seed batch.     |
+| `--max-retries`    | `ALVYN_LOAD_MAX_RETRIES`    | Maximum OCC retries before a required append is reported as failed.   |
+| `--seed`           | `ALVYN_LOAD_SEED`           | Reproducibility seed for choices, tokens, and event metadata.         |
+| `--output`         | `ALVYN_LOAD_OUTPUT`         | Optional path for the machine-readable JSON report.                   |
+| `--verbose`        | `ALVYN_LOAD_VERBOSE`        | Rewrite one console line with live phase and worker progress.         |
+
+The human-readable report includes total duration, effective connection count,
+append/load successes and failures, event counts, OCC conflicts and retries,
+throughput, and p50/p95/p99 latency for each operation class and overall. It
+also includes per-worker counters and verification totals. Latency and
+throughput are diagnostic data rather than fixed performance budgets, so
+machine-dependent performance variation does not fail an otherwise correct
+run.
+
 ## Contributing
 
 Alvyn is in beta and we actively welcome contributions. Whether it's bug reports, feature requests, documentation improvements, or code — all contributions help make this library more robust.
@@ -287,11 +436,11 @@ git clone https://github.com/lox-solutions/alvyn.git
 cd alvyn
 pnpm install
 
-# Run tests (requires Docker for PostgreSQL via Testcontainers)
-pnpm vitest run
+# Run integration tests (requires Docker for PostgreSQL via Testcontainers)
+pnpm test
 
 # Run with coverage
-pnpm vitest run --coverage
+pnpm test:coverage
 ```
 
 The test suite uses [Testcontainers](https://testcontainers.com/) to spin up PostgreSQL instances automatically — you just need Docker running.
