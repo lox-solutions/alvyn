@@ -21,6 +21,7 @@
     "build": "tsc",
     "test": "vitest run",
     "test:load": "tsx src/load-tests/runner.ts",
+    "test:load:http": "tsx src/load-tests/http-runner.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint .",

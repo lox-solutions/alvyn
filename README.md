@@ -397,6 +397,88 @@ ordering, reconciles every successful logical append, and rejects missing or
 duplicate event tokens. Worker crashes, setup failures, exhausted writes, and
 integrity mismatches return a non-zero exit code.
 
+### Aggregate and HTTP load test
+
+`pnpm test:load:http` is a separate application-level scenario. It does not use
+`examples/example-alvyn-full-stack-app`; instead, it starts a small load-test
+application built only for this scenario. The coordinator starts several
+independent Node.js child processes, and every process owns its own HTTP server,
+`pg.Pool`, and `EventStore` instance:
+
+```text
+HTTP load driver
+  ├── HTTP → worker 1 → Account aggregate → EventStore → PostgreSQL
+  ├── HTTP → worker 2 → Account aggregate → EventStore → PostgreSQL
+  └── HTTP → worker N → Account aggregate → EventStore → PostgreSQL
+```
+
+The example aggregate is a small bank-account-like model with an account
+opening event and money-deposit events. The worker exposes:
+
+- `GET /health` to confirm that a replica is ready;
+- `GET /accounts/:id` to load and replay an account aggregate; and
+- `POST /accounts/:id/deposit` with `{ "amount": number, "operationToken": string }`
+  to load the aggregate, apply business input, and append with its expected
+  version.
+
+The coordinator seeds valid account histories directly through the aggregate
+handle before HTTP traffic begins. Direct seeding keeps setup of large existing
+histories fast and deterministic; the measured requests themselves always use
+the real HTTP and aggregate path. After the request phase, verification uses
+the EventStore directly to check event counts, versions, ordering, balances,
+and every successful logical request. This makes failures easier to diagnose
+without turning the seed or verifier into another HTTP benchmark.
+
+#### HTTP workload concepts
+
+- `--accounts` is the number of independent account streams.
+- `--hot-accounts` selects the first accounts as a contention-heavy subset.
+  Approximately 75% of generated requests target this subset when it is
+  non-empty. Multiple HTTP workers can therefore load the same account and
+  attempt writes from stale aggregate versions, which produces real OCC
+  responses.
+- `--history` creates that many existing events per account before requests
+  start. The first event opens the account and the remaining events are valid
+  deposits, so the aggregate has a realistic state to rehydrate. It is not the
+  number of HTTP requests. `--seed-batch-size` bounds each direct seed append.
+- `--requests` is the total number of logical HTTP requests in the run. Reads
+  are selected by `--read-percent`; the remainder are deposit commands.
+- `--concurrency` controls how many HTTP requests the driver keeps in flight.
+  This is intentionally independent from `--pool-size`, so a run can exercise
+  pool capacity, queueing, and pressure inside each application worker.
+- A deposit that receives `409 optimistic_concurrency` is retried with the
+  same operation token up to `--max-retries`. A successful retry represents one
+  logical deposit and one event, not multiple events.
+
+#### HTTP smoke example
+
+```bash
+pnpm test:load:http -- \
+  --workers 2 \
+  --pool-size 4 \
+  --accounts 20 \
+  --hot-accounts 4 \
+  --history 100 \
+  --seed-batch-size 50 \
+  --requests 500 \
+  --read-percent 35 \
+  --concurrency 32 \
+  --max-retries 20 \
+  --seed 42 \
+  --verbose \
+  --output http-load-report.json
+```
+
+The HTTP report contains request, read, and deposit counts; HTTP latency
+percentiles; OCC conflicts and retries; effective connection capacity; and
+final aggregate verification totals. Latency and throughput are diagnostic
+values and do not impose host-sensitive pass/fail thresholds. If requests
+fail, the command still exits non-zero, but `--output` writes a diagnostic
+report with `status: "failed"`, the failure message, and bounded error samples;
+`verification` is `null` because final aggregate verification is skipped. This
+scenario still models application replicas sharing one PostgreSQL primary, not
+Kubernetes pods or PostgreSQL HA/failover.
+
 ### Configuration
 
 Every numeric option can be supplied as a command-line option or environment
@@ -417,6 +499,25 @@ and can also be enabled with `ALVYN_LOAD_VERBOSE=true`.
 | `--seed`           | `ALVYN_LOAD_SEED`           | Reproducibility seed for choices, tokens, and event metadata.         |
 | `--output`         | `ALVYN_LOAD_OUTPUT`         | Optional path for the machine-readable JSON report.                   |
 | `--verbose`        | `ALVYN_LOAD_VERBOSE`        | Rewrite one console line with live phase and worker progress.         |
+
+The aggregate/HTTP command uses its own `ALVYN_HTTP_LOAD_*` environment
+variables, so it can be configured independently from the direct harness:
+
+| Option              | Environment variable              | Description                                                       |
+| ------------------- | --------------------------------- | ----------------------------------------------------------------- |
+| `--workers`         | `ALVYN_HTTP_LOAD_WORKERS`         | Number of independent HTTP application workers.                   |
+| `--pool-size`       | `ALVYN_HTTP_LOAD_POOL_SIZE`       | Maximum PostgreSQL connections per worker and coordinator.        |
+| `--accounts`        | `ALVYN_HTTP_LOAD_ACCOUNTS`        | Number of seeded account aggregates.                              |
+| `--hot-accounts`    | `ALVYN_HTTP_LOAD_HOT_ACCOUNTS`    | Number of accounts receiving most generated requests.             |
+| `--history`         | `ALVYN_HTTP_LOAD_HISTORY`         | Existing valid aggregate events created per account.              |
+| `--seed-batch-size` | `ALVYN_HTTP_LOAD_SEED_BATCH_SIZE` | Maximum events in each direct seed append.                        |
+| `--requests`        | `ALVYN_HTTP_LOAD_REQUESTS`        | Total logical HTTP requests in the measured phase.                |
+| `--read-percent`    | `ALVYN_HTTP_LOAD_READ_PERCENT`    | Percentage of requests using the aggregate query endpoint.        |
+| `--concurrency`     | `ALVYN_HTTP_LOAD_CONCURRENCY`     | Maximum HTTP requests in flight across the driver.                |
+| `--max-retries`     | `ALVYN_HTTP_LOAD_MAX_RETRIES`     | Maximum retries after a deposit receives an OCC `409`.            |
+| `--seed`            | `ALVYN_HTTP_LOAD_SEED`            | Reproducibility seed for accounts, amounts, and operation tokens. |
+| `--output`          | `ALVYN_HTTP_LOAD_OUTPUT`          | Optional path for the JSON HTTP report.                           |
+| `--verbose`         | `ALVYN_HTTP_LOAD_VERBOSE`         | Rewrite one console line with seed, request, and verify progress. |
 
 The human-readable report includes total duration, effective connection count,
 append/load successes and failures, event counts, OCC conflicts and retries,
