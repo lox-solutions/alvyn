@@ -15,12 +15,12 @@ A projection reads events sequentially from the global stream (ordered by `globa
 
 Use projections for query models, cross-stream views, filtering, search, reporting, dashboards, and external integration state. If the state is only a performance shortcut for rebuilding one stream, use a snapshot instead.
 
-| Need | Use | Example |
-| --- | --- | --- |
-| Faster replay for one long stream | Snapshot | `BankAccountBalance` stored as `BankAccountBalanceSnapshot` in `Transaction-{accountId}`. |
-| Queryable read table | Projection | `account_summaries` table for listing accounts with owner, balance, and status. |
-| Derived state from multiple streams | Projection | Customer risk score from transactions, loans, and profile events. |
-| Async batch processing with checkpoints | Projection | Process 500 events per run and resume from the projection checkpoint. |
+| Need                                    | Use        | Example                                                                                   |
+| --------------------------------------- | ---------- | ----------------------------------------------------------------------------------------- |
+| Faster replay for one long stream       | Snapshot   | `BankAccountBalance` stored as `BankAccountBalanceSnapshot` in `Transaction-{accountId}`. |
+| Queryable read table                    | Projection | `account_summaries` table for listing accounts with owner, balance, and status.           |
+| Derived state from multiple streams     | Projection | Customer risk score from transactions, loans, and profile events.                         |
+| Async batch processing with checkpoints | Projection | Process 500 events per run and resume from the projection checkpoint.                     |
 
 ### Defining a Projection
 

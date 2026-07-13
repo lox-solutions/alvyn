@@ -13,7 +13,8 @@ export function assertNoReservedSnapshotEventTypes(
   const reservedEvent = events.find((event) =>
     isReservedSnapshotEventType(event.type),
   );
-  if (reservedEvent) throw new ReservedSnapshotEventTypeError(reservedEvent.type);
+  if (reservedEvent)
+    throw new ReservedSnapshotEventTypeError(reservedEvent.type);
 }
 
 export function assertOnlyReservedSnapshotEventTypes(

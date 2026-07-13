@@ -54,7 +54,8 @@ export default function HomePage() {
               full narrative
             </span>{" "}
             of your business logic as an immutable stream of events. Stop
-            settling for static records; start building on the truth of your history.
+            settling for static records; start building on the truth of your
+            history.
           </p>
 
           {/* Action CTAs in Apple Style */}

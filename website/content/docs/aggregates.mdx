@@ -110,14 +110,14 @@ upcasters: [userRenamedV1ToV2, userRenamedV2ToV3];
 
 The `defineAggregate` call returns an `AggregateHandle` with the following interface:
 
-| Method / Property                     | Description                                   |
-| ------------------------------------- | --------------------------------------------- |
-| `streamPrefix`                        | The stream prefix string (readonly)           |
-| `load(eventStore, entityId)`          | Returns `AggregateInstance<TState>`           |
+| Method / Property                              | Description                                   |
+| ---------------------------------------------- | --------------------------------------------- |
+| `streamPrefix`                                 | The stream prefix string (readonly)           |
+| `load(eventStore, entityId)`                   | Returns `AggregateInstance<TState>`           |
 | `loadEvents(eventStore, entityId, maxEvents?)` | Loads typed replayed domain events            |
-| `append(eventStore, input)`            | Appends typed events to the stream            |
-| `subscribe(eventStore, entityId, options?)` | Subscribes to typed live domain events    |
-| `getUpcasters()`                      | Returns upcasters for registration at startup |
+| `append(eventStore, input)`                    | Appends typed events to the stream            |
+| `subscribe(eventStore, entityId, options?)`    | Subscribes to typed live domain events        |
+| `getUpcasters()`                               | Returns upcasters for registration at startup |
 
 ### `load(eventStore, entityId)`
 

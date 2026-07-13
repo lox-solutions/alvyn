@@ -30,7 +30,9 @@ interface GetBalanceVariables {
 }
 
 export function LiveBalance({ accountId }: Props) {
-  const [subscriptionBalance, setSubscriptionBalance] = useState<number | null>(null);
+  const [subscriptionBalance, setSubscriptionBalance] = useState<number | null>(
+    null,
+  );
 
   useSubscription<BalanceChangedData, BalanceVariables>(BALANCE_CHANGED, {
     variables: { accountId },
@@ -43,10 +45,13 @@ export function LiveBalance({ accountId }: Props) {
     skip: !accountId,
   });
 
-  const { data: queryData } = useQuery<GetBalanceData, GetBalanceVariables>(GET_BALANCE, {
-    variables: { id: accountId },
-    skip: !accountId,
-  });
+  const { data: queryData } = useQuery<GetBalanceData, GetBalanceVariables>(
+    GET_BALANCE,
+    {
+      variables: { id: accountId },
+      skip: !accountId,
+    },
+  );
 
   const balance = subscriptionBalance ?? queryData?.bankAccountBalance?.balance;
 

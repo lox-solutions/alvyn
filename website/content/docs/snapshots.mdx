@@ -23,12 +23,12 @@ Use projections instead when you need cross-stream views, query tables, filterin
 
 ### Snapshots vs Projections
 
-| Use case | Prefer | Why |
-| --- | --- | --- |
-| Current balance for one bank account from one `Transaction-{accountId}` stream | Snapshot | It speeds up replay of one stream and can be loaded as `latest snapshot + later events`. |
-| Dashboard table with all accounts, owners, balances, and risk status | Projection | It is a query model that combines and filters data for reads. |
-| Customer total wealth across many account streams | Projection | It depends on multiple streams, so there is no single same-stream snapshot version. |
-| Current aggregate state after thousands of address changes in one `BankAccount-{id}` stream | Snapshot | It is still a one-stream replay optimization. |
+| Use case                                                                                    | Prefer     | Why                                                                                      |
+| ------------------------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------- |
+| Current balance for one bank account from one `Transaction-{accountId}` stream              | Snapshot   | It speeds up replay of one stream and can be loaded as `latest snapshot + later events`. |
+| Dashboard table with all accounts, owners, balances, and risk status                        | Projection | It is a query model that combines and filters data for reads.                            |
+| Customer total wealth across many account streams                                           | Projection | It depends on multiple streams, so there is no single same-stream snapshot version.      |
+| Current aggregate state after thousands of address changes in one `BankAccount-{id}` stream | Snapshot   | It is still a one-stream replay optimization.                                            |
 
 ## Snapshot Relation to Aggregates
 

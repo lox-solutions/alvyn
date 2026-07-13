@@ -35,7 +35,11 @@ export function GetTransactions() {
             onChange={(e) => setAccountId(e.target.value)}
             style={inputStyle}
           />
-          <button type="submit" disabled={loading || !accountId} style={buttonStyle}>
+          <button
+            type="submit"
+            disabled={loading || !accountId}
+            style={buttonStyle}
+          >
             Get
           </button>
         </div>

@@ -25,16 +25,19 @@ export function LiveTransactions({ accountId }: Props) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  useSubscription<TransactionAddedData, TransactionAddedVariables>(TRANSACTION_ADDED, {
-    variables: { accountId },
-    onData: ({ data }) => {
-      const tx = data.data?.transactionAdded;
-      if (tx) {
-        setTransactions((prev) => [...prev, tx]);
-      }
+  useSubscription<TransactionAddedData, TransactionAddedVariables>(
+    TRANSACTION_ADDED,
+    {
+      variables: { accountId },
+      onData: ({ data }) => {
+        const tx = data.data?.transactionAdded;
+        if (tx) {
+          setTransactions((prev) => [...prev, tx]);
+        }
+      },
+      skip: !accountId,
     },
-    skip: !accountId,
-  });
+  );
 
   useEffect(() => {
     if (containerRef.current) {

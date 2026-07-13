@@ -11,8 +11,14 @@ import type {
 function createSnapshotHandle<TState, TEvents extends EventMap>(
   def: SnapshotDefinition<TState, TEvents>,
 ): SnapshotHandle<TState> {
-  const { streamPrefix, snapshotName, every, initialState, evolve, encryption } =
-    def;
+  const {
+    streamPrefix,
+    snapshotName,
+    every,
+    initialState,
+    evolve,
+    encryption,
+  } = def;
   const snapshotEventType = `${snapshotName}Snapshot`;
   const buildStreamId = (entityId: string): string =>
     `${streamPrefix}-${entityId}`;
@@ -61,13 +67,8 @@ async function loadSnapshot<TState>(options: {
   initialState: TState;
   evolveMap: Record<string, (state: TState, event: ReplayedEvent) => TState>;
 }): Promise<SnapshotLoadResult<TState>> {
-  const {
-    eventStore,
-    streamId,
-    snapshotEventType,
-    initialState,
-    evolveMap,
-  } = options;
+  const { eventStore, streamId, snapshotEventType, initialState, evolveMap } =
+    options;
   return loadSnapshotState({
     eventStore,
     streamId,

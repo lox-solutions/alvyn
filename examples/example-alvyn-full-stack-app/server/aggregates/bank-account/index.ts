@@ -1,1 +1,5 @@
-export { BankAccount, type BankAccountState, type BankAccountEvents } from "./aggregate";
+export {
+  BankAccount,
+  type BankAccountState,
+  type BankAccountEvents,
+} from "./aggregate";

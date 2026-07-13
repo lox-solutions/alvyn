@@ -27,12 +27,12 @@ interface EventStoreConfig {
 }
 ```
 
-| Parameter             | Type                        | Required | Description                                                       |
-| --------------------- | --------------------------- | -------- | ----------------------------------------------------------------- |
-| `pool`                | `Pool`                      | Yes      | PostgreSQL connection pool (caller manages lifecycle)             |
-| `schema`              | `string`                    | No       | PostgreSQL schema name (default: `"event_store"`)                 |
-| `masterEncryptionKey` | `string`                    | No       | 256-bit hex key (64 chars) for envelope encryption                |
-| `defaultSource`       | `string`                    | No       | CloudEvents `source` URI-reference applied to all events          |
+| Parameter             | Type                        | Required | Description                                                          |
+| --------------------- | --------------------------- | -------- | -------------------------------------------------------------------- |
+| `pool`                | `Pool`                      | Yes      | PostgreSQL connection pool (caller manages lifecycle)                |
+| `schema`              | `string`                    | No       | PostgreSQL schema name (default: `"event_store"`)                    |
+| `masterEncryptionKey` | `string`                    | No       | 256-bit hex key (64 chars) for envelope encryption                   |
+| `defaultSource`       | `string`                    | No       | CloudEvents `source` URI-reference applied to all events             |
 | `snapshots`           | `SnapshotHandle<unknown>[]` | No       | Snapshot definitions maintained synchronously after matching appends |
 
 Register independent snapshot handles here when you want Alvyn to maintain them on incoming writes. A snapshot is tied to a `streamPrefix`, but it is not always a `1:1` aggregate feature; one stream prefix can have multiple snapshots for different expensive calculations.

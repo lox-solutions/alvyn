@@ -51,15 +51,15 @@ slightly in favor of correctness.
 
 ## Filters and Options
 
-| Option | Description |
-| --- | --- |
-| `subject` | Exact CloudEvents subject to observe; the subject is the stream ID. |
-| `recursive` | With `true`, include subjects below the supplied prefix. The match is exact or prefix-based. |
-| `eventTypes` | Restrict delivery to the listed CloudEvents `type` values. |
-| `lowerBound` | Resume from a global position using `{ id, type }`. |
-| `signal` | Abort the iterator and release its resources. |
-| `batchSize` | Historical catch-up batch size; defaults to `500`. |
-| `pollIntervalMs` | Polling/fallback cadence in milliseconds; defaults to `1000`. |
+| Option           | Description                                                                                  |
+| ---------------- | -------------------------------------------------------------------------------------------- |
+| `subject`        | Exact CloudEvents subject to observe; the subject is the stream ID.                          |
+| `recursive`      | With `true`, include subjects below the supplied prefix. The match is exact or prefix-based. |
+| `eventTypes`     | Restrict delivery to the listed CloudEvents `type` values.                                   |
+| `lowerBound`     | Resume from a global position using `{ id, type }`.                                          |
+| `signal`         | Abort the iterator and release its resources.                                                |
+| `batchSize`      | Historical catch-up batch size; defaults to `500`.                                           |
+| `pollIntervalMs` | Polling/fallback cadence in milliseconds; defaults to `1000`.                                |
 
 `subject` and `eventTypes` can be combined. Without a subject filter, the
 subscription observes matching events from every stream.
@@ -127,12 +127,12 @@ when replayed, decrypted, and upcasted events are required.
 
 ## Subscription vs Outbox
 
-| Need | Use |
-| --- | --- |
-| Every replica observes every matching event | `subscribe()` |
-| A connected GraphQL/SSE client receives live events | `subscribe()` |
-| Exactly one worker in a fleet relays each event | Transactional outbox |
-| Events must be replayed after a consumer restart | `subscribe()` with `lowerBound` |
+| Need                                                | Use                             |
+| --------------------------------------------------- | ------------------------------- |
+| Every replica observes every matching event         | `subscribe()`                   |
+| A connected GraphQL/SSE client receives live events | `subscribe()`                   |
+| Exactly one worker in a fleet relays each event     | Transactional outbox            |
+| Events must be replayed after a consumer restart    | `subscribe()` with `lowerBound` |
 
 Both mechanisms preserve at-least-once delivery. Keep handlers idempotent and
 persist progress only after successful processing.

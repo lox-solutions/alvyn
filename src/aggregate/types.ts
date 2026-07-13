@@ -1,5 +1,10 @@
 import type { EventStore } from "../event-store";
-import type { ReplayedEvent, StoredEvent, TombstonedEvent, Upcaster } from "../types";
+import type {
+  ReplayedEvent,
+  StoredEvent,
+  TombstonedEvent,
+  Upcaster,
+} from "../types";
 import type { SubscribeOptions } from "../subscription/subscribe-options";
 
 // ---------------------------------------------------------------------------

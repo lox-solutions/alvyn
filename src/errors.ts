@@ -98,7 +98,7 @@ export class InvalidSchemaNameError extends Error {
     super(
       `Invalid schema name: "${schemaName}". ` +
         `Must match /^[a-z_][a-z0-9_]{0,62}$/ (lowercase, underscores, max 63 chars).`,
-      );
+    );
   }
 }
 

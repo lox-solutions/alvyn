@@ -56,7 +56,10 @@ export interface SnapshotHandle<TState> {
   readonly sourceEventTypes: string[];
 
   /** Loads the derived state from the latest snapshot event plus later source events. */
-  load(eventStore: EventStore, entityId: string): Promise<SnapshotLoadResult<TState>>;
+  load(
+    eventStore: EventStore,
+    entityId: string,
+  ): Promise<SnapshotLoadResult<TState>>;
   /** @internal Maintains this snapshot after matching source events are appended. */
   updateAfterAppend(
     eventStore: EventStore,

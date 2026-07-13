@@ -117,9 +117,7 @@ describe("defineSnapshot", () => {
     await store.appendSnapshot({
       streamId: "Transaction-existing-snapshot",
       expectedVersion: -1,
-      events: [
-        { type: "BankAccountBalanceSnapshot", data: { balance: 100 } },
-      ],
+      events: [{ type: "BankAccountBalanceSnapshot", data: { balance: 100 } }],
     });
     await store.append({
       streamId: "Transaction-existing-snapshot",
@@ -146,9 +144,7 @@ describe("defineSnapshot", () => {
       store.append({
         streamId: "Transaction-reserved-name",
         expectedVersion: -1,
-        events: [
-          { type: "CustomSnapshot", data: { balance: 100 } },
-        ],
+        events: [{ type: "CustomSnapshot", data: { balance: 100 } }],
       }),
     ).rejects.toThrow(ReservedSnapshotEventTypeError);
   });

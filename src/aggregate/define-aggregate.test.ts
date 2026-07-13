@@ -106,9 +106,7 @@ describe("defineAggregate", () => {
       await store.appendSnapshot({
         streamId: "Order-mixed-snapshot-load",
         expectedVersion: 1,
-        events: [
-          { type: "OrderSummarySnapshot", data: { status: "placed" } },
-        ],
+        events: [{ type: "OrderSummarySnapshot", data: { status: "placed" } }],
       });
       await Order.append(store, {
         entityId: "mixed-snapshot-load",
@@ -167,7 +165,10 @@ describe("defineAggregate", () => {
         events: [{ type: "OrderShipped", data: { tracking: "T3" } }],
       });
 
-      const events = await Order.loadEvents(store, "typed-events-with-snapshot");
+      const events = await Order.loadEvents(
+        store,
+        "typed-events-with-snapshot",
+      );
 
       expect(events.map((event) => event.type)).toEqual([
         "OrderPlaced",

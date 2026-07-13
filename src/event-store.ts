@@ -93,7 +93,11 @@ export class EventStore {
     };
     const appendAndMaintain = async (client: PoolClient) => {
       const result = await appendToStream({ client, ...opts });
-      await this.updateRegisteredSnapshots(input.streamId, input.events, client);
+      await this.updateRegisteredSnapshots(
+        input.streamId,
+        input.events,
+        client,
+      );
       return result;
     };
     if (options?.client) return appendAndMaintain(options.client);

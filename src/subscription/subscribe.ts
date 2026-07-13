@@ -123,7 +123,10 @@ async function* pumpBatch(
 ): AsyncGenerator<StoredEvent, PumpResult, void> {
   const { deps, query, cursor, batchSize } = options;
   const rows = await withClient(deps.pool, async (c) => {
-    const watermark = await computeSafeWatermark({ client: c, schema: deps.schema });
+    const watermark = await computeSafeWatermark({
+      client: c,
+      schema: deps.schema,
+    });
     if (watermark <= cursor) return null;
     const result = await c.query<EventRow>(query.sql, [
       cursor.toString(),
