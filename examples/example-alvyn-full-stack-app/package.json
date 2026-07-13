@@ -15,7 +15,7 @@
     "@vitejs/plugin-react": "^6.0.2",
     "nitro": "latest",
     "testcontainers": "^11.14.0",
-    "typescript": "7.0.2",
+    "typescript": "latest",
     "vite": "latest"
   },
   "dependencies": {
