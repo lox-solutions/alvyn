@@ -107,8 +107,10 @@ const Order = defineAggregate<OrderState, OrderEvents>()({
   },
 });
 
-for await (const event of Order.subscribe(eventStore, "order-123", {
-  eventTypes: ["OrderShipped"],
+for await (const event of Order.subscribe({
+  eventStore,
+  entityId: "order-123",
+  options: { eventTypes: ["OrderShipped"] },
 })) {
   console.log(event.type, event.data);
 }

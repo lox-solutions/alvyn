@@ -4,18 +4,21 @@ import type {
   AggregateDefinition,
   AggregateHandle,
   AggregateInstance,
+  AggregateLoadEventsOptions,
   AggregateReplayedEvent,
+  AggregateSubscribeOptions,
   AggregateStoredEvent,
   EventMap,
 } from "./types";
 import { loadFromReplay, mapEventsForAppend } from "./aggregate-helpers";
 import { isReservedSnapshotEventType } from "../snapshot/reserved-event-type";
 
-async function loadDomainEvents<TEvents extends EventMap>(
-  eventStore: EventStore,
-  streamId: string,
-  maxEvents?: number,
-): Promise<AggregateReplayedEvent<TEvents>[]> {
+async function loadDomainEvents<TEvents extends EventMap>(options: {
+  eventStore: EventStore;
+  streamId: string;
+  maxEvents?: number;
+}): Promise<AggregateReplayedEvent<TEvents>[]> {
+  const { eventStore, streamId, maxEvents } = options;
   const events = await eventStore.load(streamId, maxEvents);
   return events.filter(
     (event) => !isReservedSnapshotEventType(event.type),
@@ -50,8 +53,14 @@ function createAggregateHandle<TState, TEvents extends EventMap>(
         buildStreamId,
         evolveMap,
       }),
-    loadEvents: (eventStore, entityId, maxEvents) =>
-      loadDomainEvents<TEvents>(eventStore, buildStreamId(entityId), maxEvents),
+    loadEvents: (options: AggregateLoadEventsOptions) => {
+      const { eventStore, entityId, maxEvents } = options;
+      return loadDomainEvents<TEvents>({
+        eventStore,
+        streamId: buildStreamId(entityId),
+        maxEvents,
+      });
+    },
     append: (eventStore, input) =>
       appendAggregate({
         eventStore,
@@ -59,18 +68,20 @@ function createAggregateHandle<TState, TEvents extends EventMap>(
         buildStreamId,
         encryption,
       }),
-    subscribe: (eventStore, entityId, options) =>
-      filterDomainSubscription<TEvents>(
+    subscribe: (args: AggregateSubscribeOptions) => {
+      const { eventStore, entityId, options } = args;
+      return filterDomainSubscription<TEvents>(
         eventStore.subscribe({
           ...options,
           subject: buildStreamId(entityId),
         }) as AsyncIterable<AggregateStoredEvent<TEvents>>,
-      ),
+      );
+    },
     getUpcasters: (): Upcaster[] => upcasters ?? [],
   };
 }
 
-async function loadAggregate<TState, TEvents extends EventMap>(options: {
+async function loadAggregate<TState>(options: {
   eventStore: EventStore;
   entityId: string;
   buildStreamId: (id: string) => string;

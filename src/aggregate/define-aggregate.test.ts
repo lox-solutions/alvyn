@@ -135,7 +135,10 @@ describe("defineAggregate", () => {
         ],
       });
 
-      const events = await Order.loadEvents(store, "typed-events");
+      const events = await Order.loadEvents({
+        eventStore: store,
+        entityId: "typed-events",
+      });
 
       expect(events.map((event) => event.type)).toEqual([
         "OrderPlaced",
@@ -165,10 +168,10 @@ describe("defineAggregate", () => {
         events: [{ type: "OrderShipped", data: { tracking: "T3" } }],
       });
 
-      const events = await Order.loadEvents(
-        store,
-        "typed-events-with-snapshot",
-      );
+      const events = await Order.loadEvents({
+        eventStore: store,
+        entityId: "typed-events-with-snapshot",
+      });
 
       expect(events.map((event) => event.type)).toEqual([
         "OrderPlaced",
@@ -189,9 +192,13 @@ describe("defineAggregate", () => {
 
       const ac = new AbortController();
       let received: OrderStoredEvent | null = null;
-      for await (const event of Order.subscribe(store, "subscribed", {
-        pollIntervalMs: 25,
-        signal: ac.signal,
+      for await (const event of Order.subscribe({
+        eventStore: store,
+        entityId: "subscribed",
+        options: {
+          pollIntervalMs: 25,
+          signal: ac.signal,
+        },
       })) {
         received = event;
         ac.abort();

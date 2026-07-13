@@ -45,6 +45,12 @@ export interface SnapshotLoadResult<TState> {
   replayedEvents: number;
 }
 
+export interface SnapshotUpdateAfterAppendOptions {
+  eventStore: EventStore;
+  streamId: string;
+  options?: { client?: PoolClient };
+}
+
 export interface SnapshotHandle<TState> {
   /** The stream prefix */
   readonly streamPrefix: string;
@@ -61,9 +67,5 @@ export interface SnapshotHandle<TState> {
     entityId: string,
   ): Promise<SnapshotLoadResult<TState>>;
   /** @internal Maintains this snapshot after matching source events are appended. */
-  updateAfterAppend(
-    eventStore: EventStore,
-    streamId: string,
-    options?: { client?: PoolClient },
-  ): Promise<void>;
+  updateAfterAppend(options: SnapshotUpdateAfterAppendOptions): Promise<void>;
 }

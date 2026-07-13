@@ -6,6 +6,7 @@ import type {
   SnapshotDefinition,
   SnapshotHandle,
   SnapshotLoadResult,
+  SnapshotUpdateAfterAppendOptions,
 } from "./types";
 
 function createSnapshotHandle<TState, TEvents extends EventMap>(
@@ -41,8 +42,9 @@ function createSnapshotHandle<TState, TEvents extends EventMap>(
         initialState,
         evolveMap,
       }),
-    updateAfterAppend: (eventStore, streamId, options) =>
-      updateSnapshotAfterAppend({
+    updateAfterAppend: (args: SnapshotUpdateAfterAppendOptions) => {
+      const { eventStore, streamId, options } = args;
+      return updateSnapshotAfterAppend({
         eventStore,
         entityId: streamId.slice(streamPrefix.length + 1),
         streamId,
@@ -52,7 +54,8 @@ function createSnapshotHandle<TState, TEvents extends EventMap>(
         evolveMap,
         encryption,
         client: options?.client,
-      }),
+      });
+    },
   };
 }
 
@@ -94,26 +97,20 @@ async function loadSnapshotState<TState>(options: {
     evolveMap,
     client,
   } = options;
-  const latestSnapshot = await eventStore.loadLatestEventByType<TState>(
+  const latestSnapshot = await eventStore.loadLatestEventByType<TState>({
     streamId,
-    snapshotEventType,
-    { client },
-  );
-
-  const snapshotVersion =
-    latestSnapshot && isStoredEvent(latestSnapshot)
-      ? latestSnapshot.streamVersion
-      : null;
+    eventType: snapshotEventType,
+    client,
+  });
+  const snapshotBase = getSnapshotBase(latestSnapshot, initialState);
+  const { snapshotVersion } = snapshotBase;
   const replayFromVersion = snapshotVersion === null ? 1 : snapshotVersion + 1;
   const events = await eventStore.loadFrom(streamId, {
     fromVersion: replayFromVersion,
     client,
   });
   const version = events.at(-1)?.streamVersion ?? snapshotVersion ?? 0;
-  let state =
-    latestSnapshot && isStoredEvent(latestSnapshot)
-      ? latestSnapshot.data
-      : initialState;
+  let state = snapshotBase.state;
   let replayedEvents = 0;
 
   for (const event of events) {
@@ -129,6 +126,19 @@ async function loadSnapshotState<TState>(options: {
     snapshotVersion,
     replayedEvents,
   };
+}
+
+function getSnapshotBase<TState>(
+  latestSnapshot: ReplayedEvent<TState> | null,
+  initialState: TState,
+): { state: TState; snapshotVersion: number | null } {
+  if (latestSnapshot && isStoredEvent(latestSnapshot)) {
+    return {
+      state: latestSnapshot.data,
+      snapshotVersion: latestSnapshot.streamVersion,
+    };
+  }
+  return { state: initialState, snapshotVersion: null };
 }
 
 async function updateSnapshotAfterAppend<TState>(options: {

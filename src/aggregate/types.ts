@@ -14,6 +14,18 @@ import type { SubscribeOptions } from "../subscription/subscribe-options";
 /** A map of event type names to their data shapes */
 export type EventMap = Record<string, unknown>;
 
+export interface AggregateLoadEventsOptions {
+  eventStore: EventStore;
+  entityId: string;
+  maxEvents?: number;
+}
+
+export interface AggregateSubscribeOptions {
+  eventStore: EventStore;
+  entityId: string;
+  options?: Omit<SubscribeOptions, "subject">;
+}
+
 /** Extract event type names as a union */
 type EventTypeNames<TEvents extends EventMap> = string & keyof TEvents;
 
@@ -109,9 +121,7 @@ export interface AggregateHandle<TState, TEvents extends EventMap> {
    * Loads this aggregate's raw events with payload types inferred from event names.
    */
   loadEvents(
-    eventStore: EventStore,
-    entityId: string,
-    maxEvents?: number,
+    options: AggregateLoadEventsOptions,
   ): Promise<AggregateReplayedEvent<TEvents>[]>;
 
   /**
@@ -131,9 +141,7 @@ export interface AggregateHandle<TState, TEvents extends EventMap> {
    * Subscribes to this aggregate's stream with payload types inferred from event names.
    */
   subscribe(
-    eventStore: EventStore,
-    entityId: string,
-    options?: Omit<SubscribeOptions, "subject">,
+    options: AggregateSubscribeOptions,
   ): AsyncIterable<AggregateStoredEvent<TEvents>>;
 
   /**

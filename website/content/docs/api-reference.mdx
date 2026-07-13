@@ -220,8 +220,8 @@ await Order.append(eventStore, {
 });
 ```
 
-The handle also exposes typed `loadEvents(eventStore, entityId, maxEvents?)`
-and `subscribe(eventStore, entityId, options?)` methods. Aggregate event maps
+The handle also exposes typed `loadEvents({ eventStore, entityId, maxEvents? })`
+and `subscribe({ eventStore, entityId, options? })` methods. Aggregate event maps
 infer stored and replayed payloads, and generated snapshot events are filtered
 from those domain-facing methods.
 

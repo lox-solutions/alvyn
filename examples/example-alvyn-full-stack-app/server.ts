@@ -111,7 +111,10 @@ async function getExpectedTransactionVersion(
 }
 
 async function loadLatestTransactionEvent(accountId: string) {
-  const events = await Transaction.loadEvents(eventStore, accountId);
+  const events = await Transaction.loadEvents({
+    eventStore,
+    entityId: accountId,
+  });
   return events.at(-1);
 }
 
@@ -204,13 +207,13 @@ const yoga = createYoga({
             { accountId }: { accountId: string },
             context: GraphQLContext,
           ) {
-            for await (const event of Transaction.subscribe(
+            for await (const event of Transaction.subscribe({
               eventStore,
-              accountId,
-              {
+              entityId: accountId,
+              options: {
                 signal: context.requestSignal,
               },
-            )) {
+            })) {
               if (isBalanceChangingEvent(event)) {
                 yield {
                   transactionAdded: toTransactionResult(event, accountId),
@@ -225,13 +228,13 @@ const yoga = createYoga({
             { accountId }: { accountId: string },
             context: GraphQLContext,
           ) {
-            for await (const event of Transaction.subscribe(
+            for await (const event of Transaction.subscribe({
               eventStore,
-              accountId,
-              {
+              entityId: accountId,
+              options: {
                 signal: context.requestSignal,
               },
-            )) {
+            })) {
               if (isBalanceChangingEvent(event)) {
                 const balance = await calculateBalance(eventStore, accountId);
                 yield { balanceChanged: { accountId, balance } };
@@ -256,7 +259,10 @@ const yoga = createYoga({
           _: unknown,
           { accountId }: { accountId: string },
         ) => {
-          const events = await Transaction.loadEvents(eventStore, accountId);
+          const events = await Transaction.loadEvents({
+            eventStore,
+            entityId: accountId,
+          });
           return events
             .filter(isBalanceChangingEvent)
             .map((event) => toTransactionResult(event, accountId));
