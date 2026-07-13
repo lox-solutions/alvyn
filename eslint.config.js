@@ -6,7 +6,13 @@ import tseslint from "typescript-eslint";
 
 export default defineConfig(
   {
-    ignores: ["dist/", "node_modules/", "website/", "coverage/"],
+    ignores: [
+      "dist/",
+      "node_modules/",
+      "website/",
+      "coverage/",
+      "examples/example-alvyn-full-stack-app/",
+    ],
   },
   js.configs.recommended,
   tseslint.configs.recommendedTypeChecked,

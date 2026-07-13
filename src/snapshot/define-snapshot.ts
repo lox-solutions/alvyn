@@ -109,7 +109,7 @@ async function loadSnapshotState<TState>(options: {
     fromVersion: replayFromVersion,
     client,
   });
-  let version = events.at(-1)?.streamVersion ?? snapshotVersion ?? 0;
+  const version = events.at(-1)?.streamVersion ?? snapshotVersion ?? 0;
   let state =
     latestSnapshot && isStoredEvent(latestSnapshot)
       ? latestSnapshot.data

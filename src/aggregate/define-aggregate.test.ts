@@ -270,9 +270,9 @@ describe("defineAggregate", () => {
       const AggWithUpcasters = defineAggregate<OrderState, OrderEvents>()({
         streamPrefix: "UpcOrder",
         evolve: {
-          OrderPlaced: (s) => s!,
-          OrderShipped: (s) => s!,
-          OrderCancelled: (s) => s!,
+          OrderPlaced: (s) => s,
+          OrderShipped: (s) => s,
+          OrderCancelled: (s) => s,
         },
         upcasters: [upcaster],
       });
