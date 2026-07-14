@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type pg from "pg";
+import type { AggregateReplayedEvent, AggregateStoredEvent } from "./types";
 import { EventStore } from "../event-store";
+import { ReservedSnapshotEventTypeError } from "../errors";
 import { defineAggregate } from "./define-aggregate";
 import {
   startPostgres,
@@ -33,9 +35,16 @@ type OrderState = {
   total: number;
 };
 
-const Order = defineAggregate<OrderEvents>()({
+type OrderStoredEvent = AggregateStoredEvent<OrderEvents>;
+
+function isOrderPlacedEvent(
+  event: AggregateReplayedEvent<OrderEvents>,
+): event is Extract<OrderStoredEvent, { type: "OrderPlaced" }> {
+  return !("tombstoned" in event) && event.type === "OrderPlaced";
+}
+
+const Order = defineAggregate<OrderState, OrderEvents>()({
   streamPrefix: "Order",
-  initialState: (): OrderState => ({ status: "new", total: 0 }),
   evolve: {
     OrderPlaced: (state, event) => ({
       ...state,
@@ -57,14 +66,13 @@ describe("defineAggregate", () => {
   });
 
   describe("load", () => {
-    it("returns initial state for non-existent stream", async () => {
+    it("returns null state for non-existent stream", async () => {
       const store = new EventStore({ pool, schema: uniqueSchema() });
       await store.setup();
 
       const agg = await Order.load(store, "nonexistent");
-      expect(agg.exists).toBe(false);
+      expect(agg.state).toBeNull();
       expect(agg.version).toBe(0);
-      expect(agg.state).toEqual({ status: "new", total: 0 });
       expect(agg.streamId).toBe("Order-nonexistent");
     });
 
@@ -82,9 +90,126 @@ describe("defineAggregate", () => {
       });
 
       const agg = await Order.load(store, "1");
-      expect(agg.exists).toBe(true);
       expect(agg.version).toBe(2);
       expect(agg.state).toEqual({ status: "shipped", total: 99 });
+    });
+
+    it("ignores snapshot events while preserving the true stream version", async () => {
+      const store = new EventStore({ pool, schema: uniqueSchema() });
+      await store.setup();
+
+      await Order.append(store, {
+        entityId: "mixed-snapshot-load",
+        expectedVersion: -1,
+        events: [{ type: "OrderPlaced", data: { total: 75 } }],
+      });
+      await store.appendSnapshot({
+        streamId: "Order-mixed-snapshot-load",
+        expectedVersion: 1,
+        events: [{ type: "OrderSummarySnapshot", data: { status: "placed" } }],
+      });
+      await Order.append(store, {
+        entityId: "mixed-snapshot-load",
+        expectedVersion: 2,
+        events: [{ type: "OrderShipped", data: { tracking: "T2" } }],
+      });
+
+      const agg = await Order.load(store, "mixed-snapshot-load");
+
+      expect(agg.version).toBe(3);
+      expect(agg.state).toEqual({ status: "shipped", total: 75 });
+    });
+  });
+
+  describe("loadEvents", () => {
+    it("loads aggregate events from the aggregate stream", async () => {
+      const store = new EventStore({ pool, schema: uniqueSchema() });
+      await store.setup();
+
+      await Order.append(store, {
+        entityId: "typed-events",
+        expectedVersion: -1,
+        events: [
+          { type: "OrderPlaced", data: { total: 50 } },
+          { type: "OrderShipped", data: { tracking: "X" } },
+        ],
+      });
+
+      const events = await Order.loadEvents({
+        eventStore: store,
+        entityId: "typed-events",
+      });
+
+      expect(events.map((event) => event.type)).toEqual([
+        "OrderPlaced",
+        "OrderShipped",
+      ]);
+      const placed = events.find(isOrderPlacedEvent);
+      expect(placed?.data.total).toBe(50);
+    });
+
+    it("filters generated snapshot events from typed aggregate events", async () => {
+      const store = new EventStore({ pool, schema: uniqueSchema() });
+      await store.setup();
+
+      await Order.append(store, {
+        entityId: "typed-events-with-snapshot",
+        expectedVersion: -1,
+        events: [{ type: "OrderPlaced", data: { total: 60 } }],
+      });
+      await store.appendSnapshot({
+        streamId: "Order-typed-events-with-snapshot",
+        expectedVersion: 1,
+        events: [{ type: "OrderStateSnapshot", data: { status: "placed" } }],
+      });
+      await Order.append(store, {
+        entityId: "typed-events-with-snapshot",
+        expectedVersion: 2,
+        events: [{ type: "OrderShipped", data: { tracking: "T3" } }],
+      });
+
+      const events = await Order.loadEvents({
+        eventStore: store,
+        entityId: "typed-events-with-snapshot",
+      });
+
+      expect(events.map((event) => event.type)).toEqual([
+        "OrderPlaced",
+        "OrderShipped",
+      ]);
+    });
+  });
+
+  describe("subscribe", () => {
+    it("subscribes to the aggregate stream", async () => {
+      const store = new EventStore({ pool, schema: uniqueSchema() });
+      await store.setup();
+      await Order.append(store, {
+        entityId: "subscribed",
+        expectedVersion: -1,
+        events: [{ type: "OrderPlaced", data: { total: 10 } }],
+      });
+
+      const ac = new AbortController();
+      let received: OrderStoredEvent | null = null;
+      for await (const event of Order.subscribe({
+        eventStore: store,
+        entityId: "subscribed",
+        options: {
+          pollIntervalMs: 25,
+          signal: ac.signal,
+        },
+      })) {
+        received = event;
+        ac.abort();
+        break;
+      }
+
+      expect(received?.type).toBe("OrderPlaced");
+      if (received?.type !== "OrderPlaced") {
+        throw new Error("Expected OrderPlaced event");
+      }
+      expect(received.data.total).toBe(10);
     });
   });
 
@@ -106,182 +231,34 @@ describe("defineAggregate", () => {
       expect(result.toVersion).toBe(2);
 
       const agg = await Order.load(store, "a1");
-      expect(agg.state.status).toBe("shipped");
-    });
-  });
-
-  describe("snapshot support", () => {
-    const SnapOrder = defineAggregate<OrderEvents>()({
-      streamPrefix: "SnapOrder",
-      initialState: (): OrderState => ({ status: "new", total: 0 }),
-      evolve: {
-        OrderPlaced: (state, event) => ({
-          ...state,
-          status: "placed",
-          total: event.data?.total ?? 0,
-        }),
-        OrderShipped: (state) => ({ ...state, status: "shipped" }),
-        OrderCancelled: (state) => ({ ...state, status: "cancelled" }),
-      },
-      snapshot: { every: 2 },
+      expect(agg.state?.status).toBe("shipped");
     });
 
-    it("auto-creates snapshot after N events", async () => {
-      const store = new EventStore({ pool, schema: uniqueSchema() });
-      await store.setup();
+    it("rejects aggregate events ending in Snapshot", async () => {
+      type ReservedEvents = {
+        OrderSnapshot: { status: string };
+      };
 
-      await store.append({
-        streamId: "SnapOrder-s1",
-        expectedVersion: -1,
-        events: [
-          { type: "OrderPlaced", data: { total: 10 } },
-          { type: "OrderShipped", data: { tracking: "T" } },
-        ],
-      });
-
-      // Load triggers auto-snapshot (2 events >= every:2)
-      const agg = await SnapOrder.load(store, "s1");
-      expect(agg.state.status).toBe("shipped");
-
-      // Verify snapshot was saved
-      const { snapshot } = await store.loadWithSnapshot("SnapOrder-s1");
-      expect(snapshot).not.toBeNull();
-      expect(snapshot!.streamVersion).toBe(2);
-    });
-
-    it("loads from snapshot + remaining events", async () => {
-      const store = new EventStore({ pool, schema: uniqueSchema() });
-      await store.setup();
-
-      // Append 3 events
-      await store.append({
-        streamId: "SnapOrder-s2",
-        expectedVersion: -1,
-        events: [
-          { type: "OrderPlaced", data: { total: 20 } },
-          { type: "OrderShipped", data: { tracking: "T" } },
-          { type: "OrderCancelled", data: {} },
-        ],
-      });
-
-      // First load: creates snapshot at v3 (3 >= every:2)
-      await SnapOrder.load(store, "s2");
-
-      // Append one more event
-      await store.append({
-        streamId: "SnapOrder-s2",
-        expectedVersion: 3,
-        events: [{ type: "OrderPlaced", data: { total: 30 } }],
-      });
-
-      // Second load: snapshot at v3, replay event at v4
-      const agg = await SnapOrder.load(store, "s2");
-      expect(agg.version).toBe(4);
-      expect(agg.state.total).toBe(30);
-      expect(agg.state.status).toBe("placed");
-    });
-  });
-
-  describe("Map/Set snapshot restoration", () => {
-    type TagEvents = {
-      TagAdded: { tag: string };
-    };
-
-    type TagState = {
-      tags: Set<string>;
-      metadata: Map<string, number>;
-    };
-
-    const TagAggregate = defineAggregate<TagEvents>()({
-      streamPrefix: "Tag",
-      initialState: (): TagState => ({
-        tags: new Set(),
-        metadata: new Map(),
-      }),
-      evolve: {
-        TagAdded: (state, event) => {
-          const tags = new Set(state.tags);
-          const tag = event.data?.tag ?? "";
-          tags.add(tag);
-          const metadata = new Map(state.metadata);
-          metadata.set(tag, (metadata.get(tag) ?? 0) + 1);
-          return { tags, metadata };
+      const ReservedOrder = defineAggregate<OrderState, ReservedEvents>()({
+        streamPrefix: "ReservedOrder",
+        evolve: {
+          OrderSnapshot: (state, event) => ({
+            ...state,
+            status: event.data?.status ?? "unknown",
+            total: 0,
+          }),
         },
-      },
-      snapshot: { every: 1 },
-    });
-
-    it("restores Map and Set fields from snapshot", async () => {
+      });
       const store = new EventStore({ pool, schema: uniqueSchema() });
       await store.setup();
 
-      await store.append({
-        streamId: "Tag-t1",
-        expectedVersion: -1,
-        events: [{ type: "TagAdded", data: { tag: "important" } }],
-      });
-
-      // First load creates snapshot
-      const agg1 = await TagAggregate.load(store, "t1");
-      expect(agg1.state.tags).toBeInstanceOf(Set);
-      expect(agg1.state.tags.has("important")).toBe(true);
-
-      // Add another event so second load uses snapshot + replay
-      await store.append({
-        streamId: "Tag-t1",
-        expectedVersion: 1,
-        events: [{ type: "TagAdded", data: { tag: "urgent" } }],
-      });
-
-      const agg2 = await TagAggregate.load(store, "t1");
-      expect(agg2.state.tags).toBeInstanceOf(Set);
-      expect(agg2.state.tags.has("important")).toBe(true);
-      expect(agg2.state.tags.has("urgent")).toBe(true);
-      expect(agg2.state.metadata).toBeInstanceOf(Map);
-      expect(agg2.state.metadata.get("important")).toBe(1);
-    });
-  });
-
-  describe("custom deserializeSnapshot", () => {
-    type SimpleEvents = { Inc: { n: number } };
-    type SimpleState = { count: number };
-
-    const CustomSnap = defineAggregate<SimpleEvents>()({
-      streamPrefix: "Custom",
-      initialState: (): SimpleState => ({ count: 0 }),
-      evolve: {
-        Inc: (state, event) => ({ count: state.count + (event.data?.n ?? 0) }),
-      },
-      snapshot: { every: 1 },
-      deserializeSnapshot: (raw) => {
-        const r = raw as { count: number };
-        return { count: r.count * 10 }; // Custom transform
-      },
-    });
-
-    it("uses custom deserializer", async () => {
-      const store = new EventStore({ pool, schema: uniqueSchema() });
-      await store.setup();
-
-      await store.append({
-        streamId: "Custom-c1",
-        expectedVersion: -1,
-        events: [{ type: "Inc", data: { n: 5 } }],
-      });
-
-      // First load creates snapshot with count:5
-      await CustomSnap.load(store, "c1");
-
-      // Add event so next load uses snapshot
-      await store.append({
-        streamId: "Custom-c1",
-        expectedVersion: 1,
-        events: [{ type: "Inc", data: { n: 1 } }],
-      });
-
-      // Snapshot count=5, custom deserialize → 50, then +1 from event = 51
-      const agg = await CustomSnap.load(store, "c1");
-      expect(agg.state.count).toBe(51);
+      await expect(
+        ReservedOrder.append(store, {
+          entityId: "reserved",
+          expectedVersion: -1,
+          events: [{ type: "OrderSnapshot", data: { status: "reserved" } }],
+        }),
+      ).rejects.toThrow(ReservedSnapshotEventTypeError);
     });
   });
 
@@ -297,9 +274,8 @@ describe("defineAggregate", () => {
         }),
       };
 
-      const AggWithUpcasters = defineAggregate<OrderEvents>()({
+      const AggWithUpcasters = defineAggregate<OrderState, OrderEvents>()({
         streamPrefix: "UpcOrder",
-        initialState: (): OrderState => ({ status: "new", total: 0 }),
         evolve: {
           OrderPlaced: (s) => s,
           OrderShipped: (s) => s,
@@ -319,9 +295,8 @@ describe("defineAggregate", () => {
 
     type UserState = { name: string; email: string; age: number };
 
-    const EncryptedUser = defineAggregate<UserEvents>()({
+    const EncryptedUser = defineAggregate<UserState, UserEvents>()({
       streamPrefix: "EncUser",
-      initialState: (): UserState => ({ name: "", email: "", age: 0 }),
       evolve: {
         UserRegistered: (_state, event) => ({
           name: event.data?.name ?? "",
@@ -358,9 +333,9 @@ describe("defineAggregate", () => {
       });
 
       const agg = await EncryptedUser.load(store, "enc1");
-      expect(agg.state.name).toBe("Alice");
-      expect(agg.state.email).toBe("alice@test.com");
-      expect(agg.state.age).toBe(30);
+      expect(agg.state?.name).toBe("Alice");
+      expect(agg.state?.email).toBe("alice@test.com");
+      expect(agg.state?.age).toBe(30);
     });
 
     it("does not encrypt events without encryptedFields mapping", async () => {
@@ -369,9 +344,11 @@ describe("defineAggregate", () => {
         Private: { secret: string };
       };
 
-      const MixedAgg = defineAggregate<MixedEvents>()({
+      const MixedAgg = defineAggregate<
+        { info: string; secret: string },
+        MixedEvents
+      >()({
         streamPrefix: "Mixed",
-        initialState: () => ({ info: "", secret: "" }),
         evolve: {
           Public: (s, e) => ({ ...s, info: e.data?.info ?? "" }),
           Private: (s, e) => ({ ...s, secret: e.data?.secret ?? "" }),
@@ -401,7 +378,7 @@ describe("defineAggregate", () => {
       });
 
       const agg = await MixedAgg.load(store, "m1");
-      expect(agg.state.info).toBe("hello");
+      expect(agg.state?.info).toBe("hello");
     });
   });
 });

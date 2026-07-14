@@ -4,6 +4,7 @@
 packages:
   - "."
   - "website"
+  - "examples/*"
 
 # ===========================================================================
 # Security — supply-chain hardening

@@ -54,7 +54,8 @@ export default function HomePage() {
               full narrative
             </span>{" "}
             of your business logic as an immutable stream of events. Stop
-            settling for snapshots; start building on the truth of your history.
+            settling for static records; start building on the truth of your
+            history.
           </p>
 
           {/* Action CTAs in Apple Style */}
@@ -249,7 +250,7 @@ export default function HomePage() {
                 icon: FileJson,
                 n: "05",
                 title: "Type-Safe Aggregates",
-                body: "Strict TypeScript compilation guarantees. Event mapping inference, snapshotting, and strict aggregate state definitions.",
+                body: "Strict TypeScript compilation guarantees. Event mapping inference and strict aggregate state definitions.",
               },
               {
                 icon: Activity,

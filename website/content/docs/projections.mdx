@@ -13,6 +13,15 @@ Projections build **read models** from the global event stream. The transactiona
 
 A projection reads events sequentially from the global stream (ordered by `global_position`) and transforms them into a read-optimized data structure (read model). Each projection tracks its own checkpoint and processes events independently.
 
+Use projections for query models, cross-stream views, filtering, search, reporting, dashboards, and external integration state. If the state is only a performance shortcut for rebuilding one stream, use a snapshot instead.
+
+| Need                                    | Use        | Example                                                                                   |
+| --------------------------------------- | ---------- | ----------------------------------------------------------------------------------------- |
+| Faster replay for one long stream       | Snapshot   | `BankAccountBalance` stored as `BankAccountBalanceSnapshot` in `Transaction-{accountId}`. |
+| Queryable read table                    | Projection | `account_summaries` table for listing accounts with owner, balance, and status.           |
+| Derived state from multiple streams     | Projection | Customer risk score from transactions, loans, and profile events.                         |
+| Async batch processing with checkpoints | Projection | Process 500 events per run and resume from the projection checkpoint.                     |
+
 ### Defining a Projection
 
 Implement the `Projection` interface. The `handle` function receives a `StoredEvent` and a `PoolClient` — use the provided client for all database writes to ensure atomicity with the projection checkpoint:
@@ -141,7 +150,7 @@ setInterval(async () => {
 2. On each `runProjection()` call:
    - Upserts the checkpoint row (idempotent)
    - Reads `last_position` with `FOR UPDATE` (row-level lock)
-   - Fetches the next batch: `SELECT ... WHERE global_position > last_position ORDER BY global_position ASC LIMIT batchSize`
+   - Computes a **commit-safe watermark** and fetches the next batch bounded by it: `SELECT ... WHERE global_position > last_position AND global_position <= safeWatermark ORDER BY global_position ASC LIMIT batchSize`. The watermark prevents skipping a lower `global_position` whose transaction commits _after_ a higher one (a real hazard with concurrent writers across replicas).
    - Calls `handle(event)` for each event sequentially
    - Updates `last_position` to the last processed event's `global_position`
 3. Everything runs within a single transaction — if the handler fails, the checkpoint is not advanced (crash recovery).
@@ -152,11 +161,131 @@ setInterval(async () => {
 - Each projection name must be unique. Multiple instances with the same name will contend on the same checkpoint row.
 - The `handle` function receives `StoredEvent` (not `ReplayedEvent`) — there are no tombstones in projection processing.
 
+## Subscriptions (Fan-out)
+
+### Overview
+
+`subscribe()` observes the event store directly as a **fan-out** stream: it returns an `AsyncIterable<StoredEvent>` that first replays matching history (catch-up) and then tails live events on the same iterator, with low-latency delivery via PostgreSQL `LISTEN/NOTIFY` (and a polling fallback).
+
+Unlike a single-checkpoint projection or the competing-consumer outbox, **every subscriber** — e.g. every replica in a replicaset — observes _all_ matching events independently, each maintaining its own in-memory cursor. This makes it the right primitive for GraphQL subscriptions and SSE endpoints.
+
+```typescript
+const ac = new AbortController();
+
+for await (const event of eventStore.subscribe({
+  subject: "Order-", // CloudEvents subject == streamId
+  recursive: true, // include child subjects (prefix match)
+  eventTypes: ["OrderPlaced", "OrderShipped"], // optional type filter
+  signal: ac.signal, // stop the stream + release its LISTEN connection
+})) {
+  await handle(event);
+  // Persist event.globalPosition as your cursor for resume-on-restart.
+}
+```
+
+### Options
+
+```typescript
+interface SubscribeOptions {
+  subject?: string; // subject (streamId) to observe, e.g. "/orders" or "Order-"
+  recursive?: boolean; // include child subjects (prefix match) vs exact match
+  eventTypes?: string[]; // restrict to these CloudEvents types
+  lowerBound?: { id: string; type?: "exclusive" | "inclusive" }; // resume cursor
+  signal?: AbortSignal; // stop the stream and release resources
+  batchSize?: number; // catch-up batch size (default: 500)
+  pollIntervalMs?: number; // polling / fallback cadence (default: 1000)
+}
+```
+
+### Resuming after a restart
+
+The subscription stream is gap-free and in order, so remembering the last processed `globalPosition` is enough to resume — no broker offset store required. Delivery is **at-least-once**, so consumers must remain idempotent.
+
+```typescript
+for await (const event of eventStore.subscribe({
+  subject: "Order-",
+  recursive: true,
+  lowerBound: { id: lastProcessedPosition.toString(), type: "exclusive" },
+  signal: ac.signal,
+})) {
+  await handle(event);
+  lastProcessedPosition = event.globalPosition;
+}
+```
+
+### Use-case 1 — GraphQL subscription
+
+Because `subscribe()` returns an `AsyncIterable`, it maps directly onto a GraphQL subscription resolver's `asyncIterator`. Each replica streams to its own connected clients.
+
+```typescript
+const resolvers = {
+  Subscription: {
+    orderEvents: {
+      subscribe: (_parent, args) => {
+        const ac = new AbortController();
+        return mapAsyncIterator(
+          eventStore.subscribe({
+            subject: "Order-",
+            recursive: true,
+            eventTypes: args.types,
+            signal: ac.signal,
+          }),
+          (event) => ({ orderEvents: event }),
+        );
+      },
+    },
+  },
+};
+```
+
+### Use-case 3 — SSE endpoint
+
+The same primitive backs a thin Server-Sent Events handler so other services can subscribe over HTTP, replica-ready.
+
+```typescript
+import type { IncomingMessage, ServerResponse } from "node:http";
+
+async function observeEvents(req: IncomingMessage, res: ServerResponse) {
+  res.writeHead(200, {
+    "content-type": "text/event-stream",
+    "cache-control": "no-cache",
+    connection: "keep-alive",
+  });
+
+  const ac = new AbortController();
+  req.on("close", () => ac.abort());
+
+  const lastEventId = req.headers["last-event-id"] as string | undefined;
+
+  for await (const event of eventStore.subscribe({
+    subject: "/orders",
+    recursive: true,
+    lowerBound: lastEventId
+      ? { id: lastEventId, type: "exclusive" }
+      : undefined,
+    signal: ac.signal,
+  })) {
+    // The SSE `id:` doubles as the resume cursor via the Last-Event-ID header.
+    res.write(`id: ${event.globalPosition}\n`);
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  }
+}
+```
+
+<Callout>
+  **Subscribe vs. outbox.** Use `subscribe()` for in-process **fan-out** (read
+  models, GraphQL, SSE) where every replica needs every event. Use the
+  transactional **outbox** when you must publish each event **once across the
+  fleet** to an external broker (e.g. NATS) — see below.
+</Callout>
+
 ## Transactional Outbox
 
 ### Overview
 
-The outbox pattern solves the dual-write problem: how to atomically update the event store and notify external systems. Outbox rows are inserted **in the same transaction** as the events, guaranteeing consistency.
+The transactional outbox is the **opt-in competing-consumer adapter** for bridging events to an external broker (e.g. NATS, Kafka, RabbitMQ). It solves the dual-write problem: how to atomically update the event store and notify external systems. Outbox rows are inserted **in the same transaction** as the events, guaranteeing consistency.
+
+Unlike `subscribe()` fan-out, the outbox relay distributes work: exactly **one** replica processes each entry (via `FOR UPDATE SKIP LOCKED`), so the event is published once to the broker rather than once per replica. Use it for **use-case 2** (bridge every event to NATS); use `subscribe()` for fan-out.
 
 ### How It Works
 
@@ -191,7 +320,8 @@ await eventStore.append({
 Or through the aggregate builder:
 
 ```typescript
-await Order.append(eventStore, "order-123", {
+await Order.append(eventStore, {
+  entityId: "order-123",
   expectedVersion: order.version,
   events: [{ type: "OrderPlaced", data: { total: 99.99 } }],
   outboxTopics: ["orders"],
@@ -224,15 +354,11 @@ Build a relay worker that polls and dispatches:
 
 ```typescript
 async function relayOutbox() {
-  const entries = await eventStore.pollOutbox(100);
-
-  if (entries.length === 0) return;
-
-  for (const entry of entries) {
-    await messageBroker.publish(entry.topic, entry.payload);
-  }
-
-  await eventStore.markOutboxProcessed(entries.map((e) => e.id));
+  await eventStore.processOutbox(async (entries) => {
+    for (const entry of entries) {
+      await messageBroker.publish(entry.topic, entry.payload);
+    }
+  }, 100);
 }
 
 setInterval(relayOutbox, 2000);

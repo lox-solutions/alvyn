@@ -60,11 +60,10 @@ interface CartState {
 }
 
 // Group related events into a highly cohesive Domain Aggregate
-export const Cart = defineAggregate<CartEvents>()({
+export const Cart = defineAggregate<CartState, CartEvents>()({
   streamPrefix: 'Cart',
-  initialState: () => ({ items: [], discount: 0, isCompleted: false }),
   evolve: {
-    CartCreated: (state) => state,
+    CartCreated: () => ({ items: [], discount: 0, isCompleted: false }),
     ItemAdded: (state, event) => ({ ...state, items: [...state.items, event.data] }),
     CouponApplied: (state, event) => ({ ...state, discount: event.data.discount }),
     CheckoutCompleted: (state) => ({ ...state, isCompleted: true }),
@@ -81,7 +80,8 @@ export const Cart = defineAggregate<CartEvents>()({
     code: `const entityId = '8f2a'; // resolves to stream_id: 'Cart-8f2a'
 
 // 1. Append type-safe event facts with optimistic concurrency
-await Cart.append(eventStore, entityId, {
+await Cart.append(eventStore, {
+  entityId,
   expectedVersion: 0, // Ensure concurrency guarantees
   events: [
     {
@@ -91,10 +91,10 @@ await Cart.append(eventStore, entityId, {
   ]
 });
 
-// 2. Load aggregate state with automatic snapshotting
+// 2. Load aggregate state from event history
 const { state, version } = await Cart.load(eventStore, entityId);`,
     explanation:
-      "Appended facts are saved to Postgres. State queries replay history at ultra-high speed, utilizing automatic snapshotting and crypto-shredding hooks under the hood.",
+      "Appended facts are saved to Postgres. State queries replay history with type-safe aggregate logic and crypto-shredding hooks under the hood.",
   },
 ];
 

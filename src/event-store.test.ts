@@ -98,20 +98,6 @@ describe("EventStore", () => {
       await expect(store.loadFrom("s-1", { fromVersion: 1 })).rejects.toThrow(
         EventStoreNotInitializedError,
       );
-      await expect(store.loadWithSnapshot("s-1")).rejects.toThrow(
-        EventStoreNotInitializedError,
-      );
-      await expect(
-        store.saveSnapshot({
-          streamId: "s-1",
-          streamVersion: 1,
-          snapshotType: "t",
-          data: {},
-        }),
-      ).rejects.toThrow(EventStoreNotInitializedError);
-      await expect(store.deleteSnapshot("s-1")).rejects.toThrow(
-        EventStoreNotInitializedError,
-      );
       await expect(
         store.processOutbox(() => Promise.resolve()),
       ).rejects.toThrow(EventStoreNotInitializedError);

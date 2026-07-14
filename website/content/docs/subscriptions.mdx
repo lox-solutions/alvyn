@@ -1,0 +1,140 @@
+---
+title: Subscriptions
+description: Fan-out event subscriptions with historical catch-up, live tailing, filtering, resumable cursors, and PostgreSQL wake-ups.
+---
+
+# Subscriptions
+
+`EventStore.subscribe()` is Alvyn's fan-out primitive for consumers that should
+observe events independently. It returns an `AsyncIterable<StoredEvent>` that
+first catches up on matching history and then tails new events as they are
+committed.
+
+Unlike the transactional outbox, subscriptions are not competing consumers.
+Every subscriber receives every matching event and maintains its own cursor.
+Use the outbox when exactly one replica should relay an event to an external
+system; use subscriptions when every replica or connected client should see it.
+
+## Basic Usage
+
+```typescript
+const controller = new AbortController();
+
+for await (const event of eventStore.subscribe({
+  subject: "Order-",
+  recursive: true,
+  eventTypes: ["OrderPlaced", "OrderShipped"],
+  signal: controller.signal,
+})) {
+  await handleOrderEvent(event);
+  // Persist event.globalPosition after successful processing.
+}
+
+controller.abort(); // Stops iteration and releases the listener connection.
+```
+
+The iterator is ordered by `globalPosition`, delivers at least once, and is
+independent for each subscriber. Consumers should be idempotent and persist a
+cursor after handling an event.
+
+## Catch-up and Live Tailing
+
+The subscription reads historical events first, then transitions to live
+tailing on the same iterator. Successful appends issue a transactional
+PostgreSQL `NOTIFY`; the subscription listens for that wake-up and retains a
+polling fallback for missed notifications or reconnects.
+
+The read side uses a commit-safe watermark. This prevents a transaction that
+commits later with a lower `globalPosition` from being skipped by a cursor
+consumer. A long-running concurrent transaction can therefore delay delivery
+slightly in favor of correctness.
+
+## Filters and Options
+
+| Option           | Description                                                                                  |
+| ---------------- | -------------------------------------------------------------------------------------------- |
+| `subject`        | Exact CloudEvents subject to observe; the subject is the stream ID.                          |
+| `recursive`      | With `true`, include subjects below the supplied prefix. The match is exact or prefix-based. |
+| `eventTypes`     | Restrict delivery to the listed CloudEvents `type` values.                                   |
+| `lowerBound`     | Resume from a global position using `{ id, type }`.                                          |
+| `signal`         | Abort the iterator and release its resources.                                                |
+| `batchSize`      | Historical catch-up batch size; defaults to `500`.                                           |
+| `pollIntervalMs` | Polling/fallback cadence in milliseconds; defaults to `1000`.                                |
+
+`subject` and `eventTypes` can be combined. Without a subject filter, the
+subscription observes matching events from every stream.
+
+## Resuming with a Cursor
+
+`lowerBound.id` is the string representation of the last processed
+`globalPosition`:
+
+```typescript
+const lastProcessedPosition = "42";
+
+for await (const event of eventStore.subscribe({
+  lowerBound: {
+    id: lastProcessedPosition,
+    type: "exclusive", // default: start after position 42
+  },
+})) {
+  await handle(event);
+}
+```
+
+Use `type: "inclusive"` when the event at the cursor should be delivered
+again. This is useful when the previous consumer may have crashed before
+persisting its processing result.
+
+## Aggregate Subscriptions
+
+An aggregate handle provides a typed subscription for one entity stream. The
+stream subject is derived automatically, and generated snapshot events are
+hidden from domain consumers:
+
+```typescript
+type OrderState = { status: "placed" | "shipped" };
+type OrderEvents = {
+  OrderPlaced: { total: number };
+  OrderShipped: { trackingNumber: string };
+};
+
+const Order = defineAggregate<OrderState, OrderEvents>()({
+  streamPrefix: "Order",
+  evolve: {
+    OrderPlaced: () => ({ status: "placed" }),
+    OrderShipped: () => ({ status: "shipped" }),
+  },
+});
+
+for await (const event of Order.subscribe({
+  eventStore,
+  entityId: "order-123",
+  options: { eventTypes: ["OrderShipped"] },
+})) {
+  console.log(event.type, event.data);
+}
+```
+
+`AggregateStoredEvent<TEvents>` infers the payload from the event map. See
+[Aggregates](/docs/aggregates) for `loadEvents()` and aggregate replay types.
+
+## Encryption and Schema Evolution
+
+Subscriptions read stored event rows for efficient fan-out delivery. Unlike
+`eventStore.load()`, they do not decrypt encrypted fields or run registered
+upcasters. An encrypted event can therefore expose redacted data, and the
+consumer must account for the stored schema shape. Use normal stream loading
+when replayed, decrypted, and upcasted events are required.
+
+## Subscription vs Outbox
+
+| Need                                                | Use                             |
+| --------------------------------------------------- | ------------------------------- |
+| Every replica observes every matching event         | `subscribe()`                   |
+| A connected GraphQL/SSE client receives live events | `subscribe()`                   |
+| Exactly one worker in a fleet relays each event     | Transactional outbox            |
+| Events must be replayed after a consumer restart    | `subscribe()` with `lowerBound` |
+
+Both mechanisms preserve at-least-once delivery. Keep handlers idempotent and
+persist progress only after successful processing.

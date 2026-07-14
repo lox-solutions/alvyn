@@ -10,7 +10,7 @@
 
 > **Beta** — Alvyn is under active development. The API may change before v1.0. We encourage contributions and feedback to help make this a battle-tested library.
 
-A production-grade event sourcing library for **Node.js** and **PostgreSQL**. Type-safe aggregates, GDPR crypto-shredding, projections, transactional outbox, and schema evolution — all in one package.
+A production-grade event sourcing library for **Node.js** and **PostgreSQL**. Type-safe aggregates, event-backed snapshots, GDPR crypto-shredding, projections, transactional outbox, and schema evolution — all in one package.
 
 [![CI](https://github.com/lox-solutions/alvyn/actions/workflows/ci.yml/badge.svg)](https://github.com/lox-solutions/alvyn/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@lox-solutions/alvyn)](https://www.npmjs.com/package/@lox-solutions/alvyn)
@@ -22,6 +22,7 @@ Most event sourcing libraries for Node.js are either too minimal (just an append
 
 - **PostgreSQL only** — No abstraction over multiple databases. This lets Alvyn use advisory locks, `FOR UPDATE SKIP LOCKED`, transactional outbox, and schema isolation as first-class features.
 - **TypeScript first** — `defineAggregate` and `defineProjection` use curried generics for full type inference. No casting, no `any`.
+- **Event-backed snapshots** — Define domain-specific performance snapshots that are stored as generated events in the optimized stream.
 - **GDPR built-in** — Per-entity AES-256-GCM envelope encryption with key revocation. Revoking a key makes all PII for that entity cryptographically irrecoverable.
 - **CloudEvents v1.0.2** — Every stored event complies with the CloudEvents specification.
 
@@ -52,9 +53,13 @@ type OrderEvents = {
   OrderShipped: { trackingNumber: string };
 };
 
-const Order = defineAggregate<OrderEvents>()({
+type OrderState = {
+  status: "pending" | "placed" | "shipped";
+  total: number;
+};
+
+const Order = defineAggregate<OrderState, OrderEvents>()({
   streamPrefix: "Order",
-  initialState: () => ({ status: "pending", total: 0 }),
   evolve: {
     OrderPlaced: (state, event) => ({
       ...state,
@@ -68,23 +73,191 @@ const Order = defineAggregate<OrderEvents>()({
 // 3. Use it
 const order = await Order.load(eventStore, "order-123");
 
-await Order.append(eventStore, "order-123", {
+await Order.append(eventStore, {
+  entityId: "order-123",
   expectedVersion: order.version,
   events: [{ type: "OrderShipped", data: { trackingNumber: "TRACK-456" } }],
 });
 ```
 
+## Event-backed snapshots
+
+Use `defineSnapshot` when a calculated state becomes expensive to rebuild from a long event stream. Snapshots are stored as normal generated events in the same stream they optimize, using the reserved event type suffix `Snapshot`.
+
+Snapshots are not necessarily aggregate snapshots. They are independent, domain-defined performance helpers for any state that can be derived from events in one stream. A single aggregate stream can have multiple useful snapshots, and some snapshots can be decoupled from the aggregate's own state:
+
+- `BankAccountBalance` for fast balance checks from `Deposit` and `Withdrawal` events.
+- `BankAccountTransactionCount` for fast transaction counting in the same stream.
+- `LastBankAccountActivity` for quickly reading the latest relevant activity.
+
+Use a projection instead when the result is a query/read model, needs its own table, combines multiple streams, powers search/filtering, or should be processed asynchronously.
+
+```typescript
+import { EventStore, defineSnapshot } from "@lox-solutions/alvyn";
+
+const BankAccountBalance = defineSnapshot<
+  { balance: number },
+  TransactionEvents
+>()({
+  streamPrefix: Transaction.streamPrefix,
+  snapshotName: "BankAccountBalance",
+  every: 50,
+  initialState: { balance: 0 },
+  evolve: {
+    Deposit: (state, event) => ({
+      balance: state.balance + Number(event.data?.amount ?? 0),
+    }),
+    Withdrawal: (state, event) => ({
+      balance: state.balance - Number(event.data?.amount ?? 0),
+    }),
+  },
+});
+
+const eventStore = new EventStore({
+  pool,
+  snapshots: [BankAccountBalance],
+});
+
+const balance = await BankAccountBalance.load(eventStore, accountId);
+console.log(balance.state.balance);
+```
+
+When `BankAccountBalance` is registered on the `EventStore`, matching incoming events update the snapshot synchronously during append and write `BankAccountBalanceSnapshot` once the threshold is reached. Loading finds the latest snapshot event in `Transaction-{accountId}` and replays only later source events; user-supplied events ending in `Snapshot` are rejected so generated snapshot event names cannot collide with domain event names.
+
+## Subscriptions (fan-out)
+
+Alvyn is an event store, so the `events` table **is** the durable, ordered log —
+there is no need to bolt a broker on top for in-process consumers. `subscribe()`
+observes the store directly: it replays matching history (catch-up) and then
+tails live events on the same async iterator, with low-latency delivery via
+PostgreSQL `LISTEN/NOTIFY` (and a polling fallback).
+
+Unlike the [outbox](#outbox-vs-subscribe), `subscribe()` is **fan-out**: every
+subscriber — e.g. every replica in a replicaset — observes _all_ matching
+events independently, each maintaining its own cursor. Resume after a restart by
+remembering the last processed `globalPosition` and passing it as `lowerBound`.
+Delivery is at-least-once, so consumers must remain idempotent.
+
+```typescript
+const ac = new AbortController();
+
+for await (const event of eventStore.subscribe({
+  subject: "Order-", // CloudEvents subject == streamId
+  recursive: true, // include child subjects (prefix match)
+  eventTypes: ["OrderPlaced", "OrderShipped"], // optional type filter
+  signal: ac.signal, // stop the stream + release its LISTEN connection
+})) {
+  await handle(event);
+  // Persist event.globalPosition as your cursor for resume-on-restart.
+}
+```
+
+### Use-case 1 — GraphQL subscription
+
+`subscribe()` returns an `AsyncIterable`, so it maps directly onto a GraphQL
+subscription resolver's `asyncIterator`. Each replica streams to its own
+connected clients.
+
+```typescript
+const resolvers = {
+  Subscription: {
+    orderEvents: {
+      subscribe: (_parent, args, _ctx) => {
+        const ac = new AbortController();
+        const stream = eventStore.subscribe({
+          subject: "Order-",
+          recursive: true,
+          eventTypes: args.types,
+          lowerBound: args.afterPosition
+            ? { id: args.afterPosition, type: "exclusive" }
+            : undefined,
+          signal: ac.signal,
+        });
+        // graphql-subscriptions / graphql-ws consume any AsyncIterable.
+        return mapAsyncIterator(stream, (event) => ({ orderEvents: event }));
+      },
+    },
+  },
+};
+```
+
+### Use-case 3 — SSE endpoint
+
+The same primitive backs a thin Server-Sent Events handler so other services can
+subscribe over HTTP. Each replica streams to its own clients; no broker or outbox
+required.
+
+```typescript
+import type { IncomingMessage, ServerResponse } from "node:http";
+
+async function observeEvents(req: IncomingMessage, res: ServerResponse) {
+  res.writeHead(200, {
+    "content-type": "text/event-stream",
+    "cache-control": "no-cache",
+    connection: "keep-alive",
+  });
+
+  const ac = new AbortController();
+  req.on("close", () => ac.abort());
+
+  const lastEventId = req.headers["last-event-id"] as string | undefined;
+
+  for await (const event of eventStore.subscribe({
+    subject: "/orders",
+    recursive: true,
+    lowerBound: lastEventId
+      ? { id: lastEventId, type: "exclusive" }
+      : undefined,
+    signal: ac.signal,
+  })) {
+    // The SSE `id:` doubles as the resume cursor via the Last-Event-ID header.
+    res.write(`id: ${event.globalPosition}\n`);
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  }
+}
+```
+
+### Use-case 2 — Bridge to NATS (outbox)
+
+<a id="outbox-vs-subscribe"></a>
+When you need each event published **once across the fleet** to an external
+broker (e.g. NATS), `subscribe()`'s fan-out is the wrong shape — every replica
+would publish a duplicate. Use the **transactional outbox** instead: it is a
+competing-consumer relay (`FOR UPDATE SKIP LOCKED`) where exactly one replica
+processes each entry, with at-least-once delivery atomic to the event write.
+
+```typescript
+// Producer: opt in by setting outboxTopics on append.
+await eventStore.append({
+  streamId: "Order-123",
+  expectedVersion: 0,
+  events: [{ type: "OrderPlaced", data: { total: 100 } }],
+  outboxTopics: ["orders"],
+});
+
+// Relay (run on every replica; SKIP LOCKED ensures each event is published once):
+await eventStore.processOutbox(async (entries) => {
+  for (const entry of entries) {
+    await nats.publish(entry.topic, JSON.stringify(entry.payload));
+  }
+});
+```
+
+**When to use which:** `subscribe()` for in-process fan-out (read models,
+GraphQL, SSE — use-cases 1 & 3); the outbox for bridging to an external broker
+where each event must be published once (use-case 2).
+
 ## Features
 
-| Feature                  | Description                                                               |
-| ------------------------ | ------------------------------------------------------------------------- |
-| **Aggregates**           | `defineAggregate` with full TypeScript inference, OCC, and auto-snapshots |
-| **Projections**          | `defineProjection` for typed read models with checkpoint tracking         |
-| **Crypto-Shredding**     | Per-entity AES-256-GCM envelope encryption for GDPR compliance            |
-| **Transactional Outbox** | At-least-once delivery to external systems, atomic with event writes      |
-| **Schema Evolution**     | Read-time upcasters that transform old event shapes without migrations    |
-| **Snapshots**            | Automatic snapshot management with Map/Set serialization support          |
-| **CloudEvents**          | All events comply with CloudEvents v1.0.2 specification                   |
+| Feature                  | Description                                                                  |
+| ------------------------ | ---------------------------------------------------------------------------- |
+| **Aggregates**           | `defineAggregate` with full TypeScript inference and OCC                     |
+| **Subscriptions**        | `subscribe()` fan-out async iterator: catch-up + live tail via LISTEN/NOTIFY |
+| **Projections**          | `defineProjection` for typed read models with checkpoint tracking            |
+| **Crypto-Shredding**     | Per-entity AES-256-GCM envelope encryption for GDPR compliance               |
+| **Transactional Outbox** | At-least-once delivery to external systems, atomic with event writes         |
+| **Schema Evolution**     | Read-time upcasters that transform old event shapes without migrations       |
+| **CloudEvents**          | All events comply with CloudEvents v1.0.2 specification                      |
 
 ## Documentation
 

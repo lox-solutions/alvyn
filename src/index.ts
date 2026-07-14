@@ -11,6 +11,9 @@ export { defineAggregate } from "./aggregate/define-aggregate";
 // Projection builder
 export { defineProjection } from "./projection/define-projection";
 
+// Snapshot builder
+export { defineSnapshot } from "./snapshot/define-snapshot";
+
 // Types — configuration
 export type { EventStoreConfig } from "./types";
 
@@ -20,9 +23,12 @@ export type {
   AggregateEventInput,
   AggregateHandle,
   AggregateInstance,
+  AggregateLoadEventsOptions,
+  AggregateReplayedEvent,
+  AggregateSubscribeOptions,
+  AggregateStoredEvent,
   EncryptionConfig,
   EventMap,
-  SnapshotConfig,
 } from "./aggregate/types";
 
 // Types — CloudEvents v1.0.2
@@ -43,14 +49,22 @@ export type {
   TombstonedEvent,
 } from "./types";
 
-// Types — snapshots
-export type { SaveSnapshotInput, Snapshot } from "./types";
-
 // Types — stream discovery
 export type { ListStreamsOptions } from "./types";
 
 // Types — projections & outbox
+//
+// NOTE: the outbox (OutboxHandler / processOutbox) is a *competing-consumer*
+// adapter — each event is handled exactly once across the fleet — intended for
+// bridging events to an external broker (e.g. NATS). For in-process fan-out,
+// where every replica observes every event, use `EventStore.subscribe()`.
 export type { OutboxEntry, OutboxHandler, Projection } from "./types";
+
+// Types — subscriptions (fan-out)
+export type {
+  SubscribeOptions,
+  SubscriptionLowerBound,
+} from "./subscription/subscribe-options";
 
 // Types — projection builder
 export type {
@@ -58,6 +72,14 @@ export type {
   ProjectionHandle,
   ProjectionHandlerContext,
 } from "./projection/types";
+
+// Types — snapshot builder
+export type {
+  SnapshotDefinition,
+  SnapshotEncryptionConfig,
+  SnapshotHandle,
+  SnapshotLoadResult,
+} from "./snapshot/types";
 
 // Types — upcasting
 export type { Upcaster } from "./types";
@@ -73,5 +95,6 @@ export {
   InvalidSchemaNameError,
   MasterKeyRequiredError,
   OptimisticConcurrencyError,
+  ReservedSnapshotEventTypeError,
   StreamNotFoundError,
 } from "./errors";

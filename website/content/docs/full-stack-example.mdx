@@ -1,0 +1,51 @@
+---
+title: Full-stack Example
+description: A Vite, Nitro, React, Apollo, GraphQL, and PostgreSQL example using live Alvyn subscriptions.
+---
+
+# Full-stack Example
+
+The repository includes a full-stack banking example in
+`examples/example-alvyn-full-stack-app`. It demonstrates how Alvyn fits into a
+web application rather than requiring a particular server or UI framework.
+
+## Included Stack
+
+- Vite and Nitro for the development and server runtime
+- React with Apollo Client for the browser UI
+- Elysia and GraphQL Yoga for the GraphQL endpoint
+- GraphQL-over-SSE for live subscriptions
+- PostgreSQL with Alvyn event streams and an event-backed balance snapshot
+- Testcontainers for a reusable local PostgreSQL development database
+
+## Live Banking Flow
+
+The example defines separate bank-account and transaction aggregates. Deposits
+and withdrawals are appended to the transaction stream, while
+`BankAccountBalance` maintains a derived balance snapshot. GraphQL subscription
+resolvers consume the aggregate subscription API to publish live transaction
+and balance updates to the selected account.
+
+The withdrawal mutation also demonstrates typed GraphQL errors: insufficient
+funds are returned with an `INSUFFICIENT_FUNDS` code and a payload containing
+the current balance and requested amount.
+
+## Run It Locally
+
+From the example directory:
+
+```bash
+pnpm install
+pnpm dev
+```
+
+When `DATABASE_URL` is not set, the Vite configuration starts or reuses the
+`alvyn-example-postgres-dev` PostgreSQL container through Docker. To use an
+existing database, provide `DATABASE_URL` before starting the app.
+
+The example is intended for learning and local development. It does not
+provide authentication or authorization and should not be used as a production
+banking service.
+
+See the [example source on GitHub](https://github.com/lox-solutions/alvyn/tree/main/examples/example-alvyn-full-stack-app)
+for the complete application.

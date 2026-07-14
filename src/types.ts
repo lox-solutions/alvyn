@@ -5,6 +5,7 @@ import type {
   CloudEventOptionalAttributes,
   CloudEventRequiredAttributes,
 } from "./cloud-event-types";
+import type { SnapshotHandle } from "./snapshot/types";
 
 // Re-export CloudEvents types for backward compatibility
 export type {
@@ -35,6 +36,8 @@ export interface EventStoreConfig {
    * (e.g. "urn:myapp:service-name" or "https://myapp.example.com").
    */
   defaultSource?: string;
+  /** Snapshot definitions maintained synchronously after matching appends */
+  snapshots?: SnapshotHandle<unknown>[];
 }
 
 // ---------------------------------------------------------------------------
@@ -147,25 +150,6 @@ export interface AppendResult {
   toVersion: number;
   /** Global positions assigned to each event */
   globalPositions: bigint[];
-}
-
-// ---------------------------------------------------------------------------
-// Snapshots
-// ---------------------------------------------------------------------------
-
-export interface Snapshot<T = unknown> {
-  streamId: string;
-  streamVersion: number;
-  snapshotType: string;
-  data: T;
-  createdAt: Date;
-}
-
-export interface SaveSnapshotInput<T = unknown> {
-  streamId: string;
-  streamVersion: number;
-  snapshotType: string;
-  data: T;
 }
 
 // ---------------------------------------------------------------------------

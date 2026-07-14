@@ -1,40 +1,12 @@
 import type { PoolClient } from "pg";
 
-import type { CloudEventExtensions, Projection, StoredEvent } from "../types";
-
-interface EventRow {
-  global_position: string;
-  stream_id: string;
-  stream_version: number;
-  id: string;
-  source: string;
-  specversion: string;
-  event_type: string;
-  subject: string;
-  time: Date;
-  datacontenttype: string;
-  data: unknown;
-  extensions: unknown;
-  created_at: Date;
-}
-
-function mapRowToEvent(row: EventRow): StoredEvent {
-  return {
-    id: row.id,
-    source: row.source,
-    specversion: row.specversion,
-    type: row.event_type,
-    subject: row.subject,
-    time: row.time.toISOString(),
-    datacontenttype: row.datacontenttype,
-    data: row.data,
-    extensions: (row.extensions ?? {}) as CloudEventExtensions,
-    globalPosition: BigInt(row.global_position),
-    streamId: row.stream_id,
-    streamVersion: row.stream_version,
-    createdAt: row.created_at,
-  };
-}
+import type { Projection } from "../types";
+import {
+  EVENT_ROW_COLUMNS,
+  mapRowToEvent,
+  type EventRow,
+} from "../stream/map-row-to-event";
+import { computeSafeWatermark } from "../stream/compute-safe-watermark";
 
 async function ensureCheckpoint(options: {
   client: PoolClient;
@@ -81,15 +53,18 @@ export async function runProjection(options: {
     projectionName: projection.projectionName,
   });
 
+  // Bound the read by the commit-safe watermark so a transaction holding a
+  // lower global_position that commits *after* a higher one is never skipped
+  // (see src/stream/compute-safe-watermark.ts).
+  const safeWatermark = await computeSafeWatermark({ client, schema });
+  if (safeWatermark <= lastPosition) return 0;
+
   const eventsResult = await client.query<EventRow>(
-    `SELECT global_position, stream_id, stream_version,
-            id, source, specversion, event_type,
-            subject, time, datacontenttype,
-            data, extensions, created_at
+    `SELECT ${EVENT_ROW_COLUMNS}
      FROM ${schema}.events
-     WHERE global_position > $1
-     ORDER BY global_position ASC LIMIT $2`,
-    [lastPosition.toString(), batchSize],
+     WHERE global_position > $1 AND global_position <= $2
+     ORDER BY global_position ASC LIMIT $3`,
+    [lastPosition.toString(), safeWatermark.toString(), batchSize],
   );
 
   if (eventsResult.rows.length === 0) return 0;

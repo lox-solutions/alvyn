@@ -2,7 +2,12 @@ import type { PoolClient } from "pg";
 import type { CryptoKeyManager } from "../crypto/crypto-key-manager";
 import { OptimisticConcurrencyError } from "../errors";
 import type { AppendEventInput, AppendResult } from "../types";
+import {
+  assertNoReservedSnapshotEventTypes,
+  assertOnlyReservedSnapshotEventTypes,
+} from "../snapshot/reserved-event-type";
 import { buildOutboxRows, insertOutboxChunks } from "./outbox-insert";
+import { notifyChannel } from "./notify-channel";
 import { prepareEventRow } from "./prepare-event-row";
 import type { PreparedRow } from "./prepare-event-row";
 
@@ -21,6 +26,7 @@ export interface AppendToStreamOptions {
     defaultSource?: string;
   };
   cryptoKeyManager: CryptoKeyManager | null;
+  allowReservedEventTypes?: boolean;
 }
 
 async function acquireLockAndValidateVersion(options: {
@@ -120,22 +126,16 @@ async function insertEventChunks(options: {
   return globalPositions;
 }
 
-/** Appends events to a stream. CloudEvents v1.0.2 compliant. */
-export async function appendToStream(
-  options: AppendToStreamOptions,
-): Promise<AppendResult> {
-  const { client, schema, input, cryptoKeyManager } = options;
-  const { streamId, expectedVersion, events, outboxTopics } = input;
-  const defaultSource = input.defaultSource ?? "event-store";
-  if (events.length === 0) throw new Error("Cannot append zero events");
-
-  const currentVersion = await acquireLockAndValidateVersion({
-    client,
-    schema,
-    streamId,
-    expectedVersion,
-  });
-  const fromVersion = currentVersion + 1;
+async function prepareRows(options: {
+  events: AppendEventInput[];
+  streamId: string;
+  fromVersion: number;
+  defaultSource: string;
+  cryptoKeyManager: CryptoKeyManager | null;
+  client: PoolClient;
+  schema: string;
+}): Promise<PreparedRow[]> {
+  const { events, streamId, fromVersion, defaultSource } = options;
   const preparedRows: PreparedRow[] = [];
   for (let i = 0; i < events.length; i++) {
     preparedRows.push(
@@ -144,12 +144,57 @@ export async function appendToStream(
         streamId,
         version: fromVersion + i,
         defaultSource,
-        cryptoKeyManager,
-        client,
-        schema,
+        cryptoKeyManager: options.cryptoKeyManager,
+        client: options.client,
+        schema: options.schema,
       }),
     );
   }
+  return preparedRows;
+}
+
+async function writeOutbox(options: {
+  client: PoolClient;
+  schema: string;
+  preparedRows: PreparedRow[];
+  globalPositions: bigint[];
+  outboxTopics?: string[];
+}): Promise<void> {
+  const { client, schema, preparedRows, globalPositions, outboxTopics } =
+    options;
+  if (!outboxTopics || outboxTopics.length === 0) return;
+  const rows = buildOutboxRows({ preparedRows, globalPositions, outboxTopics });
+  await insertOutboxChunks({ client, schema, rows });
+}
+
+/** Appends events to a stream. CloudEvents v1.0.2 compliant. */
+export async function appendToStream(
+  options: AppendToStreamOptions,
+): Promise<AppendResult> {
+  const { client, schema, input, cryptoKeyManager, allowReservedEventTypes } =
+    options;
+  const { streamId, expectedVersion, events, outboxTopics } = input;
+  const defaultSource = input.defaultSource ?? "event-store";
+  if (events.length === 0) throw new Error("Cannot append zero events");
+  if (allowReservedEventTypes) assertOnlyReservedSnapshotEventTypes(events);
+  else assertNoReservedSnapshotEventTypes(events);
+
+  const currentVersion = await acquireLockAndValidateVersion({
+    client,
+    schema,
+    streamId,
+    expectedVersion,
+  });
+  const fromVersion = currentVersion + 1;
+  const preparedRows = await prepareRows({
+    events,
+    streamId,
+    fromVersion,
+    defaultSource,
+    cryptoKeyManager,
+    client,
+    schema,
+  });
   const globalPositions = await insertEventChunks({
     client,
     schema,
@@ -157,14 +202,17 @@ export async function appendToStream(
     preparedRows,
   });
 
-  if (outboxTopics && outboxTopics.length > 0) {
-    const outboxRows = buildOutboxRows({
-      preparedRows,
-      globalPositions,
-      outboxTopics,
-    });
-    await insertOutboxChunks({ client, schema, rows: outboxRows });
-  }
+  await writeOutbox({
+    client,
+    schema,
+    preparedRows,
+    globalPositions,
+    outboxTopics,
+  });
+
+  // Wake live subscribers. Issued on the append client so the notification is
+  // delivered when (and only when) this transaction commits.
+  await client.query(`SELECT pg_notify($1, '')`, [notifyChannel(schema)]);
 
   return {
     streamId,
