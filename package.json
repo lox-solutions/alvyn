@@ -22,6 +22,8 @@
     "test": "vitest run",
     "test:load": "tsx src/load-tests/runner.ts",
     "test:load:http": "tsx src/load-tests/http-runner.ts",
+    "test:load:http:daily": "tsx src/load-tests/http-runner.ts --profile daily",
+    "test:load:http:capacity": "tsx src/load-tests/http-runner.ts --profile capacity",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint .",

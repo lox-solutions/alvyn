@@ -1,14 +1,31 @@
+export type HttpLoadProfile = "custom" | "daily" | "capacity";
+
 export interface HttpLoadTestConfig {
+  profile: HttpLoadProfile;
   workerCount: number;
   poolSize: number;
   accountCount: number;
+  activeUserCount: number;
+  operationsPerUser: number;
   hotAccountCount: number;
+  hotTrafficPercent: number;
   historyEventsPerAccount: number;
   seedBatchSize: number;
   requestCount: number;
+  durationSeconds: number;
   readPercent: number;
   concurrency: number;
   maxRetries: number;
+  capacityStartRequestsPerSecond: number;
+  capacityStepRequestsPerSecond: number;
+  capacityMaxRequestsPerSecond: number;
+  capacityStageSeconds: number;
+  enforceSlos: boolean;
+  sloReadP95Ms: number;
+  sloDepositP95Ms: number;
+  sloErrorRatePercent: number;
+  snapshotBenchmarkRequests: number;
+  snapshotBenchmarkHistoryEventsPerAccount: number;
   seed: number;
   verbose: boolean;
   outputPath?: string;
@@ -24,6 +41,8 @@ export type HttpOperationKind = "read" | "deposit";
 
 export interface HttpOperationPlan {
   kind: HttpOperationKind;
+  userId: string;
+  userOperationIndex: number;
   accountId: string;
   amount: number;
   operationToken: string;
@@ -59,17 +78,88 @@ export interface HttpLatencyReport {
   p99: number | null;
 }
 
+export interface HttpSnapshotBenchmarkReport {
+  requestCount: number;
+  historyEventsPerAccount: number;
+  withoutSnapshots: HttpLatencyReport;
+  withSnapshots: HttpLatencyReport;
+  latencyImprovementPercent: {
+    p50: number | null;
+    p95: number | null;
+    p99: number | null;
+  };
+  snapshotReplay: {
+    count: number;
+    totalEvents: number;
+    averageEvents: number | null;
+    maxEvents: number | null;
+  };
+}
+
 export interface HttpOperationReport extends HttpOperationCounters {
   latency: HttpLatencyReport;
+}
+
+export interface HttpTrafficPhasePlan {
+  name: string;
+  requestOffset: number;
+  requestCount: number;
+  durationMs: number;
+  targetRequestsPerSecond: number | null;
+}
+
+export interface HttpSloCheck {
+  metric: "read_p95_ms" | "deposit_p95_ms" | "error_rate_percent";
+  actual: number | null;
+  threshold: number;
+  passed: boolean;
+}
+
+export interface HttpSloReport {
+  enforced: boolean;
+  passed: boolean;
+  checks: HttpSloCheck[];
+}
+
+export interface HttpTrafficPhaseReport {
+  name: string;
+  requestOffset: number;
+  requestCount: number;
+  targetRequestsPerSecond: number | null;
+  durationMs: number;
+  achievedRequestsPerSecond: number;
+  request: HttpOperationReport;
+  read: HttpOperationReport;
+  deposit: HttpOperationReport;
+  errors: string[];
+  slo: HttpSloReport;
+}
+
+export interface HttpReplicaReport {
+  workerId: number;
+  port: number;
+  requestAttempts: number;
 }
 
 export interface HttpVerificationSummary {
   accountCount: number;
   eventCount: number;
+  storedEventCount: number;
+  snapshotEventCount: number;
   expectedEventCount: number;
   seedEventCount: number;
+  seedSnapshotEventCount: number;
   successfulDeposits: number;
   finalBalance: number;
+}
+
+export interface HttpPhaseDurations {
+  setupMs: number;
+  seedingMs: number;
+  workerStartupMs: number;
+  snapshotBenchmarkMs: number;
+  httpRequestsMs: number;
+  verificationMs: number;
 }
 
 export interface HttpLoadTestReport {
@@ -77,13 +167,27 @@ export interface HttpLoadTestReport {
   failure?: string;
   configuration: HttpLoadTestConfig;
   schema: string;
+  workerConnectionCount: number;
+  coordinatorConnectionCount: number;
   connectionCount: number;
   durationMs: number;
+  phaseDurations: HttpPhaseDurations;
   request: HttpOperationReport;
   read: HttpOperationReport;
   deposit: HttpOperationReport;
-  throughput: { requestsPerSecond: number };
+  throughput: {
+    requestsPerSecond: number;
+    durationMs: number;
+    successfulRequests: number;
+  };
+  trafficPhases: HttpTrafficPhaseReport[];
+  slo: HttpSloReport;
+  capacity: {
+    maximumSustainableRequestsPerSecond: number | null;
+    firstUnsustainableRequestsPerSecond: number | null;
+  } | null;
+  snapshotBenchmark: HttpSnapshotBenchmarkReport | null;
   errors: string[];
   verification: HttpVerificationSummary | null;
-  workers: Array<{ workerId: number; port: number }>;
+  workers: HttpReplicaReport[];
 }

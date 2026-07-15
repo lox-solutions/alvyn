@@ -10,6 +10,8 @@
     "crypto-shredding",
     "projections",
     "schema-evolution",
+    "---Performance---",
+    "load-testing",
     "---Examples---",
     "full-stack-example",
     "---Reference---",

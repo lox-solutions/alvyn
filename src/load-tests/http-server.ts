@@ -6,7 +6,7 @@ import {
 } from "node:http";
 import { OptimisticConcurrencyError } from "../errors";
 import type { EventStore } from "../event-store";
-import { AccountAggregate } from "./http-aggregate";
+import { AccountAggregate, AccountBalanceSnapshot } from "./http-aggregate";
 
 const MAX_BODY_BYTES = 64 * 1024;
 const ACCOUNT_PATH = /^\/accounts\/([^/]+)$/;
@@ -61,6 +61,11 @@ function getOperationToken(body: unknown): string | null {
   return typeof token === "string" && token.length > 0 ? token : null;
 }
 
+function wantsSnapshot(url: URL): boolean {
+  const value = url.searchParams.get("snapshot");
+  return value === "1" || value === "true";
+}
+
 async function handleRequest({
   request,
   response,
@@ -89,12 +94,21 @@ async function handleRequest({
   }
 
   if (request.method === "GET" && accountMatch) {
-    const aggregate = await AccountAggregate.load(eventStore, accountId);
-    if (aggregate.state === null) {
-      sendJson(response, 404, { error: "account_not_found" });
-      return;
+    if (wantsSnapshot(url)) {
+      const snapshot = await AccountBalanceSnapshot.load(eventStore, accountId);
+      if (snapshot.version === 0) {
+        sendJson(response, 404, { error: "account_not_found" });
+        return;
+      }
+      sendJson(response, 200, snapshot);
+    } else {
+      const aggregate = await AccountAggregate.load(eventStore, accountId);
+      if (aggregate.state === null) {
+        sendJson(response, 404, { error: "account_not_found" });
+        return;
+      }
+      sendJson(response, 200, aggregate);
     }
-    sendJson(response, 200, aggregate);
     return;
   }
 

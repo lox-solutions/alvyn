@@ -55,8 +55,18 @@ function addBoundedSample(
   sequence: number,
   value: number,
 ): void {
-  if (samples.length < MAX_LATENCY_SAMPLES) samples.push(value);
-  else samples[sequence % MAX_LATENCY_SAMPLES] = value;
+  if (samples.length < MAX_LATENCY_SAMPLES) {
+    samples.push(value);
+    return;
+  }
+  let hash = Math.imul(sequence + 1, 0x9e3779b1) >>> 0;
+  hash ^= hash >>> 16;
+  hash = Math.imul(hash, 0x85ebca6b) >>> 0;
+  hash ^= hash >>> 13;
+  const reservoirIndex = hash % (sequence + 1);
+  if (reservoirIndex < MAX_LATENCY_SAMPLES) {
+    samples[reservoirIndex] = value;
+  }
 }
 
 export class HttpMetricsCollector {
@@ -89,10 +99,10 @@ export class HttpMetricsCollector {
     else counters.failed++;
     counters.conflicts += conflicts;
     counters.retries += retries;
-    addBoundedSample(counters.latencies, counters.attempted, latencyMs);
+    addBoundedSample(counters.latencies, counters.attempted - 1, latencyMs);
     addBoundedSample(
       this.overallLatencies,
-      this.counters.read.attempted + this.counters.deposit.attempted,
+      this.counters.read.attempted + this.counters.deposit.attempted - 1,
       latencyMs,
     );
     if (error && this.errors.length < MAX_ERRORS) this.errors.push(error);
@@ -120,4 +130,31 @@ export class HttpMetricsCollector {
       errors: [...this.errors],
     };
   }
+}
+
+export class HttpLatencyCollector {
+  private readonly samples: number[] = [];
+  private sequence = 0;
+
+  record(latencyMs: number): void {
+    addBoundedSample(this.samples, this.sequence, latencyMs);
+    this.sequence++;
+  }
+
+  report(): HttpLatencyReport {
+    return latencyReport(this.samples);
+  }
+}
+
+export function latencyImprovementPercent(
+  withoutSnapshots: number | null,
+  withSnapshots: number | null,
+): number | null {
+  if (
+    withoutSnapshots === null ||
+    withSnapshots === null ||
+    withoutSnapshots === 0
+  )
+    return null;
+  return ((withoutSnapshots - withSnapshots) / withoutSnapshots) * 100;
 }

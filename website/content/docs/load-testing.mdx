@@ -1,0 +1,308 @@
+---
+title: Production Load Testing
+description: Run Alvyn's deterministic HTTP load profiles and interpret their performance and production-readiness results.
+---
+
+# Production Load Testing
+
+> **Production-readiness disclaimer:** These results are encouraging evidence that Alvyn can handle the tested daily workload, but they do not prove that Alvyn is fully production-ready for every large, highly available replicated deployment. Treat them as evidence for this specific scenario, not as a certification; validate capacity limits, write contention, long-running stability, real load-balancer behavior, replica replacement, and PostgreSQL high availability before adopting a production topology.
+
+The load-test suite measures Alvyn through a small HTTP application that models
+bank-account traffic. It starts independent application processes, each with its
+own `pg.Pool` and `EventStore`, and makes them share one PostgreSQL primary.
+Every run is deterministic when the same configuration and `--seed` are used.
+
+## What the suite tests
+
+The HTTP harness has three profiles:
+
+| Profile    | Purpose                                   | Default workload                                                      |
+| ---------- | ----------------------------------------- | --------------------------------------------------------------------- |
+| `daily`    | Simulate an accelerated day of activity   | 100,000 users, 10 operations each, one million requests over one hour |
+| `capacity` | Find the highest sustainable offered rate | 30-second stages from 100 to 2,000 requests/second                    |
+| `custom`   | Run a focused scenario                    | Explicit request count and concurrency settings                       |
+
+The daily and capacity profiles use open-loop traffic. Requests are scheduled at
+their target arrival times up to the configured `--concurrency`, so an overloaded
+system cannot hide saturation by simply slowing down request generation. The
+custom profile retains the original closed-loop behavior for small, focused
+checks.
+
+The example application exposes:
+
+- `GET /health` for replica readiness;
+- `GET /accounts/:id` for aggregate loads; and
+- `POST /accounts/:id/deposit` for aggregate decisions and optimistic-concurrency
+  appends.
+
+The coordinator seeds account histories directly through Alvyn before measured
+traffic begins. Measured requests still use the real HTTP and aggregate path.
+After traffic, the verifier checks event counts, contiguous versions, ordering,
+balances, generated snapshot events, and every successful logical deposit.
+
+## Running the tests
+
+Run the commands from the repository root. Node.js 18 or newer, pnpm, and a
+working Docker installation are required. The load tests start PostgreSQL with
+Testcontainers; do not start a separate database for the default local runs.
+
+### Verify the normal test suite first
+
+These checks do not run the long load profiles:
+
+```bash
+pnpm run build
+pnpm test
+```
+
+The load tests are intentionally separate from `pnpm test` because they seed
+large histories and may run for several minutes or hours.
+
+### Run the direct EventStore smoke test
+
+This scenario exercises multiple worker processes, seeded stream history,
+appends, loads, optimistic-concurrency retries, and final stream verification
+without the HTTP layer:
+
+```bash
+pnpm test:load -- \
+  --workers 2 \
+  --pool-size 2 \
+  --streams 4 \
+  --hot-streams 2 \
+  --history 100 \
+  --operations 50 \
+  --append-percent 60 \
+  --batch-size 2 \
+  --max-retries 20 \
+  --seed 42 \
+  --verbose \
+  --output .load-smoke-report.json
+```
+
+For a larger-history direct run:
+
+```bash
+pnpm test:load -- \
+  --workers 4 \
+  --pool-size 8 \
+  --streams 100 \
+  --hot-streams 4 \
+  --history 10000 \
+  --operations 1000 \
+  --append-percent 60 \
+  --batch-size 10 \
+  --max-retries 30 \
+  --seed 42 \
+  --verbose \
+  --output load-report.json
+```
+
+`--history` is the number of existing events per stream, while
+`--operations` is the number of live operations per worker. A successful run
+exits with code `0` and verifies that no required event is missing or duplicated.
+
+### Run the HTTP smoke test
+
+Use a short run to verify the HTTP workers and aggregate endpoints before
+starting a long profile:
+
+```bash
+pnpm test:load:http -- \
+  --workers 2 \
+  --pool-size 4 \
+  --accounts 20 \
+  --active-users 20 \
+  --operations-per-user 10 \
+  --hot-accounts 4 \
+  --hot-traffic-percent 75 \
+  --history 100 \
+  --seed-batch-size 50 \
+  --requests 500 \
+  --read-percent 35 \
+  --concurrency 32 \
+  --max-retries 20 \
+  --seed 42 \
+  --verbose \
+  --snapshot-benchmark-requests 0 \
+  --output .http-load-smoke-report.json
+```
+
+`--snapshot-benchmark-requests 0` skips the optional paired snapshot latency
+benchmark. Snapshot events created during normal aggregate appends are still
+verified.
+
+### Run the production daily profile
+
+This is the default production-oriented local scenario:
+
+```bash
+pnpm test:load:http:daily -- \
+  --seed 42 \
+  --verbose \
+  --output http-load-daily.json
+```
+
+The profile starts three independent local application processes, seeds 60
+history events for each of 100,000 accounts, and measures one million requests:
+
+- `10%` of requests during a `20%` off-peak period;
+- `80%` during a `60%` peak period; and
+- `10%` during a `20%` cool-down period.
+
+The default SLOs are enforced:
+
+- read `p95` no higher than `250 ms`;
+- deposit `p95` no higher than `500 ms`; and
+- unexpected error rate below `0.1%`.
+
+Handled optimistic-concurrency conflicts and successful retries are reported
+separately and are not counted as unexpected errors. Override the budgets with
+`--slo-read-p95-ms`, `--slo-deposit-p95-ms`, and
+`--slo-error-rate-percent`. Use `--enforce-slos false` for a diagnostic run that
+still records the SLO checks without failing on them.
+
+The full profile takes about one hour for traffic alone. Seeding, worker
+startup, verification, and cleanup add additional time, so use the smoke
+profile first on a new machine.
+
+### Run the capacity profile
+
+The capacity profile increases offered traffic in stages and reports the highest
+stage that both reaches at least `95%` of its target rate and passes all SLOs:
+
+```bash
+pnpm test:load:http:capacity -- \
+  --seed 42 \
+  --verbose \
+  --output http-load-capacity.json
+```
+
+The default stages run from `100` through `2,000` requests/second in increments
+of `100`, with each stage lasting `30` seconds. Reduce the range for a quick
+capacity smoke test:
+
+```bash
+pnpm test:load:http:capacity -- \
+  --capacity-start-rps 100 \
+  --capacity-step-rps 100 \
+  --capacity-max-rps 300 \
+  --capacity-stage-seconds 10 \
+  --seed 42 \
+  --verbose \
+  --output .http-load-capacity-smoke.json
+```
+
+## Interpreting the JSON report
+
+Use `--output <path>` to save a machine-readable report. The most useful fields
+are:
+
+- `request`, `read`, and `deposit`: attempted, successful, failed, conflict,
+  retry, and bounded latency-sample metrics;
+- `throughput`: successful requests per second for the measured traffic phase;
+- `trafficPhases`: per-phase throughput, latency, errors, and SLO checks;
+- `workers`: request attempts routed to each application replica;
+- `phaseDurations`: setup, seeding, startup, traffic, snapshot benchmark, and
+  verification timing;
+- `snapshotBenchmark`: full-replay versus snapshot-aware read latency when the
+  optional benchmark is enabled; and
+- `verification`: source event counts, stored event counts, snapshot event
+  counts, successful deposits, and final balance.
+
+Latency samples are bounded at 10,000 values per operation class, using a
+deterministic reservoir sample across the measured run. The percentiles are
+therefore useful for long runs without retaining every request in memory, but
+rare-tail analysis should use additional observability in a real deployment.
+
+## Recorded daily-profile result
+
+The following result was produced by the default daily profile and saved as
+`http-load-daily.json`.
+
+### Workload configuration
+
+| Metric                    |                   Result |
+| ------------------------- | -----------------------: |
+| Application replicas      |      `3` local processes |
+| Accounts and active users |    `100,000` / `100,000` |
+| Operations per user       |                     `10` |
+| Total HTTP requests       |              `1,000,000` |
+| Read / deposit mix        |            `70%` / `30%` |
+| History per account       |              `60` events |
+| Measured traffic duration |                 `1 hour` |
+| Peak offered rate         | `370.37 requests/second` |
+| Database topology         |   One PostgreSQL primary |
+
+### Correctness and throughput
+
+| KPI                        |                                   Result | Assessment                                 |
+| -------------------------- | ---------------------------------------: | ------------------------------------------ |
+| Requests succeeded         |                  `1,000,000 / 1,000,000` | No failed requests                         |
+| Reads succeeded            |                      `700,000 / 700,000` | Read path remained correct                 |
+| Deposits succeeded         |                      `300,000 / 300,000` | Write path remained correct                |
+| Unexpected errors          |                                      `0` | Below the `0.1%` SLO                       |
+| Average traffic throughput |                 `277.77 requests/second` | Matches one million requests over one hour |
+| Peak traffic throughput    |                 `370.37 requests/second` | Target rate achieved                       |
+| Replica routing            | `333,334`, `333,333`, `333,333` attempts | Evenly distributed                         |
+
+The run seeded `6,000,000` events and added `300,000` successful deposit
+events. Verification found `6,300,000` source events and `6,400,000` stored
+events, including `100,000` generated snapshot events. The final aggregate
+balance matched the expected value. This difference between source and stored
+events is expected because snapshot events share the same event streams.
+
+### Latency and SLOs
+
+| Operation    |     `p50` |      `p95` |       `p99` |                 SLO |
+| ------------ | --------: | ---------: | ----------: | ------------------: |
+| Reads        | `1.40 ms` |  `3.91 ms` | `100.10 ms` |     `p95 <= 250 ms` |
+| Deposits     | `7.47 ms` | `14.81 ms` | `212.72 ms` |     `p95 <= 500 ms` |
+| All requests | `1.96 ms` | `11.41 ms` | `119.24 ms` | Error rate `< 0.1%` |
+
+The phase-level SLOs also passed. Off-peak latency was higher than peak latency
+for this run: read `p95` was `75.46 ms` and deposit `p95` was `184.66 ms`.
+Overall percentiles are dominated by the larger peak phase, so phase-level
+values should be reviewed when making capacity decisions.
+
+The optional snapshot benchmark was disabled in this report with
+`--snapshot-benchmark-requests 0`. The report therefore validates normal
+aggregate behavior but does not provide a snapshot-versus-full-replay latency
+comparison.
+
+## What this result proves
+
+This is strong evidence that, for the tested workload:
+
+- independent Alvyn application processes can share one PostgreSQL primary;
+- the read and deposit aggregate paths remain correct over one million requests;
+- traffic can be distributed evenly across three application processes;
+- seeded long-lived histories can be verified without missing or duplicate
+  successful events; and
+- the observed latency stayed well below the configured balanced SLOs.
+
+## What this result does not prove
+
+The local processes are not a production load balancer or a Kubernetes,
+Cloud Run, or Docker Compose deployment. This run did not test:
+
+- stopping or replacing a replica during traffic;
+- load-balancer health checks, connection draining, or autoscaling;
+- PostgreSQL replication, promotion, or database failover;
+- multi-hour resource stability, memory growth, or connection leaks;
+- high-contention shared accounts and resulting OCC retry exhaustion;
+- authentication, authorization, TLS, gateways, or external dependencies; or
+- transfers, withdrawals, idempotency after client timeouts, and other banking
+  commands.
+
+The daily configuration intentionally uses one account per user and no hot
+accounts, so it recorded zero OCC conflicts and retries. That is appropriate for
+the independent-account scenario, but it is not evidence that highly contended
+aggregates never conflict. The capacity profile includes a controlled hot-account
+subset for a more demanding write workload.
+
+For a broader production-readiness decision, run the daily and capacity profiles
+with the same database and resource limits intended for deployment, add a
+contention scenario, collect CPU and memory metrics during a soak run, and test
+the actual load-balancer and replica lifecycle. PostgreSQL high availability
+requires a separate database-topology test.

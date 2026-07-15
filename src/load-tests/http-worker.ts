@@ -1,6 +1,7 @@
 import { type AddressInfo } from "node:net";
 import pg from "pg";
 import { EventStore } from "../event-store";
+import { AccountBalanceSnapshot } from "./http-aggregate";
 import { createAggregateHttpServer } from "./http-server";
 import type {
   HttpWorkerCommand,
@@ -86,7 +87,11 @@ async function initialize(workerConfig: HttpWorkerConfig): Promise<void> {
     connectionString: workerConfig.connectionString,
     max: workerConfig.poolSize,
   });
-  const eventStore = new EventStore({ pool, schema: workerConfig.schema });
+  const eventStore = new EventStore({
+    pool,
+    schema: workerConfig.schema,
+    snapshots: [AccountBalanceSnapshot],
+  });
   await eventStore.setup();
   server = createAggregateHttpServer({
     eventStore,

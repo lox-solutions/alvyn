@@ -1,5 +1,6 @@
 import { defineAggregate } from "../aggregate/define-aggregate";
 import type { AggregateEventInput } from "../aggregate/types";
+import { defineSnapshot } from "../snapshot/define-snapshot";
 
 export type AccountEvents = {
   AccountOpened: { initialBalance: number };
@@ -13,6 +14,28 @@ export interface AccountState {
 
 export const AccountAggregate = defineAggregate<AccountState, AccountEvents>()({
   streamPrefix: "LoadTestAccount",
+  evolve: {
+    AccountOpened: (_state, event) => ({
+      status: "open",
+      balance: event.data?.initialBalance ?? 0,
+    }),
+    MoneyDeposited: (state, event) => ({
+      ...state,
+      balance: state.balance + (event.data?.amount ?? 0),
+    }),
+  },
+});
+
+export const ACCOUNT_SNAPSHOT_EVERY = 50;
+
+export const AccountBalanceSnapshot = defineSnapshot<
+  AccountState,
+  AccountEvents
+>()({
+  streamPrefix: AccountAggregate.streamPrefix,
+  snapshotName: "LoadTestAccountBalance",
+  every: ACCOUNT_SNAPSHOT_EVERY,
+  initialState: { status: "open", balance: 0 },
   evolve: {
     AccountOpened: (_state, event) => ({
       status: "open",

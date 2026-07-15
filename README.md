@@ -429,18 +429,71 @@ the EventStore directly to check event counts, versions, ordering, balances,
 and every successful logical request. This makes failures easier to diagnose
 without turning the seed or verifier into another HTTP benchmark.
 
+Before the mixed request phase, the command also runs a paired snapshot
+benchmark. The accounts used for this benchmark receive a separately
+configurable long history (`--snapshot-benchmark-history`) and one
+`LoadTestAccountBalanceSnapshot` event at the end of that history. The normal
+accounts keep the `--history` length. Benchmark accounts are selected from the
+end of the account set, so they stay out of the normal hot-account traffic when
+the configuration leaves a separate account pool available.
+
+The driver sends the same deterministic account reads through the HTTP workers
+twice: once with full aggregate replay and once through the snapshot read path
+(`?snapshot=true`). The JSON report exposes p50/p95/p99 latency for both paths,
+the effective benchmark history length, and `latencyImprovementPercent`; a
+positive value means snapshots reduced latency, while a negative value means
+they were slower for that run. The report also includes how many source events
+snapshot reads replayed after their snapshot base. This is a diagnostic
+comparison, not a performance gate.
+
+The normal mixed HTTP reads still use full aggregate replay, so their latency
+metrics remain comparable with earlier HTTP reports. Set
+`--snapshot-benchmark-requests 0` to skip the additional phase, or increase it
+when a larger percentile sample is needed. `--snapshot-benchmark-requests N`
+benchmarks `N` accounts and sends `N` reads through each mode, so the paired
+phase performs `2N` HTTP requests. The direct `pnpm test:load` harness
+continues to benchmark raw `EventStore.load()` and does not use aggregate
+snapshots; snapshot comparisons are meaningful at the aggregate load boundary.
+
+The report keeps total `durationMs` for operational timing, but it does not use
+that value for the throughput KPI. `throughput.durationMs` is only the measured
+mixed HTTP request phase, and `throughput.requestsPerSecond` is calculated as
+successful HTTP requests divided by that phase duration. This is the value to
+compare with another API implementation such as Bun or Express, provided the
+database, request mix, history, concurrency, response payloads, and connection
+budget are kept equivalent. Setup, seeding, snapshot benchmarking, worker
+startup, and verification durations are reported separately in
+`phaseDurations`.
+
 #### HTTP workload concepts
 
+- `--profile daily` models 100,000 active users with one account each and ten
+  operations per user. The default one-hour measured period contains 1,000,000
+  requests: 10% in a 20% off-peak period, 80% in a 60% peak period, and 10% in
+  a 20% cool-down period. Each user performs seven reads and three deposits.
+- `--profile capacity` increases the open-loop request rate in fixed stages.
+  The report records each stage separately and identifies the highest rate that
+  both achieved at least 95% of its target and met the configured SLOs.
+- With no profile, the command retains the original `custom` closed-loop mode.
+  `--requests` and `--concurrency` therefore remain useful for focused tests.
+- Daily and capacity traffic is open-loop: requests are scheduled at their
+  planned arrival time up to `--concurrency`, instead of waiting for one
+  response before generating the next request. This exposes overload rather
+  than silently reducing the offered rate.
 - `--accounts` is the number of independent account streams.
 - `--hot-accounts` selects the first accounts as a contention-heavy subset.
-  Approximately 75% of generated requests target this subset when it is
-  non-empty. Multiple HTTP workers can therefore load the same account and
-  attempt writes from stale aggregate versions, which produces real OCC
-  responses.
+  `--hot-traffic-percent` controls the traffic sent to that subset. The daily
+  profile defaults to no shared hot accounts because each user owns one account;
+  the capacity profile retains a hot subset for controlled OCC pressure.
+- `--active-users` and `--operations-per-user` define the daily population and
+  derive its request count unless `--requests` is explicitly supplied.
 - `--history` creates that many existing events per account before requests
   start. The first event opens the account and the remaining events are valid
   deposits, so the aggregate has a realistic state to rehydrate. It is not the
   number of HTTP requests. `--seed-batch-size` bounds each direct seed append.
+- `--snapshot-benchmark-history` creates the long source history per sampled
+  snapshot-benchmark account. The effective value is at least `--history`, and
+  it is used only by the paired snapshot benchmark sample.
 - `--requests` is the total number of logical HTTP requests in the run. Reads
   are selected by `--read-percent`; the remainder are deposit commands.
 - `--concurrency` controls how many HTTP requests the driver keeps in flight.
@@ -449,30 +502,72 @@ without turning the seed or verifier into another HTTP benchmark.
 - A deposit that receives `409 optimistic_concurrency` is retried with the
   same operation token up to `--max-retries`. A successful retry represents one
   logical deposit and one event, not multiple events.
+- `--pool-size` is the maximum pool size for each worker and for the coordinator.
+  The report therefore calculates worker capacity as
+  `workers * pool-size`, coordinator capacity as `pool-size`, and total
+  configured capacity as their sum. The coordinator pool is included because
+  it seeds and verifies through the same PostgreSQL instance.
 
-#### HTTP smoke example
+#### Production daily profile
+
+The agreed default runs three independent application processes, seeds 60
+existing events for each of 100,000 accounts, then offers one million requests
+over one measured hour. Seeding and verification are additional phases and are
+not included in the traffic duration or throughput KPI:
 
 ```bash
-pnpm test:load:http -- \
-  --workers 2 \
-  --pool-size 4 \
-  --accounts 20 \
-  --hot-accounts 4 \
-  --history 100 \
-  --seed-batch-size 50 \
-  --requests 500 \
-  --read-percent 35 \
-  --concurrency 32 \
-  --max-retries 20 \
+pnpm test:load:http:daily -- \
   --seed 42 \
   --verbose \
-  --output http-load-report.json
+  --output http-load-daily.json
+```
+
+The daily profile enforces p95 reads <= 250 ms, p95 deposits <= 500 ms, and an
+unexpected error rate <= 0.1%. Handled OCC conflicts and retries are reported
+but are not errors. Override these budgets with `--slo-read-p95-ms`,
+`--slo-deposit-p95-ms`, and `--slo-error-rate-percent`, or use
+`--enforce-slos false` for diagnostic runs.
+
+#### Capacity profile
+
+The default capacity run offers 30-second stages from 100 to 2,000 requests per
+second in increments of 100:
+
+```bash
+pnpm test:load:http:capacity -- \
+  --seed 42 \
+  --verbose \
+  --output http-load-capacity.json
+```
+
+Tune the range using `--capacity-start-rps`, `--capacity-step-rps`,
+`--capacity-max-rps`, and `--capacity-stage-seconds`. A stage is sustainable
+only when it reaches at least 95% of the offered rate and passes all SLO checks.
+
+#### Quick profile validation
+
+```bash
+pnpm test:load:http:daily -- \
+  --active-users 100 \
+  --accounts 100 \
+  --operations-per-user 10 \
+  --duration-seconds 10 \
+  --history 20 \
+  --seed 42 \
+  --verbose \
+  --output .http-load-daily-smoke.json
 ```
 
 The HTTP report contains request, read, and deposit counts; HTTP latency
-percentiles; OCC conflicts and retries; effective connection capacity; and
-final aggregate verification totals. Latency and throughput are diagnostic
-values and do not impose host-sensitive pass/fail thresholds. If requests
+percentiles; the paired snapshot latency benchmark; OCC conflicts and retries;
+effective connection capacity; per-phase SLO results; request attempts per
+replica; and final aggregate verification totals. Because
+snapshot events are stored in the same event stream, verification reports
+source events, stored events, and generated snapshot events separately. SLO
+thresholds are explicit and configurable; the `custom` profile does not enforce
+them by default. Latencies use a deterministic reservoir sample bounded at
+10,000 values per operation class and phase, so long-run percentiles represent
+the full measured period instead of only its end. If requests
 fail, the command still exits non-zero, but `--output` writes a diagnostic
 report with `status: "failed"`, the failure message, and bounded error samples;
 `verification` is `null` because final aggregate verification is skipped. This
@@ -503,29 +598,42 @@ and can also be enabled with `ALVYN_LOAD_VERBOSE=true`.
 The aggregate/HTTP command uses its own `ALVYN_HTTP_LOAD_*` environment
 variables, so it can be configured independently from the direct harness:
 
-| Option              | Environment variable              | Description                                                       |
-| ------------------- | --------------------------------- | ----------------------------------------------------------------- |
-| `--workers`         | `ALVYN_HTTP_LOAD_WORKERS`         | Number of independent HTTP application workers.                   |
-| `--pool-size`       | `ALVYN_HTTP_LOAD_POOL_SIZE`       | Maximum PostgreSQL connections per worker and coordinator.        |
-| `--accounts`        | `ALVYN_HTTP_LOAD_ACCOUNTS`        | Number of seeded account aggregates.                              |
-| `--hot-accounts`    | `ALVYN_HTTP_LOAD_HOT_ACCOUNTS`    | Number of accounts receiving most generated requests.             |
-| `--history`         | `ALVYN_HTTP_LOAD_HISTORY`         | Existing valid aggregate events created per account.              |
-| `--seed-batch-size` | `ALVYN_HTTP_LOAD_SEED_BATCH_SIZE` | Maximum events in each direct seed append.                        |
-| `--requests`        | `ALVYN_HTTP_LOAD_REQUESTS`        | Total logical HTTP requests in the measured phase.                |
-| `--read-percent`    | `ALVYN_HTTP_LOAD_READ_PERCENT`    | Percentage of requests using the aggregate query endpoint.        |
-| `--concurrency`     | `ALVYN_HTTP_LOAD_CONCURRENCY`     | Maximum HTTP requests in flight across the driver.                |
-| `--max-retries`     | `ALVYN_HTTP_LOAD_MAX_RETRIES`     | Maximum retries after a deposit receives an OCC `409`.            |
-| `--seed`            | `ALVYN_HTTP_LOAD_SEED`            | Reproducibility seed for accounts, amounts, and operation tokens. |
-| `--output`          | `ALVYN_HTTP_LOAD_OUTPUT`          | Optional path for the JSON HTTP report.                           |
-| `--verbose`         | `ALVYN_HTTP_LOAD_VERBOSE`         | Rewrite one console line with seed, request, and verify progress. |
+| Option                          | Environment variable                          | Description                                                                                                      |
+| ------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `--workers`                     | `ALVYN_HTTP_LOAD_WORKERS`                     | Number of independent HTTP application workers.                                                                  |
+| `--pool-size`                   | `ALVYN_HTTP_LOAD_POOL_SIZE`                   | Maximum PostgreSQL connections per worker and coordinator.                                                       |
+| `--accounts`                    | `ALVYN_HTTP_LOAD_ACCOUNTS`                    | Number of seeded account aggregates.                                                                             |
+| `--profile`                     | `ALVYN_HTTP_LOAD_PROFILE`                     | Workload preset: `custom`, `daily`, or `capacity`.                                                               |
+| `--active-users`                | `ALVYN_HTTP_LOAD_ACTIVE_USERS`                | Distinct daily users; must not exceed accounts.                                                                  |
+| `--operations-per-user`         | `ALVYN_HTTP_LOAD_OPERATIONS_PER_USER`         | Operations assigned to every active user.                                                                        |
+| `--hot-accounts`                | `ALVYN_HTTP_LOAD_HOT_ACCOUNTS`                | Number of accounts receiving most generated requests.                                                            |
+| `--hot-traffic-percent`         | `ALVYN_HTTP_LOAD_HOT_TRAFFIC_PERCENT`         | Percentage of non-daily traffic sent to the hot set.                                                             |
+| `--history`                     | `ALVYN_HTTP_LOAD_HISTORY`                     | Existing valid aggregate events created per account.                                                             |
+| `--seed-batch-size`             | `ALVYN_HTTP_LOAD_SEED_BATCH_SIZE`             | Maximum events in each direct seed append.                                                                       |
+| `--requests`                    | `ALVYN_HTTP_LOAD_REQUESTS`                    | Total logical HTTP requests in the measured phase.                                                               |
+| `--duration-seconds`            | `ALVYN_HTTP_LOAD_DURATION_SECONDS`            | Measured duration of the daily profile.                                                                          |
+| `--read-percent`                | `ALVYN_HTTP_LOAD_READ_PERCENT`                | Percentage of requests using the aggregate query endpoint.                                                       |
+| `--concurrency`                 | `ALVYN_HTTP_LOAD_CONCURRENCY`                 | Maximum HTTP requests in flight across the driver.                                                               |
+| `--max-retries`                 | `ALVYN_HTTP_LOAD_MAX_RETRIES`                 | Maximum retries after a deposit receives an OCC `409`.                                                           |
+| `--capacity-start-rps`          | `ALVYN_HTTP_LOAD_CAPACITY_START_RPS`          | First offered request rate in the capacity profile.                                                              |
+| `--capacity-step-rps`           | `ALVYN_HTTP_LOAD_CAPACITY_STEP_RPS`           | Request-rate increment between capacity stages.                                                                  |
+| `--capacity-max-rps`            | `ALVYN_HTTP_LOAD_CAPACITY_MAX_RPS`            | Last offered request rate in the capacity profile.                                                               |
+| `--capacity-stage-seconds`      | `ALVYN_HTTP_LOAD_CAPACITY_STAGE_SECONDS`      | Duration of each capacity stage.                                                                                 |
+| `--enforce-slos`                | `ALVYN_HTTP_LOAD_ENFORCE_SLOS`                | Fail the report when configured SLOs are exceeded.                                                               |
+| `--slo-read-p95-ms`             | `ALVYN_HTTP_LOAD_SLO_READ_P95_MS`             | Maximum accepted p95 read latency.                                                                               |
+| `--slo-deposit-p95-ms`          | `ALVYN_HTTP_LOAD_SLO_DEPOSIT_P95_MS`          | Maximum accepted p95 deposit latency.                                                                            |
+| `--slo-error-rate-percent`      | `ALVYN_HTTP_LOAD_SLO_ERROR_RATE_PERCENT`      | Maximum accepted unexpected request failure percentage.                                                          |
+| `--snapshot-benchmark-requests` | `ALVYN_HTTP_LOAD_SNAPSHOT_BENCHMARK_REQUESTS` | Number of sampled accounts; each is read once with full replay and once with a snapshot; `0` disables the phase. |
+| `--snapshot-benchmark-history`  | `ALVYN_HTTP_LOAD_SNAPSHOT_BENCHMARK_HISTORY`  | Long source-history length per sampled benchmark account; effective value is at least `--history`.               |
+| `--seed`                        | `ALVYN_HTTP_LOAD_SEED`                        | Reproducibility seed for accounts, amounts, and operation tokens.                                                |
+| `--output`                      | `ALVYN_HTTP_LOAD_OUTPUT`                      | Optional path for the JSON HTTP report.                                                                          |
+| `--verbose`                     | `ALVYN_HTTP_LOAD_VERBOSE`                     | Rewrite one console line with seed, request, and verify progress.                                                |
 
 The human-readable report includes total duration, effective connection count,
 append/load successes and failures, event counts, OCC conflicts and retries,
 throughput, and p50/p95/p99 latency for each operation class and overall. It
-also includes per-worker counters and verification totals. Latency and
-throughput are diagnostic data rather than fixed performance budgets, so
-machine-dependent performance variation does not fail an otherwise correct
-run.
+also includes per-replica request attempts, traffic-phase results, configured
+SLO checks, capacity findings, and verification totals.
 
 ## Contributing
 
