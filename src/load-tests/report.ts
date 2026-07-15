@@ -1,6 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import { buildAggregateReport } from "./metrics";
+import type { LoadTestEnvironment } from "./provenance";
 import type {
   LoadTestConfig,
   LoadTestReport,
@@ -13,15 +14,18 @@ export function createReport({
   workerMetrics,
   startedAt,
   verification,
+  environment,
 }: {
   config: LoadTestConfig;
   schema: string;
   workerMetrics: LoadTestReport["workers"];
   startedAt: number;
   verification: VerificationSummary;
+  environment: LoadTestEnvironment;
 }): LoadTestReport {
   const durationMs = performance.now() - startedAt;
   return {
+    environment,
     configuration: config,
     schema,
     connectionCount: (config.workerCount + 1) * config.poolSize,

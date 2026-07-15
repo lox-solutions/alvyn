@@ -23,6 +23,8 @@ import {
   latencyImprovementPercent,
 } from "./http-metrics";
 import { ProgressRenderer } from "./progress";
+import { createLoadTestEnvironment } from "./provenance";
+import { validateHttpOperationResponse } from "./http-response-validation";
 import { evaluateHttpSlos } from "./http-slo";
 import { createTrafficPhases } from "./http-traffic";
 import type {
@@ -40,6 +42,7 @@ import type {
   SerializedHttpError,
 } from "./http-types";
 import { getAccountIds, getExpectedHttpOperation } from "./http-workload";
+import { withTimeout } from "./timeout";
 
 const { Pool } = pg;
 const WORKER_LOADER_ARGUMENTS = ["--import", "tsx/esm"];
@@ -377,7 +380,12 @@ async function seedAccountSnapshots({
   seedSummary: SeedSummary;
   progress: ProgressRenderer;
 }): Promise<void> {
-  const snapshotState = { status: "open" as const, balance: 0 };
+  const snapshotState = {
+    status: "open" as const,
+    balance: 0,
+    depositCount: 0,
+    depositTotal: 0,
+  };
   const snapshotAccountIds = getSnapshotBenchmarkAccountIds(config);
   for (const [snapshotIndex, accountId] of snapshotAccountIds.entries()) {
     const accountIndex = seedSummary.accountIds.indexOf(accountId);
@@ -391,6 +399,8 @@ async function seedAccountSnapshots({
           data: {
             ...snapshotState,
             balance: Math.max(0, historyEvents - 1),
+            depositCount: Math.max(0, historyEvents - 1),
+            depositTotal: Math.max(0, historyEvents - 1),
           },
         },
       ],
@@ -415,26 +425,39 @@ async function readJsonResponse(response: Response): Promise<unknown> {
 async function sendHttpOperation({
   port,
   operation,
+  timeoutMs,
 }: {
   port: number;
   operation: HttpOperationPlan;
+  timeoutMs: number;
 }): Promise<Response> {
   const baseUrl = `http://127.0.0.1:${port}`;
+  const controller = new AbortController();
+  let request: Promise<Response>;
   if (operation.kind === "read") {
-    return fetch(
+    request = fetch(
       `${baseUrl}/accounts/${encodeURIComponent(operation.accountId)}`,
+      { signal: controller.signal },
+    );
+  } else {
+    request = fetch(
+      `${baseUrl}/accounts/${encodeURIComponent(operation.accountId)}/deposit`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          amount: operation.amount,
+          operationToken: operation.operationToken,
+        }),
+        signal: controller.signal,
+      },
     );
   }
-  return fetch(
-    `${baseUrl}/accounts/${encodeURIComponent(operation.accountId)}/deposit`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        amount: operation.amount,
-        operationToken: operation.operationToken,
-      }),
-    },
+  return withTimeout(
+    request,
+    timeoutMs,
+    `${operation.kind} HTTP request for ${operation.accountId}`,
+    () => controller.abort(),
   );
 }
 
@@ -442,14 +465,23 @@ async function sendHttpAccountRead({
   port,
   accountId,
   snapshots,
+  timeoutMs,
 }: {
   port: number;
   accountId: string;
   snapshots: boolean;
+  timeoutMs: number;
 }): Promise<Response> {
   const suffix = snapshots ? "?snapshot=true" : "";
-  return fetch(
-    `http://127.0.0.1:${port}/accounts/${encodeURIComponent(accountId)}${suffix}`,
+  const controller = new AbortController();
+  return withTimeout(
+    fetch(
+      `http://127.0.0.1:${port}/accounts/${encodeURIComponent(accountId)}${suffix}`,
+      { signal: controller.signal },
+    ),
+    timeoutMs,
+    `snapshot benchmark read for ${accountId}`,
+    () => controller.abort(),
   );
 }
 
@@ -517,6 +549,7 @@ async function runSnapshotBenchmark({
       port,
       accountId,
       snapshots,
+      timeoutMs: config.operationTimeoutMs,
     });
     const body = await readJsonResponse(response);
     if (response.status !== 200) {
@@ -641,6 +674,7 @@ async function runHttpRequests({
           const response = await sendHttpOperation({
             port: ports[workerIndex]!,
             operation,
+            timeoutMs: config.operationTimeoutMs,
           });
           return { response, body: await readJsonResponse(response) };
         },
@@ -654,6 +688,7 @@ async function runHttpRequests({
         (operation.kind === "read" && response.status === 200) ||
         (operation.kind === "deposit" && response.status === 201)
       ) {
+        validateHttpOperationResponse(operation, body);
         const record = {
           kind: operation.kind,
           succeeded: true,
@@ -971,6 +1006,7 @@ export function createReport({
   workers,
   trafficPhases = [],
   failure,
+  environment,
 }: {
   config: HttpLoadTestConfig;
   schema: string;
@@ -982,6 +1018,7 @@ export function createReport({
   workers: HttpReplicaReport[];
   trafficPhases?: HttpTrafficPhaseReport[];
   failure?: string;
+  environment: ReturnType<typeof createLoadTestEnvironment>;
 }): HttpLoadTestReport {
   const durationMs = performance.now() - startedAt;
   const workerConnectionCount = config.workerCount * config.poolSize;
@@ -1007,6 +1044,7 @@ export function createReport({
   return {
     status: reportFailure === undefined ? "passed" : "failed",
     ...(reportFailure === undefined ? {} : { failure: reportFailure }),
+    environment,
     configuration: config,
     schema,
     workerConnectionCount,
@@ -1084,7 +1122,17 @@ function formatReport(report: HttpLoadTestReport): string {
 
 export async function runHttpLoadTest(
   config: HttpLoadTestConfig,
+  runSignal?: AbortSignal,
 ): Promise<HttpLoadTestReport> {
+  if (runSignal === undefined) {
+    const controller = new AbortController();
+    return withTimeout(
+      runHttpLoadTest(config, controller.signal),
+      config.runTimeoutMs,
+      "HTTP load-test run",
+      () => controller.abort(),
+    );
+  }
   let container: StartedPostgreSqlContainer | null = null;
   let coordinatorPool: pg.Pool | null = null;
   const workers: HttpWorkerHandle[] = [];
@@ -1105,9 +1153,16 @@ export async function runHttpLoadTest(
     verificationMs: 0,
   };
   let reportWritten = false;
+  let environment = createLoadTestEnvironment(null);
   const schema = uniqueSchema();
   const startedAt = performance.now();
   const progress = new ProgressRenderer(config.verbose);
+  const abortRun = (): void => {
+    void terminateWorkers(workers);
+    void coordinatorPool?.end().catch(() => undefined);
+    void container?.stop().catch(() => undefined);
+  };
+  runSignal.addEventListener("abort", abortRun, { once: true });
   try {
     progress.update("starting PostgreSQL container");
     const setupStartedAt = performance.now();
@@ -1119,10 +1174,19 @@ export async function runHttpLoadTest(
       coordinatorPool = new Pool({
         connectionString,
         max: config.poolSize,
+        connectionTimeoutMillis: config.operationTimeoutMs,
+        statement_timeout: config.operationTimeoutMs,
       });
       eventStore = new EventStore({ pool: coordinatorPool, schema });
       progress.update("creating schema");
       await eventStore.setup();
+      const versionResult = await coordinatorPool.query<{
+        server_version: string;
+      }>("SHOW server_version");
+      environment = {
+        ...environment,
+        postgresqlVersion: versionResult.rows[0]?.server_version ?? null,
+      };
     } finally {
       phaseDurations.setupMs = performance.now() - setupStartedAt;
     }
@@ -1147,7 +1211,11 @@ export async function runHttpLoadTest(
           }),
         );
       }
-      ports = await Promise.all(workers.map((worker) => worker.ready));
+      ports = await withTimeout(
+        Promise.all(workers.map((worker) => worker.ready)),
+        config.workerReadyTimeoutMs,
+        "HTTP worker readiness",
+      );
     } finally {
       phaseDurations.workerStartupMs =
         performance.now() - workerStartupStartedAt;
@@ -1208,6 +1276,7 @@ export async function runHttpLoadTest(
         requestAttempts: replicaRequestAttempts[workerId] ?? 0,
       })),
       trafficPhases,
+      environment,
     });
     await writeReport(config, report);
     reportWritten = true;
@@ -1225,6 +1294,7 @@ export async function runHttpLoadTest(
         snapshotBenchmark,
         verification: null,
         failure,
+        environment,
         workers: ports.map((port, workerId) => ({
           workerId,
           port,
@@ -1235,6 +1305,7 @@ export async function runHttpLoadTest(
     }
     throw error;
   } finally {
+    runSignal.removeEventListener("abort", abortRun);
     progress.finish();
     await terminateWorkers(workers);
     try {

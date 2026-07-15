@@ -10,7 +10,8 @@ description: Run Alvyn's deterministic HTTP load profiles and interpret their pe
 The load-test suite measures Alvyn through a small HTTP application that models
 bank-account traffic. It starts independent application processes, each with its
 own `pg.Pool` and `EventStore`, and makes them share one PostgreSQL primary.
-Every run is deterministic when the same configuration and `--seed` are used.
+The logical workload is deterministic when the same configuration and `--seed`
+are used; timings, scheduling interleavings, conflicts, and performance vary.
 
 ## What the suite tests
 
@@ -39,6 +40,11 @@ The coordinator seeds account histories directly through Alvyn before measured
 traffic begins. Measured requests still use the real HTTP and aggregate path.
 After traffic, the verifier checks event counts, contiguous versions, ordering,
 balances, generated snapshot events, and every successful logical deposit.
+During traffic, every successful read response is also checked for the requested
+stream ID, open account state, a stored version not behind the replay-derived
+source-event count, and a balance equal to the replay-derived deposit total.
+Successful deposits must echo their account, amount, operation token, and
+one-event version range.
 
 ## Running the tests
 
@@ -55,8 +61,10 @@ pnpm run build
 pnpm test
 ```
 
-The load tests are intentionally separate from `pnpm test` because they seed
-large histories and may run for several minutes or hours.
+The load test profiles are intentionally separate from `pnpm test` because
+they seed large histories and may run for several minutes or hours. Fast
+deterministic tests for harness configuration, scheduling, metrics, SLOs,
+validation, deadlines, and reporting remain part of the normal suite.
 
 ### Run the direct EventStore smoke test
 
@@ -132,6 +140,11 @@ pnpm test:load:http -- \
 benchmark. Snapshot events created during normal aggregate appends are still
 verified.
 
+For a value `N > 0`, the benchmark collects `N` paired samples and performs
+`2N` HTTP requests: one full replay and one snapshot-aware read per sample. It
+uses up to `min(N, --accounts)` distinct accounts and cycles through those
+accounts when `N` exceeds the account count.
+
 ### Run the production daily profile
 
 This is the default production-oriented local scenario:
@@ -154,7 +167,7 @@ The default SLOs are enforced:
 
 - read `p95` no higher than `250 ms`;
 - deposit `p95` no higher than `500 ms`; and
-- unexpected error rate below `0.1%`.
+- unexpected error rate no higher than `0.1%`.
 
 Handled optimistic-concurrency conflicts and successful retries are reported
 separately and are not counted as unexpected errors. Override the budgets with
@@ -198,6 +211,8 @@ pnpm test:load:http:capacity -- \
 Use `--output <path>` to save a machine-readable report. The most useful fields
 are:
 
+- `environment`: generation timestamp, commit revision, Alvyn, Node.js and
+  PostgreSQL versions, OS/architecture, CPU model/count, and total host memory;
 - `request`, `read`, and `deposit`: attempted, successful, failed, conflict,
   retry, and bounded latency-sample metrics;
 - `throughput`: successful requests per second for the measured traffic phase;
@@ -215,10 +230,17 @@ deterministic reservoir sample across the measured run. The percentiles are
 therefore useful for long runs without retaining every request in memory, but
 rare-tail analysis should use additional observability in a real deployment.
 
+HTTP requests, PostgreSQL connection waits, and PostgreSQL statements default
+to a `30,000 ms` operation deadline. Worker readiness defaults to `60,000 ms`,
+and the complete run defaults to two hours. Configure these with
+`--operation-timeout-ms`, `--worker-ready-timeout-ms`, and `--run-timeout-ms`.
+Deadline failures produce a failed diagnostic report when `--output` is set and
+trigger worker, pool, and container cleanup.
+
 ## Recorded daily-profile result
 
-The following result was produced by the default daily profile and saved as
-`http-load-daily.json`.
+The following result was produced by the default daily profile on 2026-07-15
+and saved as `http-load-daily.json`.
 
 ### Workload configuration
 
@@ -232,6 +254,7 @@ The following result was produced by the default daily profile and saved as
 | History per account       |              `60` events |
 | Measured traffic duration |                 `1 hour` |
 | Peak offered rate         | `370.37 requests/second` |
+| Configured connections    |                     `40` |
 | Database topology         |   One PostgreSQL primary |
 
 ### Correctness and throughput
@@ -239,9 +262,9 @@ The following result was produced by the default daily profile and saved as
 | KPI                        |                                   Result | Assessment                                 |
 | -------------------------- | ---------------------------------------: | ------------------------------------------ |
 | Requests succeeded         |                  `1,000,000 / 1,000,000` | No failed requests                         |
-| Reads succeeded            |                      `700,000 / 700,000` | Read path remained correct                 |
+| Reads returned HTTP `200`  |                      `700,000 / 700,000` | Response bodies passed contract validation |
 | Deposits succeeded         |                      `300,000 / 300,000` | Write path remained correct                |
-| Unexpected errors          |                                      `0` | Below the `0.1%` SLO                       |
+| Unexpected errors          |                                      `0` | Within the `0.1%` SLO                      |
 | Average traffic throughput |                 `277.77 requests/second` | Matches one million requests over one hour |
 | Peak traffic throughput    |                 `370.37 requests/second` | Target rate achieved                       |
 | Replica routing            | `333,334`, `333,333`, `333,333` attempts | Evenly distributed                         |
@@ -249,33 +272,55 @@ The following result was produced by the default daily profile and saved as
 The run seeded `6,000,000` events and added `300,000` successful deposit
 events. Verification found `6,300,000` source events and `6,400,000` stored
 events, including `100,000` generated snapshot events. The final aggregate
-balance matched the expected value. This difference between source and stored
-events is expected because snapshot events share the same event streams.
+balance was `7,550,000`, matching the expected value. This difference between
+source and stored events is expected because snapshot events share the same
+event streams.
 
 ### Latency and SLOs
 
-| Operation    |     `p50` |      `p95` |       `p99` |                 SLO |
-| ------------ | --------: | ---------: | ----------: | ------------------: |
-| Reads        | `1.40 ms` |  `3.91 ms` | `100.10 ms` |     `p95 <= 250 ms` |
-| Deposits     | `7.47 ms` | `14.81 ms` | `212.72 ms` |     `p95 <= 500 ms` |
-| All requests | `1.96 ms` | `11.41 ms` | `119.24 ms` | Error rate `< 0.1%` |
+| Operation    |      `p50` |      `p95` |      `p99` |                  SLO |
+| ------------ | ---------: | ---------: | ---------: | -------------------: |
+| Reads        |  `1.49 ms` |  `3.44 ms` |  `6.82 ms` |      `p95 <= 250 ms` |
+| Deposits     | `10.97 ms` | `23.91 ms` | `33.18 ms` |      `p95 <= 500 ms` |
+| All requests |  `2.03 ms` | `17.88 ms` | `26.49 ms` | Error rate `<= 0.1%` |
 
-The phase-level SLOs also passed. Off-peak latency was higher than peak latency
-for this run: read `p95` was `75.46 ms` and deposit `p95` was `184.66 ms`.
+All three traffic phases passed their SLO checks. Their achieved throughput and
+`p95` latency were:
+
+| Phase     |               Throughput | Read `p95` | Deposit `p95` | All requests `p95` |
+| --------- | -----------------------: | ---------: | ------------: | -----------------: |
+| Off-peak  | `138.89 requests/second` |  `3.92 ms` |    `18.03 ms` |         `13.88 ms` |
+| Peak      | `370.37 requests/second` |  `2.37 ms` |    `25.32 ms` |         `18.93 ms` |
+| Cool-down | `138.89 requests/second` |  `3.84 ms` |    `10.38 ms` |          `8.75 ms` |
+
 Overall percentiles are dominated by the larger peak phase, so phase-level
-values should be reviewed when making capacity decisions.
+values should be reviewed when making capacity decisions. The run recorded no
+optimistic-concurrency conflicts or retries because the daily profile assigns
+one independent account to each active user and has no hot-account traffic.
 
 The optional snapshot benchmark was disabled in this report with
 `--snapshot-benchmark-requests 0`. The report therefore validates normal
 aggregate behavior but does not provide a snapshot-versus-full-replay latency
 comparison.
 
+### Run provenance
+
+The report was generated at `2026-07-15T10:41:06.867Z` from revision
+`517b4e2add0fd803202347c5c22ce82baad17b02` with Alvyn `0.1.2`, Node.js
+`v24.13.0`, and PostgreSQL `16.14`. The host was macOS `25.5.0` on `arm64`,
+with an Apple M2 Pro (`12` logical CPUs) and `16 GiB` of memory.
+
+The complete run took approximately `68.7 minutes`, including setup, seeding,
+worker startup, traffic, and verification. The measured HTTP traffic phase was
+exactly one hour; setup and verification are excluded from the throughput KPI.
+
 ## What this result proves
 
 This is strong evidence that, for the tested workload:
 
 - independent Alvyn application processes can share one PostgreSQL primary;
-- the read and deposit aggregate paths remain correct over one million requests;
+- one million requests returned expected HTTP statuses and validated response
+  bodies, while successful deposits reconciled with final stored state;
 - traffic can be distributed evenly across three application processes;
 - seeded long-lived histories can be verified without missing or duplicate
   successful events; and

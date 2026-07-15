@@ -9,6 +9,10 @@ import pg from "pg";
 import { EventStore } from "../event-store";
 import { parseLoadTestConfig } from "./config";
 import { ProgressRenderer } from "./progress";
+import {
+  createLoadTestEnvironment,
+  type LoadTestEnvironment,
+} from "./provenance";
 import { createReport, writeReport } from "./report";
 import {
   seedLoadHistory,
@@ -26,6 +30,7 @@ import type {
   SerializedError,
   WorkerMetrics,
 } from "./types";
+import { withTimeout } from "./timeout";
 
 const { Pool } = pg;
 const SCHEMA_RANDOM_BYTES = 8;
@@ -76,7 +81,11 @@ async function runWorkers({
       }),
     );
   }
-  await Promise.all(workers.map((worker) => worker.ready));
+  await withTimeout(
+    Promise.all(workers.map((worker) => worker.ready)),
+    config.workerReadyTimeoutMs,
+    "load-test worker readiness",
+  );
   onStatus?.(`workers ready: ${config.workerCount}/${config.workerCount}`);
   await Promise.all(workers.map((worker) => worker.send({ type: "start" })));
   onStatus?.("live operations: 0");
@@ -91,6 +100,7 @@ async function executeLoadRun({
   workers,
   startedAt,
   progress,
+  environment,
 }: {
   config: LoadTestConfig;
   connectionString: string;
@@ -99,6 +109,7 @@ async function executeLoadRun({
   workers: WorkerHandle[];
   startedAt: number;
   progress: ProgressRenderer;
+  environment: LoadTestEnvironment;
 }): Promise<LoadTestReport> {
   progress.update("creating schema");
   await eventStore.setup();
@@ -127,6 +138,7 @@ async function executeLoadRun({
     workerMetrics,
     startedAt,
     verification,
+    environment,
   });
   await writeReport(config, report);
   return report;
@@ -134,13 +146,29 @@ async function executeLoadRun({
 
 export async function runLoadTest(
   config: LoadTestConfig,
+  runSignal?: AbortSignal,
 ): Promise<LoadTestReport> {
+  if (runSignal === undefined) {
+    const controller = new AbortController();
+    return withTimeout(
+      runLoadTest(config, controller.signal),
+      config.runTimeoutMs,
+      "load-test run",
+      () => controller.abort(),
+    );
+  }
   let container: StartedPostgreSqlContainer | null = null;
   let coordinatorPool: pg.Pool | null = null;
   const workers: WorkerHandle[] = [];
   const schema = uniqueSchema();
   const startedAt = performance.now();
   const progress = new ProgressRenderer(config.verbose);
+  const abortRun = (): void => {
+    void terminateWorkers(workers);
+    void coordinatorPool?.end().catch(() => undefined);
+    void container?.stop().catch(() => undefined);
+  };
+  runSignal.addEventListener("abort", abortRun, { once: true });
 
   try {
     progress.update("starting PostgreSQL container");
@@ -149,11 +177,19 @@ export async function runLoadTest(
     coordinatorPool = new Pool({
       connectionString,
       max: config.poolSize,
+      connectionTimeoutMillis: config.operationTimeoutMs,
+      statement_timeout: config.operationTimeoutMs,
     });
     const eventStore = new EventStore({
       pool: coordinatorPool,
       schema,
     });
+    const versionResult = await coordinatorPool.query<{
+      server_version: string;
+    }>("SHOW server_version");
+    const environment = createLoadTestEnvironment(
+      versionResult.rows[0]?.server_version ?? null,
+    );
     return await executeLoadRun({
       config,
       connectionString,
@@ -162,8 +198,10 @@ export async function runLoadTest(
       workers,
       startedAt,
       progress,
+      environment,
     });
   } finally {
+    runSignal.removeEventListener("abort", abortRun);
     progress.finish();
     await terminateWorkers(workers);
     await Promise.allSettled(workers.map((worker) => worker.ready));

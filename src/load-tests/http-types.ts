@@ -1,9 +1,14 @@
+import type { LoadTestEnvironment } from "./provenance";
+
 export type HttpLoadProfile = "custom" | "daily" | "capacity";
 
 export interface HttpLoadTestConfig {
   profile: HttpLoadProfile;
   workerCount: number;
   poolSize: number;
+  operationTimeoutMs: number;
+  workerReadyTimeoutMs: number;
+  runTimeoutMs: number;
   accountCount: number;
   activeUserCount: number;
   operationsPerUser: number;
@@ -165,6 +170,7 @@ export interface HttpPhaseDurations {
 export interface HttpLoadTestReport {
   status: "passed" | "failed";
   failure?: string;
+  environment: LoadTestEnvironment;
   configuration: HttpLoadTestConfig;
   schema: string;
   workerConnectionCount: number;

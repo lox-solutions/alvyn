@@ -11,6 +11,9 @@ const MIN_PERCENTAGE = 0;
 const MAX_PERCENTAGE = 100;
 const DEFAULT_WORKER_COUNT = 2;
 const DEFAULT_POOL_SIZE = 4;
+const DEFAULT_OPERATION_TIMEOUT_MS = 30_000;
+const DEFAULT_WORKER_READY_TIMEOUT_MS = 60_000;
+const DEFAULT_RUN_TIMEOUT_MS = 7_200_000;
 const DEFAULT_STREAM_COUNT = 20;
 const DEFAULT_HOT_STREAM_COUNT = 2;
 const DEFAULT_HISTORY_EVENTS = 100;
@@ -28,6 +31,9 @@ const VERBOSE_FALSE = "false";
 export const DEFAULT_CONFIG: LoadTestConfig = {
   workerCount: DEFAULT_WORKER_COUNT,
   poolSize: DEFAULT_POOL_SIZE,
+  operationTimeoutMs: DEFAULT_OPERATION_TIMEOUT_MS,
+  workerReadyTimeoutMs: DEFAULT_WORKER_READY_TIMEOUT_MS,
+  runTimeoutMs: DEFAULT_RUN_TIMEOUT_MS,
   streamCount: DEFAULT_STREAM_COUNT,
   hotStreamCount: DEFAULT_HOT_STREAM_COUNT,
   historyEventsPerStream: DEFAULT_HISTORY_EVENTS,
@@ -61,6 +67,27 @@ const NUMERIC_OPTIONS: readonly NumericOption[] = [
     cliName: "pool-size",
     envName: "ALVYN_LOAD_POOL_SIZE",
     defaultValue: DEFAULT_CONFIG.poolSize,
+    minimum: MINIMUM_POSITIVE,
+  },
+  {
+    key: "operationTimeoutMs",
+    cliName: "operation-timeout-ms",
+    envName: "ALVYN_LOAD_OPERATION_TIMEOUT_MS",
+    defaultValue: DEFAULT_CONFIG.operationTimeoutMs,
+    minimum: MINIMUM_POSITIVE,
+  },
+  {
+    key: "workerReadyTimeoutMs",
+    cliName: "worker-ready-timeout-ms",
+    envName: "ALVYN_LOAD_WORKER_READY_TIMEOUT_MS",
+    defaultValue: DEFAULT_CONFIG.workerReadyTimeoutMs,
+    minimum: MINIMUM_POSITIVE,
+  },
+  {
+    key: "runTimeoutMs",
+    cliName: "run-timeout-ms",
+    envName: "ALVYN_LOAD_RUN_TIMEOUT_MS",
+    defaultValue: DEFAULT_CONFIG.runTimeoutMs,
     minimum: MINIMUM_POSITIVE,
   },
   {

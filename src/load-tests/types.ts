@@ -1,6 +1,11 @@
+import type { LoadTestEnvironment } from "./provenance";
+
 export interface LoadTestConfig {
   workerCount: number;
   poolSize: number;
+  operationTimeoutMs: number;
+  workerReadyTimeoutMs: number;
+  runTimeoutMs: number;
   streamCount: number;
   hotStreamCount: number;
   historyEventsPerStream: number;
@@ -97,6 +102,7 @@ export type WorkerMessage =
   | { type: "failed"; workerId: number; error: SerializedError };
 
 export interface LoadTestReport {
+  environment: LoadTestEnvironment;
   configuration: LoadTestConfig;
   schema: string;
   connectionCount: number;

@@ -10,6 +10,8 @@ export type AccountEvents = {
 export interface AccountState {
   status: "open";
   balance: number;
+  depositCount: number;
+  depositTotal: number;
 }
 
 export const AccountAggregate = defineAggregate<AccountState, AccountEvents>()({
@@ -18,10 +20,14 @@ export const AccountAggregate = defineAggregate<AccountState, AccountEvents>()({
     AccountOpened: (_state, event) => ({
       status: "open",
       balance: event.data?.initialBalance ?? 0,
+      depositCount: 0,
+      depositTotal: event.data?.initialBalance ?? 0,
     }),
     MoneyDeposited: (state, event) => ({
       ...state,
       balance: state.balance + (event.data?.amount ?? 0),
+      depositCount: state.depositCount + 1,
+      depositTotal: state.depositTotal + (event.data?.amount ?? 0),
     }),
   },
 });
@@ -35,15 +41,24 @@ export const AccountBalanceSnapshot = defineSnapshot<
   streamPrefix: AccountAggregate.streamPrefix,
   snapshotName: "LoadTestAccountBalance",
   every: ACCOUNT_SNAPSHOT_EVERY,
-  initialState: { status: "open", balance: 0 },
+  initialState: {
+    status: "open",
+    balance: 0,
+    depositCount: 0,
+    depositTotal: 0,
+  },
   evolve: {
     AccountOpened: (_state, event) => ({
       status: "open",
       balance: event.data?.initialBalance ?? 0,
+      depositCount: 0,
+      depositTotal: event.data?.initialBalance ?? 0,
     }),
     MoneyDeposited: (state, event) => ({
       ...state,
       balance: state.balance + (event.data?.amount ?? 0),
+      depositCount: state.depositCount + 1,
+      depositTotal: state.depositTotal + (event.data?.amount ?? 0),
     }),
   },
 });

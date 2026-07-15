@@ -1,9 +1,25 @@
 {
   "status": "passed",
+  "environment": {
+    "generatedAt": "2026-07-15T10:41:06.867Z",
+    "revision": "517b4e2add0fd803202347c5c22ce82baad17b02",
+    "alvynVersion": "0.1.2",
+    "nodeVersion": "v24.13.0",
+    "postgresqlVersion": "16.14",
+    "platform": "darwin",
+    "architecture": "arm64",
+    "osRelease": "25.5.0",
+    "cpuModel": "Apple M2 Pro",
+    "cpuCount": 12,
+    "totalMemoryBytes": 17179869184
+  },
   "configuration": {
     "profile": "daily",
     "workerCount": 3,
     "poolSize": 10,
+    "operationTimeoutMs": 30000,
+    "workerReadyTimeoutMs": 60000,
+    "runTimeoutMs": 7200000,
     "accountCount": 100000,
     "activeUserCount": 100000,
     "operationsPerUser": 10,
@@ -30,18 +46,18 @@
     "enforceSlos": true,
     "outputPath": "http-load-daily.json"
   },
-  "schema": "http_load_bbf27f0c0f387407",
+  "schema": "http_load_761271099dae911c",
   "workerConnectionCount": 30,
   "coordinatorConnectionCount": 10,
   "connectionCount": 40,
-  "durationMs": 4086032.618042,
+  "durationMs": 4121855.184833,
   "phaseDurations": {
-    "setupMs": 1493.634916,
-    "seedingMs": 399989.11587499996,
-    "workerStartupMs": 1204.3411249999772,
-    "snapshotBenchmarkMs": 7.116582999995444,
-    "httpRequestsMs": 3600043.2824170003,
-    "verificationMs": 83293.82837500004
+    "setupMs": 5064.832083,
+    "seedingMs": 437268.789,
+    "workerStartupMs": 374.8692499999888,
+    "snapshotBenchmarkMs": 4.304375000006985,
+    "httpRequestsMs": 3600050.820625,
+    "verificationMs": 79089.12345900014
   },
   "request": {
     "attempted": 1000000,
@@ -51,9 +67,9 @@
     "retries": 0,
     "latency": {
       "count": 10000,
-      "p50": 1.9625409999862313,
-      "p95": 11.407374999951571,
-      "p99": 119.24191700003576
+      "p50": 2.0332500003278255,
+      "p95": 17.880750000011176,
+      "p99": 26.489916999998968
     }
   },
   "read": {
@@ -64,9 +80,9 @@
     "retries": 0,
     "latency": {
       "count": 10000,
-      "p50": 1.3987090000882745,
-      "p95": 3.9125419999472797,
-      "p99": 100.09908299997915
+      "p50": 1.4941250002011657,
+      "p95": 3.443625000072643,
+      "p99": 6.817875000007916
     }
   },
   "deposit": {
@@ -77,15 +93,15 @@
     "retries": 0,
     "latency": {
       "count": 10000,
-      "p50": 7.466708999592811,
-      "p95": 14.812667000107467,
-      "p99": 212.71875
+      "p50": 10.966832999954931,
+      "p95": 23.912292000371963,
+      "p99": 33.177957999985665
     }
   },
   "throughput": {
-    "durationMs": 3600043.2824170003,
+    "durationMs": 3600050.820625,
     "successfulRequests": 1000000,
-    "requestsPerSecond": 277.7744381252603
+    "requestsPerSecond": 277.77385648861235
   },
   "trafficPhases": [
     {
@@ -93,8 +109,8 @@
       "requestOffset": 0,
       "requestCount": 100000,
       "targetRequestsPerSecond": 138.88888888888889,
-      "durationMs": 720001.0597910001,
-      "achievedRequestsPerSecond": 138.8886844541975,
+      "durationMs": 720002.7672499999,
+      "achievedRequestsPerSecond": 138.88835508499918,
       "read": {
         "attempted": 70000,
         "succeeded": 70000,
@@ -103,9 +119,9 @@
         "retries": 0,
         "latency": {
           "count": 10000,
-          "p50": 2.099333999969531,
-          "p95": 75.46337499993388,
-          "p99": 186.14804200001527
+          "p50": 2.2886660000076517,
+          "p95": 3.9185419999994338,
+          "p99": 6.973333999980241
         }
       },
       "deposit": {
@@ -116,9 +132,9 @@
         "retries": 0,
         "latency": {
           "count": 10000,
-          "p50": 8.935249999980442,
-          "p95": 184.66374999994878,
-          "p99": 333.4380419999943
+          "p50": 10.653959000017494,
+          "p95": 18.026791999931447,
+          "p99": 26.5342079999391
         }
       },
       "request": {
@@ -129,9 +145,9 @@
         "retries": 0,
         "latency": {
           "count": 10000,
-          "p50": 2.644791999948211,
-          "p95": 78.28641699999571,
-          "p99": 270.86820799997076
+          "p50": 2.7671669999836013,
+          "p95": 13.883207999984734,
+          "p99": 19.34991600003559
         }
       },
       "errors": [],
@@ -141,13 +157,13 @@
         "checks": [
           {
             "metric": "read_p95_ms",
-            "actual": 75.46337499993388,
+            "actual": 3.9185419999994338,
             "threshold": 250,
             "passed": true
           },
           {
             "metric": "deposit_p95_ms",
-            "actual": 184.66374999994878,
+            "actual": 18.026791999931447,
             "threshold": 500,
             "passed": true
           },
@@ -165,8 +181,8 @@
       "requestOffset": 100000,
       "requestCount": 800000,
       "targetRequestsPerSecond": 370.3703703703704,
-      "durationMs": 2160002.0015000002,
-      "achievedRequestsPerSecond": 370.37002717795855,
+      "durationMs": 2160004.64875,
+      "achievedRequestsPerSecond": 370.36957326131767,
       "read": {
         "attempted": 560000,
         "succeeded": 560000,
@@ -175,9 +191,9 @@
         "retries": 0,
         "latency": {
           "count": 10000,
-          "p50": 1.0683339999523014,
-          "p95": 2.690292000072077,
-          "p99": 8.898000000044703
+          "p50": 1.2144579999148846,
+          "p95": 2.3704999999608845,
+          "p99": 6.028708999976516
         }
       },
       "deposit": {
@@ -188,9 +204,9 @@
         "retries": 0,
         "latency": {
           "count": 10000,
-          "p50": 6.453500000061467,
-          "p95": 12.025750000029802,
-          "p99": 31.48220800003037
+          "p50": 11.424665999831632,
+          "p95": 25.32404200034216,
+          "p99": 38.27054200042039
         }
       },
       "request": {
@@ -201,9 +217,9 @@
         "retries": 0,
         "latency": {
           "count": 10000,
-          "p50": 1.4774160000961274,
-          "p95": 9.053542000008747,
-          "p99": 17.83041699975729
+          "p50": 1.518625000026077,
+          "p95": 18.933207999914885,
+          "p99": 28.424709000159055
         }
       },
       "errors": [],
@@ -213,13 +229,13 @@
         "checks": [
           {
             "metric": "read_p95_ms",
-            "actual": 2.690292000072077,
+            "actual": 2.3704999999608845,
             "threshold": 250,
             "passed": true
           },
           {
             "metric": "deposit_p95_ms",
-            "actual": 12.025750000029802,
+            "actual": 25.32404200034216,
             "threshold": 500,
             "passed": true
           },
@@ -237,8 +253,8 @@
       "requestOffset": 900000,
       "requestCount": 100000,
       "targetRequestsPerSecond": 138.88888888888889,
-      "durationMs": 720000.523875,
-      "achievedRequestsPerSecond": 138.88878783282817,
+      "durationMs": 720000.8895419999,
+      "achievedRequestsPerSecond": 138.88871729535092,
       "read": {
         "attempted": 70000,
         "succeeded": 70000,
@@ -247,9 +263,9 @@
         "retries": 0,
         "latency": {
           "count": 10000,
-          "p50": 2.2832499998621643,
-          "p95": 4.163250000216067,
-          "p99": 7.329334000125527
+          "p50": 2.7217919998802245,
+          "p95": 3.838874999899417,
+          "p99": 6.246999999973923
         }
       },
       "deposit": {
@@ -260,9 +276,9 @@
         "retries": 0,
         "latency": {
           "count": 10000,
-          "p50": 9.405708000063896,
-          "p95": 14.74966700002551,
-          "p99": 23.202083999756724
+          "p50": 7.002582999877632,
+          "p95": 10.37783299991861,
+          "p99": 14.568208000157028
         }
       },
       "request": {
@@ -273,9 +289,9 @@
         "retries": 0,
         "latency": {
           "count": 10000,
-          "p50": 2.6784580000676215,
-          "p95": 11.74908300023526,
-          "p99": 16.70825000014156
+          "p50": 3.1616670000366867,
+          "p95": 8.753333000000566,
+          "p99": 11.387540999799967
         }
       },
       "errors": [],
@@ -285,13 +301,13 @@
         "checks": [
           {
             "metric": "read_p95_ms",
-            "actual": 4.163250000216067,
+            "actual": 3.838874999899417,
             "threshold": 250,
             "passed": true
           },
           {
             "metric": "deposit_p95_ms",
-            "actual": 14.74966700002551,
+            "actual": 10.37783299991861,
             "threshold": 500,
             "passed": true
           },
@@ -311,13 +327,13 @@
     "checks": [
       {
         "metric": "read_p95_ms",
-        "actual": 3.9125419999472797,
+        "actual": 3.443625000072643,
         "threshold": 250,
         "passed": true
       },
       {
         "metric": "deposit_p95_ms",
-        "actual": 14.812667000107467,
+        "actual": 23.912292000371963,
         "threshold": 500,
         "passed": true
       },
@@ -372,17 +388,17 @@
   "workers": [
     {
       "workerId": 0,
-      "port": 64996,
+      "port": 56399,
       "requestAttempts": 333334
     },
     {
       "workerId": 1,
-      "port": 64997,
+      "port": 56400,
       "requestAttempts": 333333
     },
     {
       "workerId": 2,
-      "port": 64998,
+      "port": 56401,
       "requestAttempts": 333333
     }
   ]

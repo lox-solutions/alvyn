@@ -86,6 +86,8 @@ async function initialize(workerConfig: HttpWorkerConfig): Promise<void> {
   pool = new Pool({
     connectionString: workerConfig.connectionString,
     max: workerConfig.poolSize,
+    connectionTimeoutMillis: workerConfig.operationTimeoutMs,
+    statement_timeout: workerConfig.operationTimeoutMs,
   });
   const eventStore = new EventStore({
     pool,
