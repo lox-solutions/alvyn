@@ -22,11 +22,11 @@ afterAll(async () => {
   await stopPostgres();
 });
 
-type TransactionEvents = {
+interface TransactionEvents {
   Deposit: { amount: number };
   Withdrawal: { amount: number };
   NoteAdded: { note: string };
-};
+}
 
 const BankAccountBalance = defineSnapshot<
   { balance: number },

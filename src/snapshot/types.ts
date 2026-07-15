@@ -1,9 +1,8 @@
 import type { PoolClient } from "pg";
 import type { EventStore } from "../event-store";
-import type { EventMap } from "../aggregate/types";
 import type { ReplayedEvent } from "../types";
 
-type EventTypeNames<TEvents extends EventMap> = string & keyof TEvents;
+type EventTypeNames<TEvents> = Extract<keyof TEvents, string>;
 
 export interface SnapshotEncryptionConfig {
   /** Derives the crypto key ID from the stream entity ID */
@@ -12,7 +11,7 @@ export interface SnapshotEncryptionConfig {
   encryptedFields: string[];
 }
 
-export interface SnapshotDefinition<TState, TEvents extends EventMap> {
+export interface SnapshotDefinition<TState, TEvents> {
   /** Prefix for stream IDs (e.g. "Transaction" → stream_id = "Transaction-{id}") */
   streamPrefix: string;
   /** Snapshot name used to generate the event type `${snapshotName}Snapshot` */

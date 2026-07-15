@@ -7,7 +7,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import pg from "pg";
 import { EventStore } from "../event-store";
-import { parseLoadTestConfig } from "./config";
+import { parseLoadTestConfig } from "./parse-load-test-config";
 import { ProgressRenderer } from "./progress";
 import {
   createLoadTestEnvironment,
@@ -24,13 +24,11 @@ import {
   terminateWorkers,
   type WorkerHandle,
 } from "./worker-process";
-import type {
-  LoadTestConfig,
-  LoadTestReport,
-  SerializedError,
-  WorkerMetrics,
-} from "./types";
+import type { LoadTestConfig, LoadTestReport, WorkerMetrics } from "./types";
 import { withTimeout } from "./timeout";
+import { formatLoadTestReport } from "./format-load-test-report";
+import { cleanupLoadRun } from "./cleanup-load-run";
+import { serializeError } from "./serialize-error";
 
 const { Pool } = pg;
 const SCHEMA_RANDOM_BYTES = 8;
@@ -39,15 +37,18 @@ function uniqueSchema(): string {
   return `load_${randomBytes(SCHEMA_RANDOM_BYTES).toString("hex")}`;
 }
 
-function serializeError(error: unknown): SerializedError {
-  if (error instanceof Error) {
-    return {
-      name: error.name,
-      message: error.message,
-      ...(error.stack === undefined ? {} : { stack: error.stack }),
-    };
-  }
-  return { name: "UnknownError", message: String(error) };
+async function startLoadDatabase(config: LoadTestConfig): Promise<{
+  container: StartedPostgreSqlContainer;
+  coordinatorPool: pg.Pool;
+}> {
+  const container = await new PostgreSqlContainer("postgres:16-alpine").start();
+  const coordinatorPool = new Pool({
+    connectionString: container.getConnectionUri(),
+    max: config.poolSize,
+    connectionTimeoutMillis: config.operationTimeoutMs,
+    statement_timeout: config.operationTimeoutMs,
+  });
+  return { container, coordinatorPool };
 }
 
 async function runWorkers({
@@ -81,15 +82,26 @@ async function runWorkers({
       }),
     );
   }
-  await withTimeout(
-    Promise.all(workers.map((worker) => worker.ready)),
-    config.workerReadyTimeoutMs,
-    "load-test worker readiness",
-  );
+  await withTimeout({
+    operation: Promise.all(workers.map((worker) => worker.ready)),
+    timeoutMs: config.workerReadyTimeoutMs,
+    label: "load-test worker readiness",
+  });
   onStatus?.(`workers ready: ${config.workerCount}/${config.workerCount}`);
   await Promise.all(workers.map((worker) => worker.send({ type: "start" })));
   onStatus?.("live operations: 0");
   return Promise.all(workers.map((worker) => worker.completed));
+}
+
+interface ExecuteLoadRunOptions {
+  config: LoadTestConfig;
+  connectionString: string;
+  schema: string;
+  eventStore: EventStore;
+  workers: WorkerHandle[];
+  startedAt: number;
+  progress: ProgressRenderer;
+  environment: LoadTestEnvironment;
 }
 
 async function executeLoadRun({
@@ -101,16 +113,7 @@ async function executeLoadRun({
   startedAt,
   progress,
   environment,
-}: {
-  config: LoadTestConfig;
-  connectionString: string;
-  schema: string;
-  eventStore: EventStore;
-  workers: WorkerHandle[];
-  startedAt: number;
-  progress: ProgressRenderer;
-  environment: LoadTestEnvironment;
-}): Promise<LoadTestReport> {
+}: ExecuteLoadRunOptions): Promise<LoadTestReport> {
   progress.update("creating schema");
   await eventStore.setup();
   const seedSummary = await seedLoadHistory({ eventStore, config, progress });
@@ -144,18 +147,55 @@ async function executeLoadRun({
   return report;
 }
 
+async function startLoadRun({
+  config,
+  container,
+  coordinatorPool,
+  schema,
+  workers,
+  startedAt,
+  progress,
+}: {
+  config: LoadTestConfig;
+  container: StartedPostgreSqlContainer;
+  coordinatorPool: pg.Pool;
+  schema: string;
+  workers: WorkerHandle[];
+  startedAt: number;
+  progress: ProgressRenderer;
+}): Promise<LoadTestReport> {
+  const connectionString = container.getConnectionUri();
+  const eventStore = new EventStore({ pool: coordinatorPool, schema });
+  const versionResult = await coordinatorPool.query<{
+    server_version: string;
+  }>("SHOW server_version");
+  const environment = createLoadTestEnvironment(
+    versionResult.rows[0]?.server_version ?? null,
+  );
+  return executeLoadRun({
+    config,
+    connectionString,
+    schema,
+    eventStore,
+    workers,
+    startedAt,
+    progress,
+    environment,
+  });
+}
+
 export async function runLoadTest(
   config: LoadTestConfig,
   runSignal?: AbortSignal,
 ): Promise<LoadTestReport> {
   if (runSignal === undefined) {
     const controller = new AbortController();
-    return withTimeout(
-      runLoadTest(config, controller.signal),
-      config.runTimeoutMs,
-      "load-test run",
-      () => controller.abort(),
-    );
+    return withTimeout({
+      operation: runLoadTest(config, controller.signal),
+      timeoutMs: config.runTimeoutMs,
+      label: "load-test run",
+      onTimeout: () => controller.abort(),
+    });
   }
   let container: StartedPostgreSqlContainer | null = null;
   let coordinatorPool: pg.Pool | null = null;
@@ -172,68 +212,34 @@ export async function runLoadTest(
 
   try {
     progress.update("starting PostgreSQL container");
-    container = await new PostgreSqlContainer("postgres:16-alpine").start();
-    const connectionString = container.getConnectionUri();
-    coordinatorPool = new Pool({
-      connectionString,
-      max: config.poolSize,
-      connectionTimeoutMillis: config.operationTimeoutMs,
-      statement_timeout: config.operationTimeoutMs,
-    });
-    const eventStore = new EventStore({
-      pool: coordinatorPool,
-      schema,
-    });
-    const versionResult = await coordinatorPool.query<{
-      server_version: string;
-    }>("SHOW server_version");
-    const environment = createLoadTestEnvironment(
-      versionResult.rows[0]?.server_version ?? null,
-    );
-    return await executeLoadRun({
+    const database = await startLoadDatabase(config);
+    container = database.container;
+    coordinatorPool = database.coordinatorPool;
+    return await startLoadRun({
       config,
-      connectionString,
+      container,
+      coordinatorPool,
       schema,
-      eventStore,
       workers,
       startedAt,
       progress,
-      environment,
     });
   } finally {
-    runSignal.removeEventListener("abort", abortRun);
-    progress.finish();
-    await terminateWorkers(workers);
-    await Promise.allSettled(workers.map((worker) => worker.ready));
-    await Promise.allSettled(workers.map((worker) => worker.completed));
-    try {
-      if (coordinatorPool) await coordinatorPool.end();
-    } finally {
-      if (container) await container.stop();
-    }
+    await cleanupLoadRun({
+      runSignal,
+      abortRun,
+      progress,
+      workers,
+      coordinatorPool,
+      container,
+    });
   }
-}
-
-function formatReport(report: LoadTestReport): string {
-  const workerCount = report.workers.length;
-  return [
-    "Alvyn load test",
-    `workers: ${workerCount}`,
-    `connections: ${report.connectionCount}`,
-    `duration: ${Math.round(report.durationMs)} ms`,
-    `append operations: ${report.append.succeeded}/${report.append.attempted} (${report.append.eventCount} events)`,
-    `load operations: ${report.load.succeeded}/${report.load.attempted} (${report.load.eventCount} events)`,
-    `OCC conflicts/retries: ${report.append.conflicts}/${report.append.retries}`,
-    `throughput: ${report.throughput.operationsPerSecond.toFixed(2)} operations/s`,
-    `latency p50/p95/p99: ${report.overallLatency.p50 ?? "n/a"}/${report.overallLatency.p95 ?? "n/a"}/${report.overallLatency.p99 ?? "n/a"} ms`,
-    `verified streams/events: ${report.verification.streamCount}/${report.verification.eventCount}`,
-  ].join("\n");
 }
 
 export async function main(): Promise<void> {
   const config = parseLoadTestConfig();
   const report = await runLoadTest(config);
-  console.log(formatReport(report));
+  console.log(formatLoadTestReport(report));
 }
 
 const isMainModule =

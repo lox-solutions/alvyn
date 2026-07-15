@@ -2,10 +2,10 @@ import { defineAggregate } from "../aggregate/define-aggregate";
 import type { AggregateEventInput } from "../aggregate/types";
 import { defineSnapshot } from "../snapshot/define-snapshot";
 
-export type AccountEvents = {
+export interface AccountEvents {
   AccountOpened: { initialBalance: number };
   MoneyDeposited: { amount: number; operationToken: string };
-};
+}
 
 export interface AccountState {
   status: "open";

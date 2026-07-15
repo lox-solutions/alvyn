@@ -3,10 +3,10 @@ import { defineProjection } from "./define-projection";
 import type { StoredEvent } from "../types";
 import type { PoolClient } from "pg";
 
-type TestEvents = {
+interface TestEvents {
   OrderPlaced: { total: number };
   OrderShipped: { tracking: string };
-};
+}
 
 function fakeEvent(overrides: Partial<StoredEvent>): StoredEvent {
   return {

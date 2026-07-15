@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import { DEFAULT_CONFIG, parseLoadTestConfig } from "./config";
+import { DEFAULT_CONFIG, parseLoadTestConfig } from "./parse-load-test-config";
 import {
   DEFAULT_HTTP_LOAD_TEST_CONFIG,
   parseHttpLoadTestConfig,
-} from "./http-config";
+} from "./parse-http-load-test-config";
 import { HttpLatencyCollector, HttpMetricsCollector } from "./http-metrics";
-import { validateHttpOperationResponse } from "./http-response-validation";
+import { validateHttpOperationResponse } from "./validate-http-operation-response";
 import { createReport, retryHttpRequest } from "./http-runner";
-import { evaluateHttpSlos } from "./http-slo";
-import { createTrafficPhases } from "./http-traffic";
+import { evaluateHttpSlos } from "./evaluate-http-slos";
+import { createTrafficPhases } from "./create-traffic-phases";
 import { getExpectedHttpOperation } from "./http-workload";
 import { MetricsCollector, buildAggregateReport } from "./metrics";
 import { createLoadTestEnvironment } from "./provenance";
@@ -174,11 +174,11 @@ describe("load-test timeouts", () => {
   it("rejects a hung operation with a descriptive error", async () => {
     vi.useFakeTimers();
     try {
-      const operation = withTimeout(
-        new Promise<never>(() => undefined),
-        50,
-        "read",
-      );
+      const operation = withTimeout({
+        operation: new Promise<never>(() => undefined),
+        timeoutMs: 50,
+        label: "read",
+      });
       const assertion = expect(operation).rejects.toThrow(
         "read timed out after 50 ms",
       );
@@ -190,9 +190,13 @@ describe("load-test timeouts", () => {
   });
 
   it("returns completed operations and clears their deadline", async () => {
-    await expect(withTimeout(Promise.resolve(42), 50, "read")).resolves.toBe(
-      42,
-    );
+    await expect(
+      withTimeout({
+        operation: Promise.resolve(42),
+        timeoutMs: 50,
+        label: "read",
+      }),
+    ).resolves.toBe(42);
   });
 });
 
@@ -276,7 +280,7 @@ describe("HTTP workload planning", () => {
     expect(phases.reduce((total, phase) => total + phase.durationMs, 0)).toBe(
       10_000,
     );
-    expect(phases[1]!.requestOffset).toBe(phases[0]!.requestCount);
+    expect(phases[1].requestOffset).toBe(phases[0].requestCount);
   });
 });
 
@@ -286,12 +290,12 @@ describe("retry and report accounting", () => {
     const result = await retryHttpRequest({
       operationIndex: 3,
       maxRetries: 2,
-      send: async (attempt) => {
+      send: (attempt) => {
         attempts.push(attempt);
-        return { status: attempt < 2 ? 409 : 201 };
+        return Promise.resolve({ status: attempt < 2 ? 409 : 201 });
       },
       isConflict: (response) => response.status === 409,
-      wait: async () => undefined,
+      wait: () => Promise.resolve(),
     });
 
     expect(attempts).toEqual([0, 1, 2]);

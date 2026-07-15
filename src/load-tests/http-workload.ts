@@ -3,6 +3,7 @@ import type { HttpLoadTestConfig, HttpOperationPlan } from "./http-types";
 const PERCENT_SCALE = 100;
 const VALUE_SEED_MULTIPLIER = 31;
 const VALUE_OPERATION_MULTIPLIER = 17;
+const MAX_AMOUNT_VARIATION = 10;
 
 export function getAccountId(accountIndex: number): string {
   return `account-${accountIndex}`;
@@ -52,7 +53,7 @@ export function getExpectedHttpOperation({
     userId: `user-${userIndex}`,
     userOperationIndex,
     accountId: getAccountId(accountIndex),
-    amount: 1 + (value % 10),
+    amount: 1 + (value % MAX_AMOUNT_VARIATION),
     operationToken: `http:${config.seed}:${operationIndex}`,
   };
 }

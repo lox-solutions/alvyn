@@ -1,153 +1,19 @@
+import { DEFAULT_CONFIG, NON_NEGATIVE } from "./config-defaults";
+import { NUMERIC_OPTIONS, type NumericOption } from "./config-options";
 import type { LoadTestConfig } from "./types";
+
+export { DEFAULT_CONFIG } from "./config-defaults";
 
 const OPTION_PREFIX_LENGTH = 2;
 const CLI_ARGUMENT_START = 2;
 const ARGUMENT_SEPARATOR = "--";
 const NEXT_ARGUMENT_OFFSET = 1;
 const NO_EQUALS_INDEX = -1;
-const NON_NEGATIVE = 0;
-const MINIMUM_POSITIVE = 1;
-const MIN_PERCENTAGE = 0;
-const MAX_PERCENTAGE = 100;
-const DEFAULT_WORKER_COUNT = 2;
-const DEFAULT_POOL_SIZE = 4;
-const DEFAULT_OPERATION_TIMEOUT_MS = 30_000;
-const DEFAULT_WORKER_READY_TIMEOUT_MS = 60_000;
-const DEFAULT_RUN_TIMEOUT_MS = 7_200_000;
-const DEFAULT_STREAM_COUNT = 20;
-const DEFAULT_HOT_STREAM_COUNT = 2;
-const DEFAULT_HISTORY_EVENTS = 100;
-const DEFAULT_OPERATIONS_PER_WORKER = 50;
-const DEFAULT_APPEND_PERCENT = 50;
-const DEFAULT_APPEND_BATCH_SIZE = 1;
-const DEFAULT_MAX_RETRIES = 10;
-const DEFAULT_SEED = 1;
 const OUTPUT_OPTION = "output";
 const VERBOSE_OPTION = "verbose";
 const VERBOSE_ENVIRONMENT_VARIABLE = "ALVYN_LOAD_VERBOSE";
 const VERBOSE_TRUE = "true";
 const VERBOSE_FALSE = "false";
-
-export const DEFAULT_CONFIG: LoadTestConfig = {
-  workerCount: DEFAULT_WORKER_COUNT,
-  poolSize: DEFAULT_POOL_SIZE,
-  operationTimeoutMs: DEFAULT_OPERATION_TIMEOUT_MS,
-  workerReadyTimeoutMs: DEFAULT_WORKER_READY_TIMEOUT_MS,
-  runTimeoutMs: DEFAULT_RUN_TIMEOUT_MS,
-  streamCount: DEFAULT_STREAM_COUNT,
-  hotStreamCount: DEFAULT_HOT_STREAM_COUNT,
-  historyEventsPerStream: DEFAULT_HISTORY_EVENTS,
-  operationsPerWorker: DEFAULT_OPERATIONS_PER_WORKER,
-  appendPercent: DEFAULT_APPEND_PERCENT,
-  appendBatchSize: DEFAULT_APPEND_BATCH_SIZE,
-  maxRetries: DEFAULT_MAX_RETRIES,
-  seed: DEFAULT_SEED,
-  verbose: false,
-};
-
-interface NumericOption {
-  key: keyof Omit<LoadTestConfig, "outputPath" | "verbose">;
-  cliName: string;
-  envName: string;
-  defaultValue: number;
-  minimum: number;
-  maximum?: number;
-}
-
-const NUMERIC_OPTIONS: readonly NumericOption[] = [
-  {
-    key: "workerCount",
-    cliName: "workers",
-    envName: "ALVYN_LOAD_WORKERS",
-    defaultValue: DEFAULT_CONFIG.workerCount,
-    minimum: MINIMUM_POSITIVE,
-  },
-  {
-    key: "poolSize",
-    cliName: "pool-size",
-    envName: "ALVYN_LOAD_POOL_SIZE",
-    defaultValue: DEFAULT_CONFIG.poolSize,
-    minimum: MINIMUM_POSITIVE,
-  },
-  {
-    key: "operationTimeoutMs",
-    cliName: "operation-timeout-ms",
-    envName: "ALVYN_LOAD_OPERATION_TIMEOUT_MS",
-    defaultValue: DEFAULT_CONFIG.operationTimeoutMs,
-    minimum: MINIMUM_POSITIVE,
-  },
-  {
-    key: "workerReadyTimeoutMs",
-    cliName: "worker-ready-timeout-ms",
-    envName: "ALVYN_LOAD_WORKER_READY_TIMEOUT_MS",
-    defaultValue: DEFAULT_CONFIG.workerReadyTimeoutMs,
-    minimum: MINIMUM_POSITIVE,
-  },
-  {
-    key: "runTimeoutMs",
-    cliName: "run-timeout-ms",
-    envName: "ALVYN_LOAD_RUN_TIMEOUT_MS",
-    defaultValue: DEFAULT_CONFIG.runTimeoutMs,
-    minimum: MINIMUM_POSITIVE,
-  },
-  {
-    key: "streamCount",
-    cliName: "streams",
-    envName: "ALVYN_LOAD_STREAMS",
-    defaultValue: DEFAULT_CONFIG.streamCount,
-    minimum: MINIMUM_POSITIVE,
-  },
-  {
-    key: "hotStreamCount",
-    cliName: "hot-streams",
-    envName: "ALVYN_LOAD_HOT_STREAMS",
-    defaultValue: DEFAULT_CONFIG.hotStreamCount,
-    minimum: NON_NEGATIVE,
-  },
-  {
-    key: "historyEventsPerStream",
-    cliName: "history",
-    envName: "ALVYN_LOAD_HISTORY",
-    defaultValue: DEFAULT_CONFIG.historyEventsPerStream,
-    minimum: NON_NEGATIVE,
-  },
-  {
-    key: "operationsPerWorker",
-    cliName: "operations",
-    envName: "ALVYN_LOAD_OPERATIONS",
-    defaultValue: DEFAULT_CONFIG.operationsPerWorker,
-    minimum: MINIMUM_POSITIVE,
-  },
-  {
-    key: "appendPercent",
-    cliName: "append-percent",
-    envName: "ALVYN_LOAD_APPEND_PERCENT",
-    defaultValue: DEFAULT_CONFIG.appendPercent,
-    minimum: MIN_PERCENTAGE,
-    maximum: MAX_PERCENTAGE,
-  },
-  {
-    key: "appendBatchSize",
-    cliName: "batch-size",
-    envName: "ALVYN_LOAD_BATCH_SIZE",
-    defaultValue: DEFAULT_CONFIG.appendBatchSize,
-    minimum: MINIMUM_POSITIVE,
-  },
-  {
-    key: "maxRetries",
-    cliName: "max-retries",
-    envName: "ALVYN_LOAD_MAX_RETRIES",
-    defaultValue: DEFAULT_CONFIG.maxRetries,
-    minimum: NON_NEGATIVE,
-  },
-  {
-    key: "seed",
-    cliName: "seed",
-    envName: "ALVYN_LOAD_SEED",
-    defaultValue: DEFAULT_CONFIG.seed,
-    minimum: NON_NEGATIVE,
-  },
-];
 
 function parseArguments(args: string[]): Map<string, string> {
   const options = new Map<string, string>();

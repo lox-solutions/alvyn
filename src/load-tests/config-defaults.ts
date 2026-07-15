@@ -1,0 +1,36 @@
+import type { LoadTestConfig } from "./types";
+
+export const NON_NEGATIVE = 0;
+export const MINIMUM_POSITIVE = 1;
+export const MIN_PERCENTAGE = 0;
+export const MAX_PERCENTAGE = 100;
+const DEFAULT_WORKER_COUNT = 2;
+const DEFAULT_POOL_SIZE = 4;
+const DEFAULT_OPERATION_TIMEOUT_MS = 30_000;
+const DEFAULT_WORKER_READY_TIMEOUT_MS = 60_000;
+const DEFAULT_RUN_TIMEOUT_MS = 7_200_000;
+const DEFAULT_STREAM_COUNT = 20;
+const DEFAULT_HOT_STREAM_COUNT = 2;
+const DEFAULT_HISTORY_EVENTS = 100;
+const DEFAULT_OPERATIONS_PER_WORKER = 50;
+const DEFAULT_APPEND_PERCENT = 50;
+const DEFAULT_APPEND_BATCH_SIZE = 1;
+const DEFAULT_MAX_RETRIES = 10;
+const DEFAULT_SEED = 1;
+
+export const DEFAULT_CONFIG: LoadTestConfig = {
+  workerCount: DEFAULT_WORKER_COUNT,
+  poolSize: DEFAULT_POOL_SIZE,
+  operationTimeoutMs: DEFAULT_OPERATION_TIMEOUT_MS,
+  workerReadyTimeoutMs: DEFAULT_WORKER_READY_TIMEOUT_MS,
+  runTimeoutMs: DEFAULT_RUN_TIMEOUT_MS,
+  streamCount: DEFAULT_STREAM_COUNT,
+  hotStreamCount: DEFAULT_HOT_STREAM_COUNT,
+  historyEventsPerStream: DEFAULT_HISTORY_EVENTS,
+  operationsPerWorker: DEFAULT_OPERATIONS_PER_WORKER,
+  appendPercent: DEFAULT_APPEND_PERCENT,
+  appendBatchSize: DEFAULT_APPEND_BATCH_SIZE,
+  maxRetries: DEFAULT_MAX_RETRIES,
+  seed: DEFAULT_SEED,
+  verbose: false,
+};

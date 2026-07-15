@@ -5,12 +5,17 @@ export class LoadTestTimeoutError extends Error {
   }
 }
 
-export async function withTimeout<T>(
-  operation: Promise<T>,
-  timeoutMs: number,
-  label: string,
-  onTimeout?: () => void,
-): Promise<T> {
+export async function withTimeout<T>({
+  operation,
+  timeoutMs,
+  label,
+  onTimeout,
+}: {
+  operation: Promise<T>;
+  timeoutMs: number;
+  label: string;
+  onTimeout?: () => void;
+}): Promise<T> {
   let timeout: NodeJS.Timeout | undefined;
   const deadline = new Promise<never>((_resolve, reject) => {
     timeout = setTimeout(() => {

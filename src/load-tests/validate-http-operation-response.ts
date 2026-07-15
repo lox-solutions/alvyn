@@ -10,11 +10,15 @@ function requireRecord(value: unknown, label: string): Record<string, unknown> {
   return value;
 }
 
-function requireEqual(
-  actual: unknown,
-  expected: string | number,
-  label: string,
-): void {
+function requireEqual({
+  actual,
+  expected,
+  label,
+}: {
+  actual: unknown;
+  expected: string | number;
+  label: string;
+}): void {
   if (actual !== expected) {
     throw new Error(
       `${label} mismatch: expected ${String(expected)}, got ${String(actual)}`,
@@ -29,20 +33,15 @@ function requireNonNegativeInteger(value: unknown, label: string): number {
   return value as number;
 }
 
-function validateRead(operation: HttpOperationPlan, body: unknown): void {
-  const aggregate = requireRecord(body, "read response");
-  requireEqual(
-    aggregate.streamId,
-    getAccountStreamId(operation.accountId),
-    "read response streamId",
-  );
-  const version = requireNonNegativeInteger(
-    aggregate.version,
-    "read response version",
-  );
-  if (version === 0) throw new Error("read response version must be positive");
-  const state = requireRecord(aggregate.state, "read response state");
-  requireEqual(state.status, "open", "read response status");
+function validateReadState(
+  state: Record<string, unknown>,
+  version: number,
+): void {
+  requireEqual({
+    actual: state.status,
+    expected: "open",
+    label: "read response status",
+  });
   if (
     typeof state.balance !== "number" ||
     !Number.isFinite(state.balance) ||
@@ -77,19 +76,39 @@ function validateRead(operation: HttpOperationPlan, body: unknown): void {
   }
 }
 
+function validateRead(operation: HttpOperationPlan, body: unknown): void {
+  const aggregate = requireRecord(body, "read response");
+  requireEqual({
+    actual: aggregate.streamId,
+    expected: getAccountStreamId(operation.accountId),
+    label: "read response streamId",
+  });
+  const version = requireNonNegativeInteger(
+    aggregate.version,
+    "read response version",
+  );
+  if (version === 0) throw new Error("read response version must be positive");
+  const state = requireRecord(aggregate.state, "read response state");
+  validateReadState(state, version);
+}
+
 function validateDeposit(operation: HttpOperationPlan, body: unknown): void {
   const result = requireRecord(body, "deposit response");
-  requireEqual(
-    result.accountId,
-    operation.accountId,
-    "deposit response accountId",
-  );
-  requireEqual(result.amount, operation.amount, "deposit response amount");
-  requireEqual(
-    result.operationToken,
-    operation.operationToken,
-    "deposit response operationToken",
-  );
+  requireEqual({
+    actual: result.accountId,
+    expected: operation.accountId,
+    label: "deposit response accountId",
+  });
+  requireEqual({
+    actual: result.amount,
+    expected: operation.amount,
+    label: "deposit response amount",
+  });
+  requireEqual({
+    actual: result.operationToken,
+    expected: operation.operationToken,
+    label: "deposit response operationToken",
+  });
   const fromVersion = requireNonNegativeInteger(
     result.fromVersion,
     "deposit response fromVersion",

@@ -11,9 +11,6 @@ import type { SubscribeOptions } from "../subscription/subscribe-options";
 // Utility types for inferring event maps
 // ---------------------------------------------------------------------------
 
-/** A map of event type names to their data shapes */
-export type EventMap = Record<string, unknown>;
-
 export interface AggregateLoadEventsOptions {
   eventStore: EventStore;
   entityId: string;
@@ -27,10 +24,10 @@ export interface AggregateSubscribeOptions {
 }
 
 /** Extract event type names as a union */
-type EventTypeNames<TEvents extends EventMap> = string & keyof TEvents;
+type EventTypeNames<TEvents> = Extract<keyof TEvents, string>;
 
 /** A single event input for the append operation */
-export type AggregateEventInput<TEvents extends EventMap> = {
+export type AggregateEventInput<TEvents> = {
   [K in EventTypeNames<TEvents>]: {
     type: K;
     data: TEvents[K];
@@ -41,12 +38,12 @@ export type AggregateEventInput<TEvents extends EventMap> = {
 }[EventTypeNames<TEvents>];
 
 /** A stored event whose payload is inferred from its CloudEvents `type`. */
-export type AggregateStoredEvent<TEvents extends EventMap> = {
+export type AggregateStoredEvent<TEvents> = {
   [K in EventTypeNames<TEvents>]: StoredEvent<TEvents[K]> & { type: K };
 }[EventTypeNames<TEvents>];
 
 /** A replayed event whose payload is inferred from its CloudEvents `type`. */
-export type AggregateReplayedEvent<TEvents extends EventMap> =
+export type AggregateReplayedEvent<TEvents> =
   | AggregateStoredEvent<TEvents>
   | TombstonedEvent;
 
@@ -54,14 +51,14 @@ export type AggregateReplayedEvent<TEvents extends EventMap> =
 // Aggregate Definition (what the developer provides)
 // ---------------------------------------------------------------------------
 
-export interface EncryptionConfig<TEvents extends EventMap> {
+export interface EncryptionConfig<TEvents> {
   /** Derives the crypto key ID from the stream entity ID */
   cryptoKeyId: (entityId: string) => string;
   /** Map of event type → field paths that contain PII */
   encryptedFields: Partial<Record<EventTypeNames<TEvents>, string[]>>;
 }
 
-export interface AggregateDefinition<TEvents extends EventMap, TState> {
+export interface AggregateDefinition<TEvents, TState> {
   /** Prefix for stream IDs (e.g. "Order" → stream_id = "Order-{id}") */
   streamPrefix: string;
   /**
@@ -105,7 +102,7 @@ export interface AggregateInstance<TState> {
 // Aggregate Handle (the object returned by defineAggregate)
 // ---------------------------------------------------------------------------
 
-export interface AggregateHandle<TState, TEvents extends EventMap> {
+export interface AggregateHandle<TState, TEvents> {
   /** The stream prefix */
   readonly streamPrefix: string;
 

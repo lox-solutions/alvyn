@@ -28,7 +28,6 @@ export type {
   AggregateSubscribeOptions,
   AggregateStoredEvent,
   EncryptionConfig,
-  EventMap,
 } from "./aggregate/types";
 
 // Types — CloudEvents v1.0.2

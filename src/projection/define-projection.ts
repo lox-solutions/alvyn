@@ -1,6 +1,5 @@
 import type { PoolClient } from "pg";
 
-import type { EventMap } from "../aggregate/types";
 import type { StoredEvent } from "../types";
 import type {
   ProjectionDefinition,
@@ -47,7 +46,7 @@ import type {
  * await eventStore.runProjection(orderProjection, 500);
  * ```
  */
-export function defineProjection<TEvents extends EventMap>(): (
+export function defineProjection<TEvents>(): (
   definition: ProjectionDefinition<TEvents>,
 ) => ProjectionHandle {
   return function (

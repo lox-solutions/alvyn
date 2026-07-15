@@ -7,6 +7,14 @@ import type {
 
 const MAX_LATENCY_SAMPLES = 10_000;
 const MAX_ERRORS = 100;
+const P50_FRACTION = 0.5;
+const P95_FRACTION = 0.95;
+const P99_FRACTION = 0.99;
+const HASH_MULTIPLIER_ONE = 0x9e3779b1;
+const HASH_SHIFT_ONE = 16;
+const HASH_MULTIPLIER_TWO = 0x85ebca6b;
+const HASH_SHIFT_TWO = 13;
+const PERCENT_SCALE = 100;
 
 interface MutableCounters extends HttpOperationCounters {
   latencies: number[];
@@ -33,9 +41,9 @@ function latencyReport(samples: number[]): HttpLatencyReport {
   const sortedSamples = [...samples].sort((left, right) => left - right);
   return {
     count: sortedSamples.length,
-    p50: percentile(sortedSamples, 0.5),
-    p95: percentile(sortedSamples, 0.95),
-    p99: percentile(sortedSamples, 0.99),
+    p50: percentile(sortedSamples, P50_FRACTION),
+    p95: percentile(sortedSamples, P95_FRACTION),
+    p99: percentile(sortedSamples, P99_FRACTION),
   };
 }
 
@@ -50,19 +58,23 @@ function reportCounters(counters: MutableCounters): HttpOperationReport {
   };
 }
 
-function addBoundedSample(
-  samples: number[],
-  sequence: number,
-  value: number,
-): void {
+function addBoundedSample({
+  samples,
+  sequence,
+  value,
+}: {
+  samples: number[];
+  sequence: number;
+  value: number;
+}): void {
   if (samples.length < MAX_LATENCY_SAMPLES) {
     samples.push(value);
     return;
   }
-  let hash = Math.imul(sequence + 1, 0x9e3779b1) >>> 0;
-  hash ^= hash >>> 16;
-  hash = Math.imul(hash, 0x85ebca6b) >>> 0;
-  hash ^= hash >>> 13;
+  let hash = Math.imul(sequence + 1, HASH_MULTIPLIER_ONE) >>> 0;
+  hash ^= hash >>> HASH_SHIFT_ONE;
+  hash = Math.imul(hash, HASH_MULTIPLIER_TWO) >>> 0;
+  hash ^= hash >>> HASH_SHIFT_TWO;
   const reservoirIndex = hash % (sequence + 1);
   if (reservoirIndex < MAX_LATENCY_SAMPLES) {
     samples[reservoirIndex] = value;
@@ -99,12 +111,17 @@ export class HttpMetricsCollector {
     else counters.failed++;
     counters.conflicts += conflicts;
     counters.retries += retries;
-    addBoundedSample(counters.latencies, counters.attempted - 1, latencyMs);
-    addBoundedSample(
-      this.overallLatencies,
-      this.counters.read.attempted + this.counters.deposit.attempted - 1,
-      latencyMs,
-    );
+    addBoundedSample({
+      samples: counters.latencies,
+      sequence: counters.attempted - 1,
+      value: latencyMs,
+    });
+    addBoundedSample({
+      samples: this.overallLatencies,
+      sequence:
+        this.counters.read.attempted + this.counters.deposit.attempted - 1,
+      value: latencyMs,
+    });
     if (error && this.errors.length < MAX_ERRORS) this.errors.push(error);
   }
 
@@ -137,7 +154,11 @@ export class HttpLatencyCollector {
   private sequence = 0;
 
   record(latencyMs: number): void {
-    addBoundedSample(this.samples, this.sequence, latencyMs);
+    addBoundedSample({
+      samples: this.samples,
+      sequence: this.sequence,
+      value: latencyMs,
+    });
     this.sequence++;
   }
 
@@ -156,5 +177,7 @@ export function latencyImprovementPercent(
     withoutSnapshots === 0
   )
     return null;
-  return ((withoutSnapshots - withSnapshots) / withoutSnapshots) * 100;
+  return (
+    ((withoutSnapshots - withSnapshots) / withoutSnapshots) * PERCENT_SCALE
+  );
 }

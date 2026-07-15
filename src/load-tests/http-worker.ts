@@ -1,8 +1,7 @@
-import { type AddressInfo } from "node:net";
 import pg from "pg";
 import { EventStore } from "../event-store";
 import { AccountBalanceSnapshot } from "./http-aggregate";
-import { createAggregateHttpServer } from "./http-server";
+import { createAggregateHttpServer } from "./create-aggregate-http-server";
 import type {
   HttpWorkerCommand,
   HttpWorkerConfig,
@@ -109,7 +108,7 @@ async function initialize(workerConfig: HttpWorkerConfig): Promise<void> {
   await send({
     type: "ready",
     workerId: workerConfig.workerId,
-    port: (address as AddressInfo).port,
+    port: address.port,
   });
 }
 

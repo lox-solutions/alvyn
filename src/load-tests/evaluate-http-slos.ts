@@ -4,6 +4,8 @@ import type {
   HttpSloReport,
 } from "./http-types";
 
+const PERCENT_SCALE = 100;
+
 export function evaluateHttpSlos({
   config,
   request,
@@ -16,7 +18,9 @@ export function evaluateHttpSlos({
   deposit: HttpOperationReport;
 }): HttpSloReport {
   const errorRatePercent =
-    request.attempted === 0 ? 0 : (request.failed / request.attempted) * 100;
+    request.attempted === 0
+      ? 0
+      : (request.failed / request.attempted) * PERCENT_SCALE;
   const checks: HttpSloReport["checks"] = [
     {
       metric: "read_p95_ms",

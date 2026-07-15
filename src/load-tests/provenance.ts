@@ -24,7 +24,7 @@ function readAlvynVersion(): string {
       ) as { version?: unknown };
       if (typeof packageJson.version === "string") return packageJson.version;
     } catch {
-      // Try the next source or compiled layout.
+      continue;
     }
   }
   return process.env.npm_package_version ?? "unknown";
