@@ -1,6 +1,6 @@
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import pg from "pg";
-import { EventStore } from "../event-store";
+import { EventStore } from "../src/event-store";
 import { createReport, writeReport } from "./http-report";
 import { runHttpRequests } from "./run-http-requests";
 import {

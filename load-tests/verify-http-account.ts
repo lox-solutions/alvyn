@@ -1,4 +1,4 @@
-import { EventStore } from "../event-store";
+import { EventStore } from "../src/event-store";
 import type { HttpLoadTestConfig } from "./http-types";
 import { getAccountStreamId } from "./http-aggregate";
 import type { SuccessfulDeposit } from "./run-http-operation";

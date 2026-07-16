@@ -4,7 +4,7 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
-import type { EventStore } from "../event-store";
+import type { EventStore } from "../src/event-store";
 import { handleDeposit } from "./handle-deposit";
 import { handleGetAccount } from "./handle-get-account";
 import {

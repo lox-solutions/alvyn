@@ -17,7 +17,7 @@ export interface LoadTestEnvironment {
 }
 
 function readAlvynVersion(): string {
-  for (const relativePath of ["../../package.json", "../package.json"]) {
+  for (const relativePath of ["../package.json"]) {
     try {
       const packageJson = JSON.parse(
         readFileSync(new URL(relativePath, import.meta.url), "utf8"),

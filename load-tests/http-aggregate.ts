@@ -1,6 +1,6 @@
-import { defineAggregate } from "../aggregate/define-aggregate";
-import type { AggregateEventInput } from "../aggregate/types";
-import { defineSnapshot } from "../snapshot/define-snapshot";
+import { defineAggregate } from "../src/aggregate/define-aggregate";
+import type { AggregateEventInput } from "../src/aggregate/types";
+import { defineSnapshot } from "../src/snapshot/define-snapshot";
 
 export interface AccountEvents {
   AccountOpened: { initialBalance: number };

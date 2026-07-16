@@ -1,4 +1,4 @@
-import { EventStore } from "../event-store";
+import { EventStore } from "../src/event-store";
 import type { ExpectedLiveEvent } from "./expected-operations";
 import type { LoadTestConfig } from "./types";
 import { validateEvent } from "./event-validation";

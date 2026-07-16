@@ -1,5 +1,5 @@
-import { EventStore } from "../event-store";
-import type { AppendEventInput } from "../types";
+import { EventStore } from "../src/event-store";
+import type { AppendEventInput } from "../src/types";
 import { getStreamIds } from "./workload";
 import type { LoadTestConfig } from "./types";
 

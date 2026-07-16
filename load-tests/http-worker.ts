@@ -1,5 +1,5 @@
 import pg from "pg";
-import { EventStore } from "../event-store";
+import { EventStore } from "../src/event-store";
 import { AccountBalanceSnapshot } from "./http-aggregate";
 import { createAggregateHttpServer } from "./create-aggregate-http-server";
 import type {

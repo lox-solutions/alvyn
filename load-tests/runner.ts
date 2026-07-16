@@ -6,7 +6,7 @@ import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import pg from "pg";
-import { EventStore } from "../event-store";
+import { EventStore } from "../src/event-store";
 import { parseLoadTestConfig } from "./parse-load-test-config";
 import { ProgressRenderer } from "./progress";
 import {

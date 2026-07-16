@@ -1,4 +1,4 @@
-import { EventStore } from "../event-store";
+import { EventStore } from "../src/event-store";
 import { getStreamIds, STREAM_PREFIX } from "./workload";
 import type {
   LoadTestConfig,

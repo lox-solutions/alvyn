@@ -1,5 +1,5 @@
-import { OptimisticConcurrencyError } from "../errors";
-import { EventStore } from "../event-store";
+import { OptimisticConcurrencyError } from "../src/errors";
+import { EventStore } from "../src/event-store";
 import { createLiveEvents } from "./create-live-events";
 import { MetricsCollector } from "./metrics";
 import type { LoadTestConfig, WorkloadOperation, WorkerMetrics } from "./types";

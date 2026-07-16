@@ -1,4 +1,4 @@
-import type { AppendEventInput } from "../types";
+import type { AppendEventInput } from "../src/types";
 import type { LoadTestConfig } from "./types";
 
 const EVENT_TYPE = "LoadTestEvent";

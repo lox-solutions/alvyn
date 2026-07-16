@@ -1,4 +1,4 @@
-import type { ReplayedEvent } from "../types";
+import type { ReplayedEvent } from "../src/types";
 import { AccountBalanceSnapshot } from "./http-aggregate";
 import type { HttpLoadTestConfig } from "./http-types";
 import type { SuccessfulDeposit } from "./run-http-operation";

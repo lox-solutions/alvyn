@@ -1,4 +1,4 @@
-import { EventStore } from "../event-store";
+import { EventStore } from "../src/event-store";
 import { formatWorkerProgress, ProgressRenderer } from "./progress";
 import { seedHistory, type SeedSummary } from "./seed-history";
 import type {

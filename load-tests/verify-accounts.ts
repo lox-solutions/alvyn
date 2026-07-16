@@ -1,4 +1,4 @@
-import { EventStore } from "../event-store";
+import { EventStore } from "../src/event-store";
 import type { HttpLoadTestConfig, HttpVerificationSummary } from "./http-types";
 import type { SeedSummary } from "./http-seeding";
 import type { SuccessfulDeposit } from "./run-http-operation";

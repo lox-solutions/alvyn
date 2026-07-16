@@ -8,7 +8,7 @@ import type {
 } from "./http-types";
 import { HttpMetricsCollector } from "./http-metrics";
 import { createLoadTestEnvironment } from "./provenance";
-import type { EventStore } from "../event-store";
+import type { EventStore } from "../src/event-store";
 import type { StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import type pg from "pg";
 import type { HttpWorkerHandle } from "./http-worker-process";

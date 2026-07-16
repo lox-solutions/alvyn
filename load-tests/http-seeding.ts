@@ -1,4 +1,4 @@
-import { EventStore } from "../event-store";
+import { EventStore } from "../src/event-store";
 import {
   AccountAggregate,
   AccountBalanceSnapshot,

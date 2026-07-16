@@ -1,4 +1,4 @@
-import type { ReplayedEvent } from "../types";
+import type { ReplayedEvent } from "../src/types";
 import type { ExpectedLiveEvent } from "./expected-operations";
 import type { LoadTestConfig } from "./types";
 

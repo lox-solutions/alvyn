@@ -1,5 +1,5 @@
 import type { ServerResponse } from "node:http";
-import type { EventStore } from "../event-store";
+import type { EventStore } from "../src/event-store";
 import { AccountAggregate, AccountBalanceSnapshot } from "./http-aggregate";
 import { sendJson } from "./http-server-helpers";
 

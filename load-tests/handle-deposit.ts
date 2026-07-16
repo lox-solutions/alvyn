@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { OptimisticConcurrencyError } from "../errors";
-import type { EventStore } from "../event-store";
+import { OptimisticConcurrencyError } from "../src/errors";
+import type { EventStore } from "../src/event-store";
 import { AccountAggregate } from "./http-aggregate";
 import {
   getOperationToken,
