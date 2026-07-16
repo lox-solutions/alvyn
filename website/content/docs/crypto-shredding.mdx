@@ -11,13 +11,13 @@ The event store implements **envelope encryption** for GDPR-compliant PII handli
 
 ```mermaid
 graph TD
-  MK[Master Key\n256-bit AES, from env] -->|encrypts/decrypts| EK[Per-Entity AES Key\nstored in crypto_keys\nencrypted by master]
+  MK[Versioned Secrets\ncurrent plus old keys] -->|wraps/un-wraps| EK[Per-Entity AES Key\nstored in crypto_keys\nwith secret version]
   EK -->|encrypts/decrypts| PII[Individual PII Fields\neach field encrypted with\nAES-256-GCM, unique IV]
 ```
 
 **Two-layer envelope encryption:**
 
-1. A **master key** (256-bit AES, provided via `EVENT_STORE_MASTER_KEY` env var) encrypts per-entity AES keys.
+1. The first configured **versioned secret** encrypts new per-entity AES keys; later secrets decrypt existing keys after rotation.
 2. Each entity (e.g., a user) gets its own **AES-256-GCM key** stored encrypted in the `crypto_keys` table.
 3. Individual PII fields within event data are encrypted with the entity's key, each with a unique random IV.
 
@@ -25,19 +25,19 @@ graph TD
 
 ### Write Path (append)
 
-1. For each event with `encryptedFields` + `cryptoKeyId`, the entity's AES key is retrieved and decrypted from the DB using the master key.
+1. For each event with `encryptedFields` + `cryptoKeyId`, the entity's AES key is retrieved and decrypted from the DB using the configured secret version.
 2. Each PII field (specified as dot-paths, e.g. `"address.street"`) is:
    - Extracted from the event data
    - JSON-stringified and encrypted with AES-256-GCM (random IV per field)
-   - Stored in the `encrypted_data` column as `{ ciphertext, iv, authTag }` (base64-encoded)
+   - Stored in the `encrypted_data` column as `{ version, ciphertext, iv, authTag }` (base64-encoded)
 3. The `data` column stores the event payload **with PII fields removed**.
 
 **Example of what gets stored in the database:**
 
 ```
 data column:            { "loginCount": 5 }
-encrypted_data column:  { "name": { "ciphertext": "...", "iv": "...", "authTag": "..." },
-                          "email": { "ciphertext": "...", "iv": "...", "authTag": "..." } }
+encrypted_data column:  { "name": { "version": 2, "ciphertext": "...", "iv": "...", "authTag": "..." },
+                          "email": { "version": 2, "ciphertext": "...", "iv": "...", "authTag": "..." } }
 crypto_key_id column:   "user:abc123"
 ```
 
@@ -48,22 +48,35 @@ crypto_key_id column:   "user:abc123"
 
 ## Setting Up Encryption
 
-### 1. Provide a Master Key
+### 1. Configure Versioned Secrets
 
-Generate a 256-bit (64 hex character) master key:
+Generate secret values for the versions you will use:
 
 ```bash
-openssl rand -hex 32
+openssl rand -base64 32
 ```
 
-Set it as the `EVENT_STORE_MASTER_KEY` environment variable and pass it to the `EventStore` constructor:
+Configure the current secret first. Older entries are decryption-only:
 
 ```typescript
 const eventStore = new EventStore({
   pool,
-  masterEncryptionKey: process.env.EVENT_STORE_MASTER_KEY,
+  secrets: [
+    { version: 2, value: process.env.GDPR_CRYPTO_SECRET_V2! },
+    { version: 1, value: process.env.GDPR_CRYPTO_SECRET_V1! },
+  ],
 });
 ```
+
+The same configuration can be supplied through the environment:
+
+```bash
+GDPR_CRYPTO_SECRETS=2:new-secret-base64,1:old-secret-base64
+```
+
+Secret values are strings. Keep every old secret needed to read existing data
+until that data has been intentionally retired; removing a configured version
+makes envelopes using it unreadable.
 
 ### 2. Create Entity Keys
 
@@ -153,6 +166,29 @@ And `encrypted_data` column contains:
 }
 ```
 
+## Rotating Secrets Without Downtime
+
+To rotate from version `1` to version `2`, deploy the new configuration with
+version `2` first and version `1` second:
+
+```typescript
+secrets: [
+  { version: 2, value: "new-secret" },
+  { version: 1, value: "old-secret" },
+];
+```
+
+New entity-key envelopes and encrypted fields use version `2`. Existing
+version `1` envelopes are decrypted by direct version lookup and are not
+rewritten during reads. The next append for an entity lazily re-wraps its
+entity key with version `2`; no event rewrite, database migration, or downtime
+is required.
+
+**Migration warning:** deploy the new secret configuration before removing the
+old secret. Removing a secret version makes envelopes using it permanently
+unreadable. Keep each secret version until all data encrypted with it has been
+retired.
+
 ## GDPR Right to Erasure
 
 The complete flow for handling a user deletion request:
@@ -234,11 +270,11 @@ evolve: {
 
 ## Error Handling
 
-| Error                    | When                                                     | Recovery                                      |
-| ------------------------ | -------------------------------------------------------- | --------------------------------------------- |
-| `CryptoKeyRevokedError`  | Trying to encrypt **new** events with a revoked key      | Do not write PII for deleted users            |
-| `CryptoKeyNotFoundError` | Crypto key does not exist in the key store               | Create the key first with `createCryptoKey()` |
-| `MasterKeyRequiredError` | Crypto operation without `masterEncryptionKey` in config | Provide the master key                        |
+| Error                        | When                                                        | Recovery                                      |
+| ---------------------------- | ----------------------------------------------------------- | --------------------------------------------- |
+| `CryptoKeyRevokedError`      | Trying to encrypt **new** events with a revoked key         | Do not write PII for deleted users            |
+| `CryptoKeyNotFoundError`     | Crypto key does not exist in the key store                  | Create the key first with `createCryptoKey()` |
+| `CryptoSecretsRequiredError` | Crypto operation without `secrets` or `GDPR_CRYPTO_SECRETS` | Provide configured secrets                    |
 
 `CryptoKeyRevokedError` is only thrown on **write** operations. On **read**, revoked keys simply produce tombstoned events without throwing.
 
@@ -247,6 +283,6 @@ evolve: {
 - **Algorithm:** AES-256-GCM (authenticated encryption) for both master-to-entity and entity-to-field encryption
 - **IV:** 12 bytes, randomly generated per encryption operation
 - **Auth tag:** 16 bytes
-- **Entity key storage format:** `[iv (12 bytes)][authTag (16 bytes)][ciphertext]` stored as `BYTEA`
-- **Field storage format:** `{ ciphertext, iv, authTag }` as base64 strings in `JSONB`
+- **Entity key storage format:** versioned envelope `[magic][secret version][iv][authTag][ciphertext]` stored as `BYTEA`
+- **Field storage format:** `{ version, ciphertext, iv, authTag }` as base64 strings in `JSONB`
 - **Key cache:** Decrypted entity keys are cached in a per-read-call `Map` (not across requests) to avoid redundant DB lookups within a single stream load

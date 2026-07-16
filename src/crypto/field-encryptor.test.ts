@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { randomBytes } from "node:crypto";
-import { encryptFields, decryptFields } from "./field-encryptor";
+import {
+  decryptFields,
+  encryptFields,
+  type EncryptedFieldEntry,
+} from "./field-encryptor";
 
 function makeKey(): Buffer {
   return randomBytes(32);
@@ -16,6 +20,7 @@ describe("field-encryptor", () => {
         data,
         fields: ["name", "email"],
         aesKey: key,
+        keyVersion: 1,
       });
 
       expect(cleanData.name).toBeUndefined();
@@ -43,6 +48,7 @@ describe("field-encryptor", () => {
         data,
         fields: ["address.street", "address.city"],
         aesKey: key,
+        keyVersion: 1,
       });
 
       expect(
@@ -72,6 +78,7 @@ describe("field-encryptor", () => {
         data,
         fields: ["secret", "count"],
         aesKey: key,
+        keyVersion: 1,
       });
 
       expect(cleanData.secret).toBeUndefined();
@@ -92,6 +99,7 @@ describe("field-encryptor", () => {
         data,
         fields: ["name", "nonexistent", "deep.path.missing"],
         aesKey: key,
+        keyVersion: 1,
       });
 
       expect(cleanData.name).toBeUndefined();
@@ -106,6 +114,7 @@ describe("field-encryptor", () => {
         data,
         fields: [],
         aesKey: key,
+        keyVersion: 1,
       });
 
       expect(cleanData).toEqual(data);
@@ -117,7 +126,12 @@ describe("field-encryptor", () => {
       const original = { name: "Alice", age: 30 };
       const copy = { ...original };
 
-      encryptFields({ data: original, fields: ["name"], aesKey: key });
+      encryptFields({
+        data: original,
+        fields: ["name"],
+        aesKey: key,
+        keyVersion: 1,
+      });
 
       expect(original).toEqual(copy);
     });
@@ -129,6 +143,7 @@ describe("field-encryptor", () => {
         data,
         fields: ["name"],
         aesKey: key,
+        keyVersion: 1,
       });
       const cleanCopy = JSON.parse(
         JSON.stringify(cleanData),
@@ -148,6 +163,7 @@ describe("field-encryptor", () => {
         data,
         fields: ["__proto__", "constructor", "prototype"],
         aesKey: key,
+        keyVersion: 1,
       });
       expect(cleanData.safe).toBe("value");
     });
@@ -161,11 +177,30 @@ describe("field-encryptor", () => {
         data,
         fields: ["secret"],
         aesKey: key1,
+        keyVersion: 1,
       });
 
       expect(() =>
         decryptFields({ cleanData, encryptedData, aesKey: key2 }),
       ).toThrow();
+    });
+
+    it("rejects encrypted fields without a version", () => {
+      const key = makeKey();
+
+      expect(() =>
+        decryptFields({
+          cleanData: {},
+          encryptedData: {
+            secret: {
+              ciphertext: "",
+              iv: "",
+              authTag: "",
+            } as unknown as EncryptedFieldEntry,
+          },
+          aesKey: key,
+        }),
+      ).toThrow("Invalid encrypted field version");
     });
 
     it("each field gets unique IV (no IV reuse)", () => {
@@ -176,6 +211,7 @@ describe("field-encryptor", () => {
         data,
         fields: ["field1", "field2"],
         aesKey: key,
+        keyVersion: 1,
       });
 
       expect(encryptedData.field1.iv).not.toBe(encryptedData.field2.iv);
@@ -188,6 +224,7 @@ describe("field-encryptor", () => {
         data,
         fields: ["safe"],
         aesKey: key,
+        keyVersion: 1,
       });
 
       // Inject a malicious key alongside real encrypted data
@@ -202,7 +239,7 @@ describe("field-encryptor", () => {
         cleanData,
         encryptedData: poisoned as unknown as Record<
           string,
-          { ciphertext: string; iv: string; authTag: string }
+          { version: number; ciphertext: string; iv: string; authTag: string }
         >,
         aesKey: key,
       });

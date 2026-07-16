@@ -6,14 +6,9 @@ import {
   stopPostgres,
   createTestPool,
   uniqueSchema,
-  testMasterKey,
+  testSecretValue,
 } from "./__tests__/setup";
-import {
-  CryptoKeyNotFoundError,
-  CryptoKeyRevokedError,
-  MasterKeyRequiredError,
-} from "./errors";
-import { CryptoKeyManager } from "./crypto/crypto-key-manager";
+import { CryptoKeyNotFoundError, CryptoKeyRevokedError } from "./errors";
 import type { StoredEvent, TombstonedEvent } from "./types";
 
 let pool: pg.Pool;
@@ -28,11 +23,11 @@ afterAll(async () => {
   await stopPostgres();
 });
 
-function makeStore(masterKey?: string) {
+function makeStore() {
   return new EventStore({
     pool,
     schema: uniqueSchema(),
-    masterEncryptionKey: masterKey ?? testMasterKey(),
+    secrets: [{ version: 1, value: testSecretValue() }],
   });
 }
 
@@ -241,16 +236,124 @@ describe("EventStore crypto / GDPR", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Master key validation
+  // ---------------------------------------------------------------------------
+  // Versioned secret rotation
   // ---------------------------------------------------------------------------
 
-  describe("master key validation", () => {
-    it("CryptoKeyManager rejects empty master key", () => {
-      expect(() => new CryptoKeyManager("")).toThrow(MasterKeyRequiredError);
+  describe("versioned secret rotation", () => {
+    it("loads versioned secrets from GDPR_CRYPTO_SECRETS", async () => {
+      const schema = uniqueSchema();
+      const previous = process.env.GDPR_CRYPTO_SECRETS;
+      process.env.GDPR_CRYPTO_SECRETS = "8:environment-secret,3:old-secret";
+      try {
+        const store = new EventStore({ pool, schema });
+        await store.setup();
+        await store.createCryptoKey("user:environment");
+
+        const client = await pool.connect();
+        try {
+          const result = await client.query<{ encrypted_key: Buffer }>(
+            `SELECT encrypted_key FROM ${schema}.crypto_keys WHERE key_id = 'user:environment'`,
+          );
+          expect(result.rows[0].encrypted_key.readUInt32BE(4)).toBe(8);
+        } finally {
+          client.release();
+        }
+      } finally {
+        if (previous === undefined) delete process.env.GDPR_CRYPTO_SECRETS;
+        else process.env.GDPR_CRYPTO_SECRETS = previous;
+      }
     });
 
-    it("CryptoKeyManager rejects wrong length", () => {
-      expect(() => new CryptoKeyManager("aabb")).toThrow(/256 bits/);
+    it("reads old versions and lazily re-wraps on the next write", async () => {
+      const schema = uniqueSchema();
+      const oldStore = new EventStore({
+        pool,
+        schema,
+        secrets: [{ version: 1, value: "old-secret" }],
+      });
+      await oldStore.setup();
+      await oldStore.createCryptoKey("user:rotated");
+      await oldStore.append({
+        streamId: "User-rotated",
+        expectedVersion: -1,
+        events: [
+          {
+            type: "Registered",
+            data: { name: "Alice" },
+            encryptedFields: ["name"],
+            cryptoKeyId: "user:rotated",
+          },
+        ],
+      });
+
+      const client = await pool.connect();
+      try {
+        const before = await client.query<{
+          encrypted_key: Buffer;
+          encrypted_data: Record<string, { version: number }>;
+        }>(
+          `SELECT k.encrypted_key, e.encrypted_data
+           FROM ${schema}.crypto_keys k
+           JOIN ${schema}.events e ON e.crypto_key_id = k.key_id
+           WHERE k.key_id = 'user:rotated' AND e.stream_version = 1`,
+        );
+        expect(before.rows[0].encrypted_key.readUInt32BE(4)).toBe(1);
+        expect(before.rows[0].encrypted_data.name.version).toBe(1);
+
+        const rotatedStore = new EventStore({
+          pool,
+          schema,
+          secrets: [
+            { version: 3, value: "new-secret" },
+            { version: 1, value: "old-secret" },
+          ],
+        });
+        await rotatedStore.setup();
+
+        expect((await rotatedStore.load("User-rotated"))[0].data).toEqual({
+          name: "Alice",
+        });
+        await rotatedStore.append({
+          streamId: "User-rotated",
+          expectedVersion: 1,
+          events: [
+            {
+              type: "Renamed",
+              data: { name: "Bob" },
+              encryptedFields: ["name"],
+              cryptoKeyId: "user:rotated",
+            },
+          ],
+        });
+
+        const after = await client.query<{
+          encrypted_key: Buffer;
+          encrypted_data: Record<string, { version: number }>;
+        }>(
+          `SELECT k.encrypted_key, e.encrypted_data
+           FROM ${schema}.crypto_keys k
+           JOIN ${schema}.events e ON e.crypto_key_id = k.key_id
+           WHERE k.key_id = 'user:rotated' AND e.stream_version = 1`,
+        );
+        const newEvent = await client.query<{
+          encrypted_data: Record<string, { version: number }>;
+        }>(
+          `SELECT encrypted_data FROM ${schema}.events
+           WHERE stream_id = 'User-rotated' AND stream_version = 2`,
+        );
+        expect(
+          after.rows[0].encrypted_key.equals(before.rows[0].encrypted_key),
+        ).toBe(false);
+        expect(after.rows[0].encrypted_key.readUInt32BE(4)).toBe(3);
+        expect(after.rows[0].encrypted_data.name.version).toBe(1);
+        expect(newEvent.rows[0].encrypted_data.name.version).toBe(3);
+        expect((await rotatedStore.load("User-rotated"))[1].data).toEqual({
+          name: "Bob",
+        });
+      } finally {
+        client.release();
+      }
     });
   });
 

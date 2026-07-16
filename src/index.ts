@@ -15,7 +15,7 @@ export { defineProjection } from "./projection/define-projection";
 export { defineSnapshot } from "./snapshot/define-snapshot";
 
 // Types — configuration
-export type { EventStoreConfig } from "./types";
+export type { CryptoSecret, EventStoreConfig } from "./types";
 
 // Types — aggregate builder
 export type {
@@ -90,9 +90,11 @@ export type { TransactionContext } from "./types";
 export {
   CryptoKeyNotFoundError,
   CryptoKeyRevokedError,
+  CryptoSecretVersionNotFoundError,
   EventStoreNotInitializedError,
   InvalidSchemaNameError,
-  MasterKeyRequiredError,
+  InvalidCryptoSecretsError,
+  CryptoSecretsRequiredError,
   OptimisticConcurrencyError,
   ReservedSnapshotEventTypeError,
   StreamNotFoundError,

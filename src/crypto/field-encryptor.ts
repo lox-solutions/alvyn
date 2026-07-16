@@ -4,7 +4,9 @@ const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
 
-interface EncryptedFieldEntry {
+export interface EncryptedFieldEntry {
+  /** Version of the configured secret used for this encrypted entry. */
+  version: number;
   /** Base64-encoded ciphertext */
   ciphertext: string;
   /** Base64-encoded initialization vector */
@@ -116,8 +118,9 @@ export function encryptFields(options: {
   data: Record<string, unknown>;
   fields: string[];
   aesKey: Buffer;
+  keyVersion: number;
 }): EncryptResult {
-  const { data, fields, aesKey } = options;
+  const { data, fields, aesKey, keyVersion } = options;
   // Deep-clone to avoid mutating the original
   const cleanData = JSON.parse(JSON.stringify(data)) as Record<string, unknown>;
   const encryptedData: Record<string, EncryptedFieldEntry> = {};
@@ -139,6 +142,7 @@ export function encryptFields(options: {
     const authTag = cipher.getAuthTag();
 
     encryptedData[field] = {
+      version: keyVersion,
       ciphertext: encrypted.toString("base64"),
       iv: iv.toString("base64"),
       authTag: authTag.toString("base64"),
@@ -170,6 +174,9 @@ export function decryptFields(options: {
   >;
 
   for (const [field, entry] of Object.entries(encryptedData)) {
+    if (!Number.isSafeInteger(entry.version) || entry.version < 0) {
+      throw new Error(`Invalid encrypted field version for "${field}"`);
+    }
     const ciphertext = Buffer.from(entry.ciphertext, "base64");
     const iv = Buffer.from(entry.iv, "base64");
     const authTag = Buffer.from(entry.authTag, "base64");

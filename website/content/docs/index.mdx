@@ -37,7 +37,6 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 const eventStore = new EventStore({
   pool,
-  masterEncryptionKey: process.env.EVENT_STORE_MASTER_KEY, // optional, for GDPR
 });
 
 await eventStore.setup(); // idempotent — safe on every startup

@@ -61,17 +61,35 @@ export class CryptoKeyNotFoundError extends Error {
 }
 
 /**
- * Thrown when crypto operations are attempted but no master encryption key
- * was provided in the EventStore configuration.
+ * Thrown when crypto operations are attempted but no versioned crypto secrets
+ * were provided in the EventStore configuration.
  */
-export class MasterKeyRequiredError extends Error {
-  public readonly name = "MasterKeyRequiredError" as const;
+export class CryptoSecretsRequiredError extends Error {
+  public readonly name = "CryptoSecretsRequiredError" as const;
 
   constructor() {
     super(
-      "Master encryption key is required for crypto operations. " +
-        "Provide `masterEncryptionKey` in the EventStore configuration.",
+      "Versioned crypto secrets are required for crypto operations. " +
+        "Provide `secrets` or GDPR_CRYPTO_SECRETS in the EventStore configuration.",
     );
+  }
+}
+
+/** Thrown when versioned crypto secret configuration is invalid. */
+export class InvalidCryptoSecretsError extends Error {
+  public readonly name = "InvalidCryptoSecretsError" as const;
+
+  constructor(message: string) {
+    super(message);
+  }
+}
+
+/** Thrown when an encrypted envelope references an unavailable secret version. */
+export class CryptoSecretVersionNotFoundError extends Error {
+  public readonly name = "CryptoSecretVersionNotFoundError" as const;
+
+  constructor(public readonly version: number) {
+    super(`Crypto secret version ${version} is not configured`);
   }
 }
 

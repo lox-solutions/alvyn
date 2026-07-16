@@ -11,7 +11,7 @@ import {
   EventStoreNotInitializedError,
   InvalidSchemaNameError,
   OptimisticConcurrencyError,
-  MasterKeyRequiredError,
+  CryptoSecretsRequiredError,
 } from "./errors";
 
 let pool: pg.Pool;
@@ -26,15 +26,10 @@ afterAll(async () => {
   await stopPostgres();
 });
 
-function makeStore(opts?: {
-  schema?: string;
-  masterKey?: string;
-  source?: string;
-}) {
+function makeStore(opts?: { schema?: string; source?: string }) {
   return new EventStore({
     pool,
     schema: opts?.schema ?? uniqueSchema(),
-    masterEncryptionKey: opts?.masterKey,
     defaultSource: opts?.source,
   });
 }
@@ -62,6 +57,24 @@ describe("EventStore", () => {
       expect(() => makeStore({ schema: "event_store" })).not.toThrow();
       expect(() => makeStore({ schema: "a" })).not.toThrow();
       expect(() => makeStore({ schema: "_private" })).not.toThrow();
+    });
+
+    it("ignores malformed environment secrets when explicit secrets are provided", () => {
+      const previous = process.env.GDPR_CRYPTO_SECRETS;
+      process.env.GDPR_CRYPTO_SECRETS = "not-a-versioned-secret";
+      try {
+        expect(
+          () =>
+            new EventStore({
+              pool,
+              schema: uniqueSchema(),
+              secrets: [{ version: 1, value: "explicit-secret" }],
+            }),
+        ).not.toThrow();
+      } finally {
+        if (previous === undefined) delete process.env.GDPR_CRYPTO_SECRETS;
+        else process.env.GDPR_CRYPTO_SECRETS = previous;
+      }
     });
   });
 
@@ -136,14 +149,14 @@ describe("EventStore", () => {
   // ---------------------------------------------------------------------------
 
   describe("crypto guard", () => {
-    it("throws MasterKeyRequiredError for crypto ops without master key", async () => {
+    it("throws CryptoSecretsRequiredError for crypto ops without secrets", async () => {
       const store = makeStore();
       await store.setup();
       await expect(store.createCryptoKey("k1")).rejects.toThrow(
-        MasterKeyRequiredError,
+        CryptoSecretsRequiredError,
       );
       await expect(store.revokeKey("k1")).rejects.toThrow(
-        MasterKeyRequiredError,
+        CryptoSecretsRequiredError,
       );
     });
   });

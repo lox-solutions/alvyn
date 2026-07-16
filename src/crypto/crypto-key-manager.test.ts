@@ -6,13 +6,13 @@ import {
   stopPostgres,
   createTestPool,
   uniqueSchema,
-  testMasterKey,
+  testSecretValue,
 } from "../__tests__/setup";
 import { EventStore } from "../event-store";
 import {
   CryptoKeyNotFoundError,
   CryptoKeyRevokedError,
-  MasterKeyRequiredError,
+  InvalidCryptoSecretsError,
 } from "../errors";
 
 let pool: pg.Pool;
@@ -29,16 +29,25 @@ afterAll(async () => {
 
 describe("CryptoKeyManager", () => {
   describe("constructor", () => {
-    it("throws MasterKeyRequiredError for empty key", () => {
-      expect(() => new CryptoKeyManager("")).toThrow(MasterKeyRequiredError);
+    it("throws InvalidCryptoSecretsError for an empty secret list", () => {
+      expect(() => new CryptoKeyManager({ secrets: [] })).toThrow(
+        InvalidCryptoSecretsError,
+      );
     });
 
-    it("throws for wrong key length", () => {
-      expect(() => new CryptoKeyManager("aabbccdd")).toThrow(/256 bits/);
+    it("throws for an empty secret value", () => {
+      expect(
+        () => new CryptoKeyManager({ secrets: [{ version: 1, value: "" }] }),
+      ).toThrow(InvalidCryptoSecretsError);
     });
 
-    it("accepts valid 64-char hex key", () => {
-      expect(() => new CryptoKeyManager(testMasterKey())).not.toThrow();
+    it("accepts a configured secret", () => {
+      expect(
+        () =>
+          new CryptoKeyManager({
+            secrets: [{ version: 1, value: testSecretValue() }],
+          }),
+      ).not.toThrow();
     });
   });
 
@@ -48,11 +57,13 @@ describe("CryptoKeyManager", () => {
       const store = new EventStore({
         pool,
         schema,
-        masterEncryptionKey: testMasterKey(),
+        secrets: [{ version: 1, value: testSecretValue() }],
       });
       await store.setup();
 
-      const mgr = new CryptoKeyManager(testMasterKey());
+      const mgr = new CryptoKeyManager({
+        secrets: [{ version: 1, value: testSecretValue() }],
+      });
       const client = await pool.connect();
       try {
         await client.query(`SET search_path TO ${schema}`);
@@ -65,16 +76,46 @@ describe("CryptoKeyManager", () => {
       }
     });
 
+    it("rejects non-versioned entity key envelopes", async () => {
+      const schema = uniqueSchema();
+      const store = new EventStore({
+        pool,
+        schema,
+        secrets: [{ version: 1, value: testSecretValue() }],
+      });
+      await store.setup();
+
+      const mgr = new CryptoKeyManager({
+        secrets: [{ version: 1, value: testSecretValue() }],
+      });
+      const client = await pool.connect();
+      try {
+        await mgr.createKey({ client, schema, keyId: "user:unversioned" });
+        await client.query(
+          `UPDATE ${schema}.crypto_keys SET encrypted_key = $1 WHERE key_id = $2`,
+          [Buffer.alloc(60), "user:unversioned"],
+        );
+
+        await expect(
+          mgr.getKey({ client, schema, keyId: "user:unversioned" }),
+        ).rejects.toThrow("Invalid versioned crypto key envelope");
+      } finally {
+        client.release();
+      }
+    });
+
     it("createKey is idempotent", async () => {
       const schema = uniqueSchema();
       const store = new EventStore({
         pool,
         schema,
-        masterEncryptionKey: testMasterKey(),
+        secrets: [{ version: 1, value: testSecretValue() }],
       });
       await store.setup();
 
-      const mgr = new CryptoKeyManager(testMasterKey());
+      const mgr = new CryptoKeyManager({
+        secrets: [{ version: 1, value: testSecretValue() }],
+      });
       const client = await pool.connect();
       try {
         await mgr.createKey({ client, schema, keyId: "user:idem" });
@@ -96,11 +137,13 @@ describe("CryptoKeyManager", () => {
       const store = new EventStore({
         pool,
         schema,
-        masterEncryptionKey: testMasterKey(),
+        secrets: [{ version: 1, value: testSecretValue() }],
       });
       await store.setup();
 
-      const mgr = new CryptoKeyManager(testMasterKey());
+      const mgr = new CryptoKeyManager({
+        secrets: [{ version: 1, value: testSecretValue() }],
+      });
       const client = await pool.connect();
       try {
         await expect(
@@ -118,11 +161,13 @@ describe("CryptoKeyManager", () => {
       const store = new EventStore({
         pool,
         schema,
-        masterEncryptionKey: testMasterKey(),
+        secrets: [{ version: 1, value: testSecretValue() }],
       });
       await store.setup();
 
-      const mgr = new CryptoKeyManager(testMasterKey());
+      const mgr = new CryptoKeyManager({
+        secrets: [{ version: 1, value: testSecretValue() }],
+      });
       const client = await pool.connect();
       try {
         await mgr.createKey({ client, schema, keyId: "user:revoke" });
@@ -139,11 +184,13 @@ describe("CryptoKeyManager", () => {
       const store = new EventStore({
         pool,
         schema,
-        masterEncryptionKey: testMasterKey(),
+        secrets: [{ version: 1, value: testSecretValue() }],
       });
       await store.setup();
 
-      const mgr = new CryptoKeyManager(testMasterKey());
+      const mgr = new CryptoKeyManager({
+        secrets: [{ version: 1, value: testSecretValue() }],
+      });
       const client = await pool.connect();
       try {
         await mgr.createKey({ client, schema, keyId: "user:rev2" });
@@ -160,11 +207,13 @@ describe("CryptoKeyManager", () => {
       const store = new EventStore({
         pool,
         schema,
-        masterEncryptionKey: testMasterKey(),
+        secrets: [{ version: 1, value: testSecretValue() }],
       });
       await store.setup();
 
-      const mgr = new CryptoKeyManager(testMasterKey());
+      const mgr = new CryptoKeyManager({
+        secrets: [{ version: 1, value: testSecretValue() }],
+      });
       const client = await pool.connect();
       try {
         await expect(
@@ -182,11 +231,13 @@ describe("CryptoKeyManager", () => {
       const store = new EventStore({
         pool,
         schema,
-        masterEncryptionKey: testMasterKey(),
+        secrets: [{ version: 1, value: testSecretValue() }],
       });
       await store.setup();
 
-      const mgr = new CryptoKeyManager(testMasterKey());
+      const mgr = new CryptoKeyManager({
+        secrets: [{ version: 1, value: testSecretValue() }],
+      });
       const client = await pool.connect();
       try {
         await mgr.createKey({ client, schema, keyId: "user:enc" });
@@ -207,11 +258,13 @@ describe("CryptoKeyManager", () => {
       const store = new EventStore({
         pool,
         schema,
-        masterEncryptionKey: testMasterKey(),
+        secrets: [{ version: 1, value: testSecretValue() }],
       });
       await store.setup();
 
-      const mgr = new CryptoKeyManager(testMasterKey());
+      const mgr = new CryptoKeyManager({
+        secrets: [{ version: 1, value: testSecretValue() }],
+      });
       const client = await pool.connect();
       try {
         await mgr.createKey({ client, schema, keyId: "user:enc2" });
@@ -226,20 +279,24 @@ describe("CryptoKeyManager", () => {
   });
 
   describe("envelope encryption integrity", () => {
-    it("different master keys cannot decrypt each other's entity keys", async () => {
+    it("different secrets cannot decrypt each other's entity keys", async () => {
       const schema = uniqueSchema();
-      const masterKey1 = "a".repeat(64);
-      const masterKey2 = "b".repeat(64);
+      const secretValue1 = "a".repeat(64);
+      const secretValue2 = "b".repeat(64);
 
       const store = new EventStore({
         pool,
         schema,
-        masterEncryptionKey: masterKey1,
+        secrets: [{ version: 1, value: secretValue1 }],
       });
       await store.setup();
 
-      const mgr1 = new CryptoKeyManager(masterKey1);
-      const mgr2 = new CryptoKeyManager(masterKey2);
+      const mgr1 = new CryptoKeyManager({
+        secrets: [{ version: 1, value: secretValue1 }],
+      });
+      const mgr2 = new CryptoKeyManager({
+        secrets: [{ version: 1, value: secretValue2 }],
+      });
 
       const client = await pool.connect();
       try {
