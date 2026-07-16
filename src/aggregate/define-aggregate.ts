@@ -11,6 +11,7 @@ import type {
 } from "./types";
 import { loadFromReplay, mapEventsForAppend } from "./aggregate-helpers";
 import { isReservedSnapshotEventType } from "../snapshot/reserved-event-type";
+import type { ValidEventMap } from "../valid-event-map";
 
 async function loadDomainEvents<TEvents>(options: {
   eventStore: EventStore;
@@ -123,7 +124,9 @@ async function appendAggregate<TState, TEvents>(options: {
 
 /** Defines a typed aggregate with full TypeScript inference. */
 export function defineAggregate<TState, TEvents>(): (
-  definition: AggregateDefinition<TEvents, TState>,
+  definition: [ValidEventMap<TEvents>] extends [never]
+    ? never
+    : AggregateDefinition<TEvents, TState>,
 ) => AggregateHandle<TState, TEvents> {
   return (def: AggregateDefinition<TEvents, TState>) =>
     createAggregateHandle(def);

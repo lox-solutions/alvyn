@@ -8,6 +8,7 @@ import type {
   SnapshotLoadResult,
   SnapshotUpdateAfterAppendOptions,
 } from "./types";
+import type { ValidEventMap } from "../valid-event-map";
 
 function createSnapshotHandle<TState, TEvents>(
   def: SnapshotDefinition<TState, TEvents>,
@@ -194,7 +195,9 @@ async function updateSnapshotAfterAppend<TState>(options: {
 
 /** Defines a typed event-backed snapshot with full TypeScript inference. */
 export function defineSnapshot<TState, TEvents>(): (
-  definition: SnapshotDefinition<TState, TEvents>,
+  definition: [ValidEventMap<TEvents>] extends [never]
+    ? never
+    : SnapshotDefinition<TState, TEvents>,
 ) => SnapshotHandle<TState> {
   return (def: SnapshotDefinition<TState, TEvents>) =>
     createSnapshotHandle(def);

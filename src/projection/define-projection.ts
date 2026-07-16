@@ -6,6 +6,7 @@ import type {
   ProjectionHandle,
   ProjectionHandlerContext,
 } from "./types";
+import type { ValidEventMap } from "../valid-event-map";
 
 /**
  * Defines a typed projection from an event-sourced aggregate.
@@ -47,7 +48,9 @@ import type {
  * ```
  */
 export function defineProjection<TEvents>(): (
-  definition: ProjectionDefinition<TEvents>,
+  definition: [ValidEventMap<TEvents>] extends [never]
+    ? never
+    : ProjectionDefinition<TEvents>,
 ) => ProjectionHandle {
   return function (
     definition: ProjectionDefinition<TEvents>,
