@@ -1,15 +1,29 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type pg from "pg";
-import { EventStore } from "./event-store";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
 import {
+  createTestPool,
   startPostgres,
   stopPostgres,
-  createTestPool,
   uniqueSchema,
-  testSecretValue,
 } from "./__tests__/setup";
+import { CryptoKeyManager } from "./crypto/crypto-key-manager";
+import { EventStore } from "./event-store";
 import { CryptoKeyNotFoundError, CryptoKeyRevokedError } from "./errors";
-import type { StoredEvent, TombstonedEvent } from "./types";
+import type { CryptoSecret, TombstonedEvent } from "./types";
+
+const SECRET_1 = "11".repeat(32);
+const SECRET_2 = "22".repeat(32);
+const VERSION_1 = [{ version: 1, value: SECRET_1 }] as const;
+
+interface RawEvent {
+  data: Record<string, unknown>;
+  encrypted_data: Record<
+    string,
+    { version: number; ciphertext: string; iv: string; authTag: string }
+  > | null;
+  stream_version: number;
+}
 
 let pool: pg.Pool;
 
@@ -23,368 +37,443 @@ afterAll(async () => {
   await stopPostgres();
 });
 
-function makeStore() {
+function makeStore(
+  schema: string,
+  secrets: readonly CryptoSecret[] = VERSION_1,
+): EventStore {
   return new EventStore({
     pool,
-    schema: uniqueSchema(),
-    secrets: [{ version: 1, value: testSecretValue() }],
+    schema,
+    secrets: [...secrets],
   });
 }
 
-describe("EventStore crypto / GDPR", () => {
-  // ---------------------------------------------------------------------------
-  // CryptoKeyManager via EventStore
-  // ---------------------------------------------------------------------------
+async function appendPrivateName(options: {
+  store: EventStore;
+  streamId: string;
+  keyId: string;
+  name: string;
+  expectedVersion: number;
+  client?: pg.PoolClient;
+}): Promise<void> {
+  await options.store.append(
+    {
+      streamId: options.streamId,
+      expectedVersion: options.expectedVersion,
+      events: [
+        {
+          type: options.expectedVersion === -1 ? "Registered" : "Renamed",
+          data: { name: options.name },
+          encryptedFields: ["name"],
+          cryptoKeyId: options.keyId,
+        },
+      ],
+    },
+    options.client ? { client: options.client } : undefined,
+  );
+}
 
-  describe("createCryptoKey", () => {
-    it("creates a key and is idempotent", async () => {
-      const store = makeStore();
-      await store.setup();
+async function readEnvelope(schema: string, keyId: string): Promise<Buffer> {
+  const result = await pool.query<{ encrypted_key: Buffer }>(
+    `SELECT encrypted_key FROM ${schema}.crypto_keys WHERE key_id = $1`,
+    [keyId],
+  );
+  return result.rows[0].encrypted_key;
+}
 
-      await store.createCryptoKey("user:1");
-      // Second call should not throw
-      await store.createCryptoKey("user:1");
+async function readRawEvents(
+  schema: string,
+  streamId: string,
+): Promise<RawEvent[]> {
+  const result = await pool.query<RawEvent>(
+    `SELECT data, encrypted_data, stream_version
+     FROM ${schema}.events
+     WHERE stream_id = $1
+     ORDER BY stream_version`,
+    [streamId],
+  );
+  return result.rows;
+}
+
+describe("encrypted events", () => {
+  it("keeps PII out of the data column and restores it when loading", async () => {
+    const schema = uniqueSchema();
+    const store = makeStore(schema);
+    await store.setup();
+    await store.createCryptoKey("user:alice");
+
+    await store.append({
+      streamId: "User-alice",
+      expectedVersion: -1,
+      events: [
+        {
+          type: "Registered",
+          data: {
+            name: "Alice",
+            address: { street: "Main Street", city: "Berlin" },
+            active: true,
+          },
+          encryptedFields: ["name", "address.street"],
+          cryptoKeyId: "user:alice",
+        },
+      ],
+    });
+
+    const [raw] = await readRawEvents(schema, "User-alice");
+    expect(raw.data).toEqual({ address: { city: "Berlin" }, active: true });
+    expect(Object.keys(raw.encrypted_data!)).toEqual([
+      "name",
+      "address.street",
+    ]);
+    expect((await store.load("User-alice"))[0].data).toEqual({
+      name: "Alice",
+      address: { street: "Main Street", city: "Berlin" },
+      active: true,
     });
   });
 
-  // ---------------------------------------------------------------------------
-  // Encrypt / Decrypt round-trip
-  // ---------------------------------------------------------------------------
+  it("loads public and encrypted events from the same stream", async () => {
+    const schema = uniqueSchema();
+    const store = makeStore(schema);
+    await store.setup();
+    await store.createCryptoKey("user:mixed");
 
-  describe("encrypt and decrypt events", () => {
-    it("encrypts PII fields on append and decrypts on load", async () => {
-      const store = makeStore();
-      await store.setup();
-      await store.createCryptoKey("user:alice");
-
-      await store.append({
-        streamId: "User-alice",
-        expectedVersion: -1,
-        events: [
-          {
-            type: "UserRegistered",
-            data: { name: "Alice", email: "alice@test.com", age: 30 },
-            encryptedFields: ["name", "email"],
-            cryptoKeyId: "user:alice",
-          },
-        ],
-      });
-
-      const events = await store.load("User-alice");
-      expect(events).toHaveLength(1);
-
-      const event = events[0] as StoredEvent;
-      expect(event.data).toEqual({
-        name: "Alice",
-        email: "alice@test.com",
-        age: 30,
-      });
+    await store.append({
+      streamId: "User-mixed",
+      expectedVersion: -1,
+      events: [
+        { type: "Public", data: { status: "active" } },
+        {
+          type: "Private",
+          data: { name: "Alice" },
+          encryptedFields: ["name"],
+          cryptoKeyId: "user:mixed",
+        },
+      ],
     });
 
-    it("encrypted fields are removed from data column (verify raw)", async () => {
-      const store = makeStore();
-      await store.setup();
-      await store.createCryptoKey("user:bob");
+    expect((await store.load("User-mixed")).map((event) => event.data)).toEqual(
+      [{ status: "active" }, { name: "Alice" }],
+    );
+  });
 
-      await store.append({
-        streamId: "User-bob",
-        expectedVersion: -1,
-        events: [
-          {
-            type: "UserRegistered",
-            data: { name: "Bob", public: "visible" },
-            encryptedFields: ["name"],
-            cryptoKeyId: "user:bob",
-          },
-        ],
-      });
+  it("rejects encrypted data moved to another event", async () => {
+    const schema = uniqueSchema();
+    const store = makeStore(schema);
+    await store.setup();
+    await store.createCryptoKey("user:events");
+    await appendPrivateName({
+      store,
+      streamId: "User-events",
+      keyId: "user:events",
+      name: "Alice",
+      expectedVersion: -1,
+    });
+    await appendPrivateName({
+      store,
+      streamId: "User-events",
+      keyId: "user:events",
+      name: "Bob",
+      expectedVersion: 1,
+    });
+    await pool.query(
+      `UPDATE ${schema}.events AS target
+       SET encrypted_data = source.encrypted_data
+       FROM ${schema}.events AS source
+       WHERE target.stream_id = 'User-events'
+         AND target.stream_version = 2
+         AND source.stream_id = 'User-events'
+         AND source.stream_version = 1`,
+    );
 
-      // Read raw from DB to verify data column doesn't contain PII
-      const schema = (store as unknown as { schema: string }).schema;
-      const client = await pool.connect();
-      try {
-        const result = await client.query(
-          `SELECT data, encrypted_data FROM ${schema}.events WHERE stream_id = 'User-bob'`,
-        );
-        const row = result.rows[0] as {
-          data: Record<string, unknown>;
-          encrypted_data: Record<string, { ciphertext: string }>;
-        };
-        expect(row.data.name).toBeUndefined();
-        expect(row.data.public).toBe("visible");
-        expect(row.encrypted_data.name).toBeDefined();
-        expect(row.encrypted_data.name.ciphertext).toBeTruthy();
-      } finally {
-        client.release();
-      }
+    await expect(store.load("User-events")).rejects.toThrow();
+  });
+});
+
+describe("crypto-shredding", () => {
+  it("turns encrypted events into metadata-preserving tombstones", async () => {
+    const schema = uniqueSchema();
+    const store = makeStore(schema);
+    await store.setup();
+    await store.createCryptoKey("user:shred");
+    await appendPrivateName({
+      store,
+      streamId: "User-shred",
+      keyId: "user:shred",
+      name: "Alice",
+      expectedVersion: -1,
     });
 
-    it("nested encrypted fields work", async () => {
-      const store = makeStore();
-      await store.setup();
-      await store.createCryptoKey("user:carol");
+    await store.revokeKey("user:shred");
+    await store.revokeKey("user:shred");
 
-      await store.append({
-        streamId: "User-carol",
-        expectedVersion: -1,
-        events: [
-          {
-            type: "UserRegistered",
-            data: {
-              address: { street: "123 Main", city: "Berlin" },
-              active: true,
-            },
-            encryptedFields: ["address.street", "address.city"],
-            cryptoKeyId: "user:carol",
-          },
-        ],
-      });
-
-      const events = await store.load("User-carol");
-      const data = events[0].data as Record<string, unknown>;
-      const address = data.address as Record<string, unknown>;
-      expect(address.street).toBe("123 Main");
-      expect(address.city).toBe("Berlin");
-      expect(data.active).toBe(true);
+    const tombstone = (await store.load("User-shred"))[0] as TombstonedEvent;
+    expect(tombstone).toMatchObject({
+      type: "Registered",
+      data: null,
+      tombstoned: true,
+      streamId: "User-shred",
+      streamVersion: 1,
     });
   });
 
-  // ---------------------------------------------------------------------------
-  // Key revocation / Tombstones
-  // ---------------------------------------------------------------------------
+  it("does not affect public events", async () => {
+    const schema = uniqueSchema();
+    const store = makeStore(schema);
+    await store.setup();
+    await store.createCryptoKey("user:public");
+    await store.append({
+      streamId: "User-public",
+      expectedVersion: -1,
+      events: [
+        { type: "Public", data: { status: "active" } },
+        {
+          type: "Private",
+          data: { name: "Alice" },
+          encryptedFields: ["name"],
+          cryptoKeyId: "user:public",
+        },
+      ],
+    });
 
-  describe("key revocation and tombstones", () => {
-    it("returns tombstoned events after key revocation", async () => {
-      const store = makeStore();
-      await store.setup();
-      await store.createCryptoKey("user:dave");
+    await store.revokeKey("user:public");
 
-      await store.append({
-        streamId: "User-dave",
+    const events = await store.load("User-public");
+    expect(events[0].data).toEqual({ status: "active" });
+    expect((events[1] as TombstonedEvent).tombstoned).toBe(true);
+  });
+
+  it("rejects missing keys and writes with revoked keys", async () => {
+    const schema = uniqueSchema();
+    const store = makeStore(schema);
+    await store.setup();
+    await store.createCryptoKey("user:gone");
+    await store.revokeKey("user:gone");
+
+    await expect(store.revokeKey("missing")).rejects.toThrow(
+      CryptoKeyNotFoundError,
+    );
+    await expect(
+      appendPrivateName({
+        store,
+        streamId: "User-gone",
+        keyId: "user:gone",
+        name: "Ghost",
         expectedVersion: -1,
-        events: [
-          {
-            type: "UserRegistered",
-            data: { name: "Dave", public: "ok" },
-            encryptedFields: ["name"],
-            cryptoKeyId: "user:dave",
-          },
-        ],
+      }),
+    ).rejects.toThrow(CryptoKeyRevokedError);
+  });
+});
+
+describe("secret rotation", () => {
+  it("uses GDPR_CRYPTO_SECRETS when code configuration is absent", async () => {
+    const schema = uniqueSchema();
+    const previous = process.env.GDPR_CRYPTO_SECRETS;
+    process.env.GDPR_CRYPTO_SECRETS = "8:environment-secret,3:old-secret";
+    try {
+      const store = new EventStore({ pool, schema });
+      await store.setup();
+      await store.createCryptoKey("user:environment");
+
+      expect(
+        (await readEnvelope(schema, "user:environment")).readUInt32BE(4),
+      ).toBe(8);
+    } finally {
+      if (previous === undefined) delete process.env.GDPR_CRYPTO_SECRETS;
+      else process.env.GDPR_CRYPTO_SECRETS = previous;
+    }
+  });
+
+  it("reads with an old secret without rewriting the envelope", async () => {
+    const schema = uniqueSchema();
+    const original = makeStore(schema);
+    await original.setup();
+    await original.createCryptoKey("user:read-only");
+    await appendPrivateName({
+      store: original,
+      streamId: "User-read-only",
+      keyId: "user:read-only",
+      name: "Alice",
+      expectedVersion: -1,
+    });
+    const before = await readEnvelope(schema, "user:read-only");
+    const rotated = makeStore(schema, [
+      { version: 2, value: SECRET_2 },
+      { version: 1, value: SECRET_1 },
+    ]);
+    await rotated.setup();
+
+    expect((await rotated.load("User-read-only"))[0].data).toEqual({
+      name: "Alice",
+    });
+    expect(await readEnvelope(schema, "user:read-only")).toEqual(before);
+  });
+
+  it("lazily rewraps on write and then works with only the new secret", async () => {
+    const schema = uniqueSchema();
+    const original = makeStore(schema);
+    await original.setup();
+    await original.createCryptoKey("user:rotated");
+    await appendPrivateName({
+      store: original,
+      streamId: "User-rotated",
+      keyId: "user:rotated",
+      name: "Alice",
+      expectedVersion: -1,
+    });
+    const oldEventBefore = (await readRawEvents(schema, "User-rotated"))[0]
+      .encrypted_data;
+    const rotated = makeStore(schema, [
+      { version: 2, value: SECRET_2 },
+      { version: 1, value: SECRET_1 },
+    ]);
+    await rotated.setup();
+
+    await appendPrivateName({
+      store: rotated,
+      streamId: "User-rotated",
+      keyId: "user:rotated",
+      name: "Bob",
+      expectedVersion: 1,
+    });
+
+    const rawEvents = await readRawEvents(schema, "User-rotated");
+    expect((await readEnvelope(schema, "user:rotated")).readUInt32BE(4)).toBe(
+      2,
+    );
+    expect(rawEvents[0].encrypted_data).toEqual(oldEventBefore);
+    expect(
+      rawEvents.map((event) => event.encrypted_data!.name.version),
+    ).toEqual([1, 2]);
+    const newOnly = makeStore(schema, [{ version: 2, value: SECRET_2 }]);
+    await newOnly.setup();
+    expect(
+      (await newOnly.load("User-rotated")).map((event) => event.data),
+    ).toEqual([{ name: "Alice" }, { name: "Bob" }]);
+  });
+
+  it("supports a three-replica rolling deployment without envelope downgrade", async () => {
+    const schema = uniqueSchema();
+    const original = makeStore(schema);
+    await original.setup();
+    await original.createCryptoKey("user:ha");
+    const phaseOneSecrets = [
+      { version: 1, value: SECRET_1 },
+      { version: 2, value: SECRET_2 },
+    ];
+    const replicas = [
+      makeStore(schema, phaseOneSecrets),
+      makeStore(schema, phaseOneSecrets),
+      makeStore(schema, phaseOneSecrets),
+    ];
+    await Promise.all(replicas.map((replica) => replica.setup()));
+    await appendPrivateName({
+      store: replicas[0],
+      streamId: "User-ha",
+      keyId: "user:ha",
+      name: "Phase one",
+      expectedVersion: -1,
+    });
+    const upgradedReplica = makeStore(schema, [
+      { version: 2, value: SECRET_2 },
+      { version: 1, value: SECRET_1 },
+    ]);
+    await upgradedReplica.setup();
+    await appendPrivateName({
+      store: upgradedReplica,
+      streamId: "User-ha",
+      keyId: "user:ha",
+      name: "Phase two",
+      expectedVersion: 1,
+    });
+    const upgradedEnvelope = await readEnvelope(schema, "user:ha");
+
+    await appendPrivateName({
+      store: replicas[1],
+      streamId: "User-ha",
+      keyId: "user:ha",
+      name: "Stale replica",
+      expectedVersion: 2,
+    });
+
+    expect(await readEnvelope(schema, "user:ha")).toEqual(upgradedEnvelope);
+    const newOnly = makeStore(schema, [{ version: 2, value: SECRET_2 }]);
+    await newOnly.setup();
+    expect((await newOnly.load("User-ha")).map((event) => event.data)).toEqual([
+      { name: "Phase one" },
+      { name: "Phase two" },
+      { name: "Stale replica" },
+    ]);
+  });
+});
+
+describe("revocation and append concurrency", () => {
+  it("serializes append-first and revoke-first transactions across replicas", async () => {
+    const schema = uniqueSchema();
+    const store = makeStore(schema);
+    await store.setup();
+    await store.createCryptoKey("user:concurrent");
+    const manager = new CryptoKeyManager({ secrets: VERSION_1 });
+    const appendClient = await pool.connect();
+    const revokeClient = await pool.connect();
+    try {
+      await appendClient.query("BEGIN");
+      await appendPrivateName({
+        store,
+        streamId: "User-concurrent",
+        keyId: "user:concurrent",
+        name: "Committed before revocation",
+        expectedVersion: -1,
+        client: appendClient,
       });
+      await revokeClient.query("BEGIN");
+      await revokeClient.query("SET LOCAL lock_timeout = '50ms'");
+      await expect(
+        manager.revokeKey({
+          client: revokeClient,
+          schema,
+          keyId: "user:concurrent",
+        }),
+      ).rejects.toMatchObject({ code: "55P03" });
+      await revokeClient.query("ROLLBACK");
+      await appendClient.query("COMMIT");
 
-      // Verify data is readable before revocation
-      let events = await store.load("User-dave");
-      expect((events[0] as StoredEvent).data).toEqual({
-        name: "Dave",
-        public: "ok",
+      await revokeClient.query("BEGIN");
+      await manager.revokeKey({
+        client: revokeClient,
+        schema,
+        keyId: "user:concurrent",
       });
-
-      // Revoke key
-      await store.revokeKey("user:dave");
-
-      // After revocation, events become tombstones
-      events = await store.load("User-dave");
-      expect(events).toHaveLength(1);
-      const tombstone = events[0] as TombstonedEvent;
-      expect(tombstone.data).toBeNull();
-      expect(tombstone.tombstoned).toBe(true);
-      // Type and extensions should still be available
-      expect(tombstone.type).toBe("UserRegistered");
-      expect(tombstone.extensions).toBeDefined();
-    });
-
-    it("revokeKey is idempotent", async () => {
-      const store = makeStore();
-      await store.setup();
-      await store.createCryptoKey("user:frank");
-
-      await store.revokeKey("user:frank");
-      // Second revoke should not throw
-      await store.revokeKey("user:frank");
-    });
-
-    it("revokeKey throws CryptoKeyNotFoundError for missing key", async () => {
-      const store = makeStore();
-      await store.setup();
-
-      await expect(store.revokeKey("nonexistent")).rejects.toThrow(
-        CryptoKeyNotFoundError,
-      );
-    });
-
-    it("append with revoked key throws CryptoKeyRevokedError", async () => {
-      const store = makeStore();
-      await store.setup();
-      await store.createCryptoKey("user:gone");
-      await store.revokeKey("user:gone");
+      await appendClient.query("BEGIN");
+      await appendClient.query("SET LOCAL lock_timeout = '50ms'");
+      await expect(
+        appendPrivateName({
+          store,
+          streamId: "User-concurrent",
+          keyId: "user:concurrent",
+          name: "Must not be written",
+          expectedVersion: 1,
+          client: appendClient,
+        }),
+      ).rejects.toMatchObject({ code: "55P03" });
+      await appendClient.query("ROLLBACK");
+      await revokeClient.query("COMMIT");
 
       await expect(
-        store.append({
-          streamId: "User-gone",
-          expectedVersion: -1,
-          events: [
-            {
-              type: "UserRegistered",
-              data: { name: "Ghost" },
-              encryptedFields: ["name"],
-              cryptoKeyId: "user:gone",
-            },
-          ],
+        appendPrivateName({
+          store,
+          streamId: "User-concurrent",
+          keyId: "user:concurrent",
+          name: "Must still fail",
+          expectedVersion: 1,
         }),
       ).rejects.toThrow(CryptoKeyRevokedError);
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // ---------------------------------------------------------------------------
-  // Versioned secret rotation
-  // ---------------------------------------------------------------------------
-
-  describe("versioned secret rotation", () => {
-    it("loads versioned secrets from GDPR_CRYPTO_SECRETS", async () => {
-      const schema = uniqueSchema();
-      const previous = process.env.GDPR_CRYPTO_SECRETS;
-      process.env.GDPR_CRYPTO_SECRETS = "8:environment-secret,3:old-secret";
-      try {
-        const store = new EventStore({ pool, schema });
-        await store.setup();
-        await store.createCryptoKey("user:environment");
-
-        const client = await pool.connect();
-        try {
-          const result = await client.query<{ encrypted_key: Buffer }>(
-            `SELECT encrypted_key FROM ${schema}.crypto_keys WHERE key_id = 'user:environment'`,
-          );
-          expect(result.rows[0].encrypted_key.readUInt32BE(4)).toBe(8);
-        } finally {
-          client.release();
-        }
-      } finally {
-        if (previous === undefined) delete process.env.GDPR_CRYPTO_SECRETS;
-        else process.env.GDPR_CRYPTO_SECRETS = previous;
-      }
-    });
-
-    it("reads old versions and lazily re-wraps on the next write", async () => {
-      const schema = uniqueSchema();
-      const oldStore = new EventStore({
-        pool,
-        schema,
-        secrets: [{ version: 1, value: "old-secret" }],
-      });
-      await oldStore.setup();
-      await oldStore.createCryptoKey("user:rotated");
-      await oldStore.append({
-        streamId: "User-rotated",
-        expectedVersion: -1,
-        events: [
-          {
-            type: "Registered",
-            data: { name: "Alice" },
-            encryptedFields: ["name"],
-            cryptoKeyId: "user:rotated",
-          },
-        ],
-      });
-
-      const client = await pool.connect();
-      try {
-        const before = await client.query<{
-          encrypted_key: Buffer;
-          encrypted_data: Record<string, { version: number }>;
-        }>(
-          `SELECT k.encrypted_key, e.encrypted_data
-           FROM ${schema}.crypto_keys k
-           JOIN ${schema}.events e ON e.crypto_key_id = k.key_id
-           WHERE k.key_id = 'user:rotated' AND e.stream_version = 1`,
-        );
-        expect(before.rows[0].encrypted_key.readUInt32BE(4)).toBe(1);
-        expect(before.rows[0].encrypted_data.name.version).toBe(1);
-
-        const rotatedStore = new EventStore({
-          pool,
-          schema,
-          secrets: [
-            { version: 3, value: "new-secret" },
-            { version: 1, value: "old-secret" },
-          ],
-        });
-        await rotatedStore.setup();
-
-        expect((await rotatedStore.load("User-rotated"))[0].data).toEqual({
-          name: "Alice",
-        });
-        await rotatedStore.append({
-          streamId: "User-rotated",
-          expectedVersion: 1,
-          events: [
-            {
-              type: "Renamed",
-              data: { name: "Bob" },
-              encryptedFields: ["name"],
-              cryptoKeyId: "user:rotated",
-            },
-          ],
-        });
-
-        const after = await client.query<{
-          encrypted_key: Buffer;
-          encrypted_data: Record<string, { version: number }>;
-        }>(
-          `SELECT k.encrypted_key, e.encrypted_data
-           FROM ${schema}.crypto_keys k
-           JOIN ${schema}.events e ON e.crypto_key_id = k.key_id
-           WHERE k.key_id = 'user:rotated' AND e.stream_version = 1`,
-        );
-        const newEvent = await client.query<{
-          encrypted_data: Record<string, { version: number }>;
-        }>(
-          `SELECT encrypted_data FROM ${schema}.events
-           WHERE stream_id = 'User-rotated' AND stream_version = 2`,
-        );
-        expect(
-          after.rows[0].encrypted_key.equals(before.rows[0].encrypted_key),
-        ).toBe(false);
-        expect(after.rows[0].encrypted_key.readUInt32BE(4)).toBe(3);
-        expect(after.rows[0].encrypted_data.name.version).toBe(1);
-        expect(newEvent.rows[0].encrypted_data.name.version).toBe(3);
-        expect((await rotatedStore.load("User-rotated"))[1].data).toEqual({
-          name: "Bob",
-        });
-      } finally {
-        client.release();
-      }
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // Events without encryption load fine alongside encrypted events
-  // ---------------------------------------------------------------------------
-
-  describe("mixed encrypted / unencrypted", () => {
-    it("loads mixed events correctly", async () => {
-      const store = makeStore();
-      await store.setup();
-      await store.createCryptoKey("user:mix");
-
-      await store.append({
-        streamId: "Mix-1",
-        expectedVersion: -1,
-        events: [
-          { type: "Public", data: { info: "visible" } },
-          {
-            type: "Private",
-            data: { name: "Secret" },
-            encryptedFields: ["name"],
-            cryptoKeyId: "user:mix",
-          },
-        ],
-      });
-
-      const events = await store.load("Mix-1");
-      expect(events).toHaveLength(2);
-      expect(events[0].data).toEqual({ info: "visible" });
-      expect(events[1].data).toEqual({ name: "Secret" });
-    });
+      expect(await readRawEvents(schema, "User-concurrent")).toHaveLength(1);
+    } finally {
+      await appendClient.query("ROLLBACK");
+      await revokeClient.query("ROLLBACK");
+      appendClient.release();
+      revokeClient.release();
+    }
   });
 });

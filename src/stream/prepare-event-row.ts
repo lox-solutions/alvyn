@@ -30,8 +30,9 @@ async function encryptEventData(options: {
   client: PoolClient;
   schema: string;
   keyId: string;
+  eventId: string;
 }): Promise<{ dataToStore: unknown; encryptedData: unknown }> {
-  const { event, cryptoKeyManager, client, schema, keyId } = options;
+  const { event, cryptoKeyManager, client, schema, keyId, eventId } = options;
   const aesKey = await cryptoKeyManager.getKeyForEncryption({
     client,
     schema,
@@ -42,6 +43,10 @@ async function encryptEventData(options: {
     fields: event.encryptedFields!,
     aesKey,
     keyVersion: cryptoKeyManager.currentSecretVersion,
+    context: {
+      eventId,
+      cryptoKeyId: keyId,
+    },
   });
   return { dataToStore: result.cleanData, encryptedData: result.encryptedData };
 }
@@ -105,6 +110,7 @@ export async function prepareEventRow(options: {
       client,
       schema,
       keyId: cryptoKeyId,
+      eventId: `${options.streamId}/${options.version}`,
     });
     dataToStore = encrypted.dataToStore;
     encryptedData = encrypted.encryptedData;

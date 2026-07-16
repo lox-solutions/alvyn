@@ -122,6 +122,7 @@ function processEncryptedRow<T>(options: {
     cleanData: row.data as Record<string, unknown>,
     encryptedData: row.encrypted_data as Record<string, EncryptedFieldEntry>,
     aesKey,
+    context: { eventId: row.id, cryptoKeyId: row.crypto_key_id! },
   });
   const finalData = applyUpcasters({
     registry: upcasterRegistry,

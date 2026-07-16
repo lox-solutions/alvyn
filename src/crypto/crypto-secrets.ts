@@ -8,7 +8,11 @@ const MAX_SECRET_VERSION = 0xffffffff;
  * Values may contain colons; only the first colon separates version and value.
  */
 export function parseCryptoSecrets(value: string | undefined): CryptoSecret[] {
-  if (value === undefined || value.trim() === "") return [];
+  if (value === undefined) return [];
+  if (typeof value !== "string") {
+    throw new InvalidCryptoSecretsError("GDPR_CRYPTO_SECRETS must be a string");
+  }
+  if (value.trim() === "") return [];
 
   const entries = value.split(",").map((entry) => entry.trim());
   const secrets: CryptoSecret[] = [];
@@ -54,32 +58,47 @@ export function parseCryptoSecrets(value: string | undefined): CryptoSecret[] {
 export function validateCryptoSecrets(
   secrets: readonly CryptoSecret[],
 ): CryptoSecret[] {
-  if (secrets.length === 0) {
+  const configured: unknown = secrets;
+  if (!Array.isArray(configured)) {
+    throw new InvalidCryptoSecretsError("Crypto secrets must be an array");
+  }
+  if (configured.length === 0) {
     throw new InvalidCryptoSecretsError(
       "At least one crypto secret is required",
     );
   }
 
   const versions = new Set<number>();
-  return secrets.map((secret) => {
-    if (!secret || typeof secret.value !== "string") {
+  return configured.map((secret: unknown) => {
+    if (
+      !secret ||
+      typeof secret !== "object" ||
+      !("value" in secret) ||
+      typeof secret.value !== "string"
+    ) {
       throw new InvalidCryptoSecretsError(
         "Each crypto secret must have a string value",
       );
     }
-    validateVersion(secret.version);
-    if (secret.value.trim() === "") {
+    if (!("version" in secret) || typeof secret.version !== "number") {
       throw new InvalidCryptoSecretsError(
-        `Secret version ${secret.version} must have a non-empty value`,
+        "Each crypto secret must have a numeric version",
       );
     }
-    if (versions.has(secret.version)) {
+    const { value, version } = secret;
+    validateVersion(version);
+    if (value.trim() === "") {
       throw new InvalidCryptoSecretsError(
-        `Duplicate crypto secret version ${secret.version}`,
+        `Secret version ${version} must have a non-empty value`,
       );
     }
-    versions.add(secret.version);
-    return { version: secret.version, value: secret.value };
+    if (versions.has(version)) {
+      throw new InvalidCryptoSecretsError(
+        `Duplicate crypto secret version ${version}`,
+      );
+    }
+    versions.add(version);
+    return { version, value };
   });
 }
 
@@ -90,7 +109,7 @@ function validateVersion(version: number): void {
     version > MAX_SECRET_VERSION
   ) {
     throw new InvalidCryptoSecretsError(
-      `Invalid secret version "${String(version)}"; versions must be non-negative integers`,
+      `Invalid secret version "${String(version)}"; versions must be integers from 0 to ${MAX_SECRET_VERSION}`,
     );
   }
 }

@@ -66,7 +66,7 @@ export class CryptoKeyManager {
   async createKey(options: CryptoKeyOptions): Promise<void> {
     const { client, schema, keyId } = options;
     const entityKey = randomBytes(KEY_LENGTH);
-    const encryptedKey = this.encryptWithCurrentSecret(entityKey);
+    const encryptedKey = this.encryptWithCurrentSecret(entityKey, keyId);
 
     await client.query(
       `INSERT INTO ${schema}.crypto_keys (key_id, encrypted_key)
@@ -92,19 +92,22 @@ export class CryptoKeyManager {
    * encrypt new events with a revoked key.
    */
   async getKeyForEncryption(options: CryptoKeyOptions): Promise<Buffer> {
-    const stored = await this.getStoredKey(options);
+    const stored = await this.getStoredKey(options, true);
     if (stored === null) {
       throw new CryptoKeyRevokedError(options.keyId);
     }
 
     // Re-wrap older-version envelopes only when the entity is written.
     // Existing encrypted event data remains untouched.
-    if (stored.version !== this.currentSecretVersion) {
+    if (stored.version < this.currentSecretVersion) {
       await options.client.query(
         `UPDATE ${options.schema}.crypto_keys
          SET encrypted_key = $1
          WHERE key_id = $2 AND revoked_at IS NULL`,
-        [this.encryptWithCurrentSecret(stored.key), options.keyId],
+        [
+          this.encryptWithCurrentSecret(stored.key, options.keyId),
+          options.keyId,
+        ],
       );
     }
     return stored.key;
@@ -137,13 +140,14 @@ export class CryptoKeyManager {
 
   private async getStoredKey(
     options: CryptoKeyOptions,
+    lockForEncryption = false,
   ): Promise<{ key: Buffer; version: number } | null> {
     const { client, schema, keyId } = options;
     const result = await client.query<{
       encrypted_key: Buffer;
       revoked_at: Date | null;
     }>(
-      `SELECT encrypted_key, revoked_at FROM ${schema}.crypto_keys WHERE key_id = $1`,
+      `SELECT encrypted_key, revoked_at FROM ${schema}.crypto_keys WHERE key_id = $1${lockForEncryption ? " FOR UPDATE" : ""}`,
       [keyId],
     );
 
@@ -154,30 +158,32 @@ export class CryptoKeyManager {
     const row = result.rows[0];
     if (row.revoked_at !== null) return null;
 
-    const encryptedKey = Buffer.isBuffer(row.encrypted_key)
-      ? row.encrypted_key
-      : Buffer.from(row.encrypted_key);
-    return this.decryptStoredKey(encryptedKey);
+    return this.decryptStoredKey(row.encrypted_key, keyId);
   }
 
   // --- Versioned envelope encryption helpers ---
 
-  private encryptWithCurrentSecret(entityKey: Buffer): Buffer {
+  private encryptWithCurrentSecret(entityKey: Buffer, keyId: string): Buffer {
     const secretKey = this.secretKeys.get(this.currentSecretVersion)!;
     const iv = randomBytes(IV_LENGTH);
+    const version = Buffer.alloc(SECRET_VERSION_BYTE_LENGTH);
+    version.writeUInt32BE(this.currentSecretVersion, 0);
+    const header = Buffer.concat([ENVELOPE_MAGIC, version]);
     const cipher = createCipheriv(ALGORITHM, secretKey, iv, {
       authTagLength: AUTH_TAG_LENGTH,
     });
+    cipher.setAAD(this.envelopeAad(header, keyId));
     const encrypted = Buffer.concat([cipher.update(entityKey), cipher.final()]);
     const authTag = cipher.getAuthTag();
 
     // Format: [magic (4 bytes)][key version (uint32)][iv][authTag][ciphertext]
-    const version = Buffer.alloc(SECRET_VERSION_BYTE_LENGTH);
-    version.writeUInt32BE(this.currentSecretVersion, 0);
-    return Buffer.concat([ENVELOPE_MAGIC, version, iv, authTag, encrypted]);
+    return Buffer.concat([header, iv, authTag, encrypted]);
   }
 
-  private decryptStoredKey(encryptedKey: Buffer): {
+  private decryptStoredKey(
+    encryptedKey: Buffer,
+    keyId: string,
+  ): {
     key: Buffer;
     version: number;
   } {
@@ -198,6 +204,7 @@ export class CryptoKeyManager {
         encryptedKey,
         secretKey,
         offset: ENVELOPE_HEADER_LENGTH,
+        keyId,
       }),
       version,
     };
@@ -207,8 +214,9 @@ export class CryptoKeyManager {
     encryptedKey: Buffer;
     secretKey: Buffer;
     offset: number;
+    keyId: string;
   }): Buffer {
-    const { encryptedKey, secretKey, offset } = options;
+    const { encryptedKey, secretKey, offset, keyId } = options;
     const iv = encryptedKey.subarray(offset, offset + IV_LENGTH);
     const authTag = encryptedKey.subarray(
       offset + IV_LENGTH,
@@ -221,9 +229,21 @@ export class CryptoKeyManager {
     const decipher = createDecipheriv(ALGORITHM, secretKey, iv, {
       authTagLength: AUTH_TAG_LENGTH,
     });
+    decipher.setAAD(this.envelopeAad(encryptedKey.subarray(0, offset), keyId));
     decipher.setAuthTag(authTag);
 
     return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  }
+
+  private envelopeAad(header: Buffer, keyId: string): Buffer {
+    return Buffer.from(
+      JSON.stringify([
+        "alvyn:entity-key-envelope:v1",
+        keyId,
+        header.toString("base64"),
+      ]),
+      "utf8",
+    );
   }
 }
 

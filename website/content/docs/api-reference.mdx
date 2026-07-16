@@ -44,7 +44,11 @@ For example, `GDPR_CRYPTO_SECRETS=2:new-secret-base64,1:old-secret-base64`.
 The first secret is used for new encryption, while later entries are
 decryption-only. Keep old entries during rotation; no database migration or
 downtime is required, and entity keys are lazily re-wrapped on their next
-write.
+write. Versions must be unsigned 32-bit integers. Use a higher version for each
+new secret; gaps are allowed. In an HA deployment, first deploy
+`[old, new]` to every replica, then deploy `[new, old]`. See
+[Crypto-Shredding](/docs/crypto-shredding#rotating-secrets-without-downtime) for
+the rollout and old-secret removal procedure.
 
 ### Lifecycle
 
