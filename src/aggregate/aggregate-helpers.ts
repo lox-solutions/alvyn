@@ -4,7 +4,6 @@ import type {
   AggregateDefinition,
   AggregateEventInput,
   AggregateInstance,
-  EventMap,
 } from "./types";
 
 export function applyEvents<TState>(options: {
@@ -37,7 +36,7 @@ export function buildInstance<TState>(options: {
   };
 }
 
-export function mapEventsForAppend<TEvents extends EventMap>(options: {
+export function mapEventsForAppend<TEvents>(options: {
   events: AggregateEventInput<TEvents>[];
   encryption: AggregateDefinition<TEvents, unknown>["encryption"];
   entityId: string;

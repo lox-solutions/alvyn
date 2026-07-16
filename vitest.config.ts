@@ -2,7 +2,7 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "load-tests/**/*.test.ts"],
     testTimeout: 60_000,
     hookTimeout: 120_000,
     pool: "forks",
@@ -10,7 +10,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],
-      exclude: ["src/**/*.test.ts", "src/__tests__/**"],
+      exclude: ["src/**/*.test.ts", "src/__tests__/**", "load-tests/**"],
       reporter: ["text", "lcov", "json-summary", "json"],
       thresholds: {
         lines: 90,

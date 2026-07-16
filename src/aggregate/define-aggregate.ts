@@ -8,12 +8,12 @@ import type {
   AggregateReplayedEvent,
   AggregateSubscribeOptions,
   AggregateStoredEvent,
-  EventMap,
 } from "./types";
 import { loadFromReplay, mapEventsForAppend } from "./aggregate-helpers";
 import { isReservedSnapshotEventType } from "../snapshot/reserved-event-type";
+import type { ValidEventMap } from "../valid-event-map";
 
-async function loadDomainEvents<TEvents extends EventMap>(options: {
+async function loadDomainEvents<TEvents>(options: {
   eventStore: EventStore;
   streamId: string;
   maxEvents?: number;
@@ -25,7 +25,7 @@ async function loadDomainEvents<TEvents extends EventMap>(options: {
   ) as AggregateReplayedEvent<TEvents>[];
 }
 
-async function* filterDomainSubscription<TEvents extends EventMap>(
+async function* filterDomainSubscription<TEvents>(
   source: AsyncIterable<AggregateStoredEvent<TEvents>>,
 ): AsyncIterable<AggregateStoredEvent<TEvents>> {
   for await (const event of source) {
@@ -33,7 +33,7 @@ async function* filterDomainSubscription<TEvents extends EventMap>(
   }
 }
 
-function createAggregateHandle<TState, TEvents extends EventMap>(
+function createAggregateHandle<TState, TEvents>(
   def: AggregateDefinition<TEvents, TState>,
 ): AggregateHandle<TState, TEvents> {
   const { streamPrefix, evolve, encryption, upcasters } = def;
@@ -96,7 +96,7 @@ async function loadAggregate<TState>(options: {
   });
 }
 
-async function appendAggregate<TState, TEvents extends EventMap>(options: {
+async function appendAggregate<TState, TEvents>(options: {
   eventStore: EventStore;
   input: {
     entityId: string;
@@ -123,8 +123,10 @@ async function appendAggregate<TState, TEvents extends EventMap>(options: {
 }
 
 /** Defines a typed aggregate with full TypeScript inference. */
-export function defineAggregate<TState, TEvents extends EventMap>(): (
-  definition: AggregateDefinition<TEvents, TState>,
+export function defineAggregate<TState, TEvents>(): (
+  definition: [ValidEventMap<TEvents>] extends [never]
+    ? never
+    : AggregateDefinition<TEvents, TState>,
 ) => AggregateHandle<TState, TEvents> {
   return (def: AggregateDefinition<TEvents, TState>) =>
     createAggregateHandle(def);

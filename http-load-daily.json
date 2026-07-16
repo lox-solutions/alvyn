@@ -1,0 +1,405 @@
+{
+  "status": "passed",
+  "environment": {
+    "generatedAt": "2026-07-15T10:41:06.867Z",
+    "revision": "517b4e2add0fd803202347c5c22ce82baad17b02",
+    "alvynVersion": "0.1.2",
+    "nodeVersion": "v24.13.0",
+    "postgresqlVersion": "16.14",
+    "platform": "darwin",
+    "architecture": "arm64",
+    "osRelease": "25.5.0",
+    "cpuModel": "Apple M2 Pro",
+    "cpuCount": 12,
+    "totalMemoryBytes": 17179869184
+  },
+  "configuration": {
+    "profile": "daily",
+    "workerCount": 3,
+    "poolSize": 10,
+    "operationTimeoutMs": 30000,
+    "workerReadyTimeoutMs": 60000,
+    "runTimeoutMs": 7200000,
+    "accountCount": 100000,
+    "activeUserCount": 100000,
+    "operationsPerUser": 10,
+    "hotAccountCount": 0,
+    "hotTrafficPercent": 0,
+    "historyEventsPerAccount": 60,
+    "durationSeconds": 3600,
+    "seedBatchSize": 1000,
+    "requestCount": 1000000,
+    "readPercent": 70,
+    "concurrency": 256,
+    "maxRetries": 20,
+    "capacityStartRequestsPerSecond": 100,
+    "capacityStepRequestsPerSecond": 100,
+    "capacityMaxRequestsPerSecond": 2000,
+    "capacityStageSeconds": 30,
+    "sloReadP95Ms": 250,
+    "sloDepositP95Ms": 500,
+    "sloErrorRatePercent": 0.1,
+    "snapshotBenchmarkRequests": 0,
+    "snapshotBenchmarkHistoryEventsPerAccount": 10000,
+    "seed": 42,
+    "verbose": true,
+    "enforceSlos": true,
+    "outputPath": "http-load-daily.json"
+  },
+  "schema": "http_load_761271099dae911c",
+  "workerConnectionCount": 30,
+  "coordinatorConnectionCount": 10,
+  "connectionCount": 40,
+  "durationMs": 4121855.184833,
+  "phaseDurations": {
+    "setupMs": 5064.832083,
+    "seedingMs": 437268.789,
+    "workerStartupMs": 374.8692499999888,
+    "snapshotBenchmarkMs": 4.304375000006985,
+    "httpRequestsMs": 3600050.820625,
+    "verificationMs": 79089.12345900014
+  },
+  "request": {
+    "attempted": 1000000,
+    "succeeded": 1000000,
+    "failed": 0,
+    "conflicts": 0,
+    "retries": 0,
+    "latency": {
+      "count": 10000,
+      "p50": 2.0332500003278255,
+      "p95": 17.880750000011176,
+      "p99": 26.489916999998968
+    }
+  },
+  "read": {
+    "attempted": 700000,
+    "succeeded": 700000,
+    "failed": 0,
+    "conflicts": 0,
+    "retries": 0,
+    "latency": {
+      "count": 10000,
+      "p50": 1.4941250002011657,
+      "p95": 3.443625000072643,
+      "p99": 6.817875000007916
+    }
+  },
+  "deposit": {
+    "attempted": 300000,
+    "succeeded": 300000,
+    "failed": 0,
+    "conflicts": 0,
+    "retries": 0,
+    "latency": {
+      "count": 10000,
+      "p50": 10.966832999954931,
+      "p95": 23.912292000371963,
+      "p99": 33.177957999985665
+    }
+  },
+  "throughput": {
+    "durationMs": 3600050.820625,
+    "successfulRequests": 1000000,
+    "requestsPerSecond": 277.77385648861235
+  },
+  "trafficPhases": [
+    {
+      "name": "off-peak",
+      "requestOffset": 0,
+      "requestCount": 100000,
+      "targetRequestsPerSecond": 138.88888888888889,
+      "durationMs": 720002.7672499999,
+      "achievedRequestsPerSecond": 138.88835508499918,
+      "read": {
+        "attempted": 70000,
+        "succeeded": 70000,
+        "failed": 0,
+        "conflicts": 0,
+        "retries": 0,
+        "latency": {
+          "count": 10000,
+          "p50": 2.2886660000076517,
+          "p95": 3.9185419999994338,
+          "p99": 6.973333999980241
+        }
+      },
+      "deposit": {
+        "attempted": 30000,
+        "succeeded": 30000,
+        "failed": 0,
+        "conflicts": 0,
+        "retries": 0,
+        "latency": {
+          "count": 10000,
+          "p50": 10.653959000017494,
+          "p95": 18.026791999931447,
+          "p99": 26.5342079999391
+        }
+      },
+      "request": {
+        "attempted": 100000,
+        "succeeded": 100000,
+        "failed": 0,
+        "conflicts": 0,
+        "retries": 0,
+        "latency": {
+          "count": 10000,
+          "p50": 2.7671669999836013,
+          "p95": 13.883207999984734,
+          "p99": 19.34991600003559
+        }
+      },
+      "errors": [],
+      "slo": {
+        "enforced": true,
+        "passed": true,
+        "checks": [
+          {
+            "metric": "read_p95_ms",
+            "actual": 3.9185419999994338,
+            "threshold": 250,
+            "passed": true
+          },
+          {
+            "metric": "deposit_p95_ms",
+            "actual": 18.026791999931447,
+            "threshold": 500,
+            "passed": true
+          },
+          {
+            "metric": "error_rate_percent",
+            "actual": 0,
+            "threshold": 0.1,
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "peak",
+      "requestOffset": 100000,
+      "requestCount": 800000,
+      "targetRequestsPerSecond": 370.3703703703704,
+      "durationMs": 2160004.64875,
+      "achievedRequestsPerSecond": 370.36957326131767,
+      "read": {
+        "attempted": 560000,
+        "succeeded": 560000,
+        "failed": 0,
+        "conflicts": 0,
+        "retries": 0,
+        "latency": {
+          "count": 10000,
+          "p50": 1.2144579999148846,
+          "p95": 2.3704999999608845,
+          "p99": 6.028708999976516
+        }
+      },
+      "deposit": {
+        "attempted": 240000,
+        "succeeded": 240000,
+        "failed": 0,
+        "conflicts": 0,
+        "retries": 0,
+        "latency": {
+          "count": 10000,
+          "p50": 11.424665999831632,
+          "p95": 25.32404200034216,
+          "p99": 38.27054200042039
+        }
+      },
+      "request": {
+        "attempted": 800000,
+        "succeeded": 800000,
+        "failed": 0,
+        "conflicts": 0,
+        "retries": 0,
+        "latency": {
+          "count": 10000,
+          "p50": 1.518625000026077,
+          "p95": 18.933207999914885,
+          "p99": 28.424709000159055
+        }
+      },
+      "errors": [],
+      "slo": {
+        "enforced": true,
+        "passed": true,
+        "checks": [
+          {
+            "metric": "read_p95_ms",
+            "actual": 2.3704999999608845,
+            "threshold": 250,
+            "passed": true
+          },
+          {
+            "metric": "deposit_p95_ms",
+            "actual": 25.32404200034216,
+            "threshold": 500,
+            "passed": true
+          },
+          {
+            "metric": "error_rate_percent",
+            "actual": 0,
+            "threshold": 0.1,
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "cool-down",
+      "requestOffset": 900000,
+      "requestCount": 100000,
+      "targetRequestsPerSecond": 138.88888888888889,
+      "durationMs": 720000.8895419999,
+      "achievedRequestsPerSecond": 138.88871729535092,
+      "read": {
+        "attempted": 70000,
+        "succeeded": 70000,
+        "failed": 0,
+        "conflicts": 0,
+        "retries": 0,
+        "latency": {
+          "count": 10000,
+          "p50": 2.7217919998802245,
+          "p95": 3.838874999899417,
+          "p99": 6.246999999973923
+        }
+      },
+      "deposit": {
+        "attempted": 30000,
+        "succeeded": 30000,
+        "failed": 0,
+        "conflicts": 0,
+        "retries": 0,
+        "latency": {
+          "count": 10000,
+          "p50": 7.002582999877632,
+          "p95": 10.37783299991861,
+          "p99": 14.568208000157028
+        }
+      },
+      "request": {
+        "attempted": 100000,
+        "succeeded": 100000,
+        "failed": 0,
+        "conflicts": 0,
+        "retries": 0,
+        "latency": {
+          "count": 10000,
+          "p50": 3.1616670000366867,
+          "p95": 8.753333000000566,
+          "p99": 11.387540999799967
+        }
+      },
+      "errors": [],
+      "slo": {
+        "enforced": true,
+        "passed": true,
+        "checks": [
+          {
+            "metric": "read_p95_ms",
+            "actual": 3.838874999899417,
+            "threshold": 250,
+            "passed": true
+          },
+          {
+            "metric": "deposit_p95_ms",
+            "actual": 10.37783299991861,
+            "threshold": 500,
+            "passed": true
+          },
+          {
+            "metric": "error_rate_percent",
+            "actual": 0,
+            "threshold": 0.1,
+            "passed": true
+          }
+        ]
+      }
+    }
+  ],
+  "slo": {
+    "enforced": true,
+    "passed": true,
+    "checks": [
+      {
+        "metric": "read_p95_ms",
+        "actual": 3.443625000072643,
+        "threshold": 250,
+        "passed": true
+      },
+      {
+        "metric": "deposit_p95_ms",
+        "actual": 23.912292000371963,
+        "threshold": 500,
+        "passed": true
+      },
+      {
+        "metric": "error_rate_percent",
+        "actual": 0,
+        "threshold": 0.1,
+        "passed": true
+      }
+    ]
+  },
+  "capacity": null,
+  "snapshotBenchmark": {
+    "requestCount": 0,
+    "historyEventsPerAccount": 10000,
+    "withoutSnapshots": {
+      "count": 0,
+      "p50": null,
+      "p95": null,
+      "p99": null
+    },
+    "withSnapshots": {
+      "count": 0,
+      "p50": null,
+      "p95": null,
+      "p99": null
+    },
+    "latencyImprovementPercent": {
+      "p50": null,
+      "p95": null,
+      "p99": null
+    },
+    "snapshotReplay": {
+      "count": 0,
+      "totalEvents": 0,
+      "averageEvents": null,
+      "maxEvents": null
+    }
+  },
+  "errors": [],
+  "verification": {
+    "accountCount": 100000,
+    "eventCount": 6300000,
+    "storedEventCount": 6400000,
+    "snapshotEventCount": 100000,
+    "expectedEventCount": 6300000,
+    "seedEventCount": 6000000,
+    "seedSnapshotEventCount": 0,
+    "successfulDeposits": 300000,
+    "finalBalance": 7550000
+  },
+  "workers": [
+    {
+      "workerId": 0,
+      "port": 56399,
+      "requestAttempts": 333334
+    },
+    {
+      "workerId": 1,
+      "port": 56400,
+      "requestAttempts": 333333
+    },
+    {
+      "workerId": 2,
+      "port": 56401,
+      "requestAttempts": 333333
+    }
+  ]
+}

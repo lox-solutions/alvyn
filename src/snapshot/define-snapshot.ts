@@ -1,15 +1,16 @@
 import type { PoolClient } from "pg";
-import type { EventMap } from "../aggregate/types";
 import type { EventStore } from "../event-store";
 import type { ReplayedEvent, StoredEvent } from "../types";
 import type {
   SnapshotDefinition,
+  SnapshotEncryptionConfig,
   SnapshotHandle,
   SnapshotLoadResult,
   SnapshotUpdateAfterAppendOptions,
 } from "./types";
+import type { ValidEventMap } from "../valid-event-map";
 
-function createSnapshotHandle<TState, TEvents extends EventMap>(
+function createSnapshotHandle<TState, TEvents>(
   def: SnapshotDefinition<TState, TEvents>,
 ): SnapshotHandle<TState> {
   const {
@@ -149,7 +150,7 @@ async function updateSnapshotAfterAppend<TState>(options: {
   every: number;
   initialState: TState;
   evolveMap: Record<string, (state: TState, event: ReplayedEvent) => TState>;
-  encryption: SnapshotDefinition<TState, EventMap>["encryption"];
+  encryption?: SnapshotEncryptionConfig;
   client?: PoolClient;
 }): Promise<void> {
   const {
@@ -193,8 +194,10 @@ async function updateSnapshotAfterAppend<TState>(options: {
 }
 
 /** Defines a typed event-backed snapshot with full TypeScript inference. */
-export function defineSnapshot<TState, TEvents extends EventMap>(): (
-  definition: SnapshotDefinition<TState, TEvents>,
+export function defineSnapshot<TState, TEvents>(): (
+  definition: [ValidEventMap<TEvents>] extends [never]
+    ? never
+    : SnapshotDefinition<TState, TEvents>,
 ) => SnapshotHandle<TState> {
   return (def: SnapshotDefinition<TState, TEvents>) =>
     createSnapshotHandle(def);

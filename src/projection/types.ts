@@ -1,6 +1,5 @@
 import type { PoolClient } from "pg";
 
-import type { EventMap } from "../aggregate/types";
 import type { StoredEvent } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -42,7 +41,7 @@ export interface ProjectionHandlerContext {
  *
  * @template TEvents - The aggregate's event map (same type used in defineAggregate).
  */
-export interface ProjectionDefinition<TEvents extends EventMap> {
+export interface ProjectionDefinition<TEvents> {
   /** Unique name for checkpoint tracking in the `projections` table. */
   projectionName: string;
   /** The stream prefix to filter on (e.g. "AgentRun"). Only events from matching streams are processed. */

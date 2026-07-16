@@ -386,7 +386,7 @@ interface ProjectionHandlerContext {
 ### Snapshot Types
 
 ```typescript
-interface SnapshotDefinition<TState, TEvents extends EventMap> {
+interface SnapshotDefinition<TState, TEvents> {
   streamPrefix: string;
   snapshotName: string;
   every: number;
@@ -427,9 +427,7 @@ interface OutboxEntry {
 ### Aggregate Types
 
 ```typescript
-type EventMap = Record<string, unknown>;
-
-type AggregateEventInput<TEvents extends EventMap> = {
+type AggregateEventInput<TEvents> = {
   [K in keyof TEvents & string]: {
     type: K;
     data: TEvents[K];
@@ -444,11 +442,11 @@ interface AggregateInstance<TState> {
   streamId: string;
 }
 
-type AggregateStoredEvent<TEvents extends EventMap> = {
+type AggregateStoredEvent<TEvents> = {
   [K in keyof TEvents & string]: StoredEvent<TEvents[K]> & { type: K };
 }[keyof TEvents & string];
 
-type AggregateReplayedEvent<TEvents extends EventMap> =
+type AggregateReplayedEvent<TEvents> =
   | AggregateStoredEvent<TEvents>
   | TombstonedEvent;
 

@@ -24,11 +24,11 @@ afterAll(async () => {
   await stopPostgres();
 });
 
-type OrderEvents = {
+interface OrderEvents {
   OrderPlaced: { total: number };
   OrderShipped: { tracking: string };
   OrderCancelled: Record<string, never>;
-};
+}
 
 type OrderState = {
   status: string;
