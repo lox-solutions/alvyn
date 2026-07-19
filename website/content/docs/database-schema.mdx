@@ -142,13 +142,13 @@ CREATE TABLE IF NOT EXISTS {schema}.crypto_keys (
 );
 ```
 
-| Column          | Type                   | Description                                  |
-| --------------- | ---------------------- | -------------------------------------------- |
-| `key_id`        | `TEXT PK`              | Entity key identifier (e.g. `"user:abc123"`) |
-| `encrypted_key` | `BYTEA NOT NULL`       | AES key encrypted by master key              |
-| `algorithm`     | `TEXT NOT NULL`        | Always `"aes-256-gcm"`                       |
-| `revoked_at`    | `TIMESTAMPTZ NULL`     | `NULL` = active, set = revoked               |
-| `created_at`    | `TIMESTAMPTZ NOT NULL` | Auto-set by database                         |
+| Column          | Type                   | Description                                         |
+| --------------- | ---------------------- | --------------------------------------------------- |
+| `key_id`        | `TEXT PK`              | Entity key identifier (e.g. `"user:abc123"`)        |
+| `encrypted_key` | `BYTEA NOT NULL`       | Versioned envelope containing the encrypted AES key |
+| `algorithm`     | `TEXT NOT NULL`        | Always `"aes-256-gcm"`                              |
+| `revoked_at`    | `TIMESTAMPTZ NULL`     | `NULL` = active, set = revoked                      |
+| `created_at`    | `TIMESTAMPTZ NOT NULL` | Auto-set by database                                |
 
 Revoked keys are **not deleted** — the `revoked_at` timestamp provides an audit trail for GDPR compliance.
 

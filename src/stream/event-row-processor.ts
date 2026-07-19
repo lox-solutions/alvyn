@@ -1,7 +1,10 @@
 import type { PoolClient } from "pg";
 
 import type { CryptoKeyManager } from "../crypto/crypto-key-manager";
-import { decryptFields } from "../crypto/field-encryptor";
+import {
+  decryptFields,
+  type EncryptedFieldEntry,
+} from "../crypto/field-encryptor";
 import { CryptoKeyNotFoundError } from "../errors";
 import type {
   CloudEventExtensions,
@@ -117,11 +120,9 @@ function processEncryptedRow<T>(options: {
   const { row, ctx, aesKey, upcasterRegistry } = options;
   const decryptedData = decryptFields({
     cleanData: row.data as Record<string, unknown>,
-    encryptedData: row.encrypted_data as Record<
-      string,
-      { ciphertext: string; iv: string; authTag: string }
-    >,
+    encryptedData: row.encrypted_data as Record<string, EncryptedFieldEntry>,
     aesKey,
+    context: { eventId: row.id, cryptoKeyId: row.crypto_key_id! },
   });
   const finalData = applyUpcasters({
     registry: upcasterRegistry,

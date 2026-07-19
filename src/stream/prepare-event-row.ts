@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import type { CryptoKeyManager } from "../crypto/crypto-key-manager";
 import { encryptFields } from "../crypto/field-encryptor";
+import { CryptoSecretsRequiredError } from "../errors";
 import type { AppendEventInput, CloudEventExtensions } from "../types";
 
 const CLOUDEVENTS_SPEC_VERSION = "1.0";
@@ -29,8 +30,9 @@ async function encryptEventData(options: {
   client: PoolClient;
   schema: string;
   keyId: string;
+  eventId: string;
 }): Promise<{ dataToStore: unknown; encryptedData: unknown }> {
-  const { event, cryptoKeyManager, client, schema, keyId } = options;
+  const { event, cryptoKeyManager, client, schema, keyId, eventId } = options;
   const aesKey = await cryptoKeyManager.getKeyForEncryption({
     client,
     schema,
@@ -40,6 +42,11 @@ async function encryptEventData(options: {
     data: event.data as Record<string, unknown>,
     fields: event.encryptedFields!,
     aesKey,
+    keyVersion: cryptoKeyManager.currentSecretVersion,
+    context: {
+      eventId,
+      cryptoKeyId: keyId,
+    },
   });
   return { dataToStore: result.cleanData, encryptedData: result.encryptedData };
 }
@@ -96,14 +103,14 @@ export async function prepareEventRow(options: {
   let cryptoKeyId: string | null = event.cryptoKeyId ?? null;
 
   if (event.encryptedFields?.length && cryptoKeyId) {
-    if (!cryptoKeyManager)
-      throw new Error("Crypto operations require a master encryption key");
+    if (!cryptoKeyManager) throw new CryptoSecretsRequiredError();
     const encrypted = await encryptEventData({
       event,
       cryptoKeyManager,
       client,
       schema,
       keyId: cryptoKeyId,
+      eventId: `${options.streamId}/${options.version}`,
     });
     dataToStore = encrypted.dataToStore;
     encryptedData = encrypted.encryptedData;

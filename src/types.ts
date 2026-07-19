@@ -25,11 +25,11 @@ export interface EventStoreConfig {
   /** PostgreSQL schema name for all event store tables (default: "event_store") */
   schema?: string;
   /**
-   * Master encryption key (hex-encoded, 256-bit / 64 hex chars).
-   * Required only if using crypto-shredding features.
-   * Used for envelope encryption of per-entity AES keys.
+   * Ordered versioned secrets for crypto-shredding. The first entry is
+   * used for new data; later entries are retained for decryption only.
+   * `GDPR_CRYPTO_SECRETS` is used when this option is omitted.
    */
-  masterEncryptionKey?: string;
+  secrets?: CryptoSecret[];
   /**
    * Default CloudEvents `source` URI-reference for events produced by this store.
    * Defaults to "event-store". Override with an application-specific URI
@@ -38,6 +38,12 @@ export interface EventStoreConfig {
   defaultSource?: string;
   /** Snapshot definitions maintained synchronously after matching appends */
   snapshots?: SnapshotHandle<unknown>[];
+}
+
+/** A versioned secret used to wrap per-entity encryption keys. */
+export interface CryptoSecret {
+  version: number;
+  value: string;
 }
 
 // ---------------------------------------------------------------------------

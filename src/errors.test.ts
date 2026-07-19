@@ -4,7 +4,7 @@ import {
   StreamNotFoundError,
   CryptoKeyRevokedError,
   CryptoKeyNotFoundError,
-  MasterKeyRequiredError,
+  CryptoSecretsRequiredError,
   EventStoreNotInitializedError,
   InvalidSchemaNameError,
 } from "./errors";
@@ -55,12 +55,12 @@ describe("errors", () => {
     });
   });
 
-  describe("MasterKeyRequiredError", () => {
+  describe("CryptoSecretsRequiredError", () => {
     it("sets name and descriptive message", () => {
-      const err = new MasterKeyRequiredError();
+      const err = new CryptoSecretsRequiredError();
       expect(err).toBeInstanceOf(Error);
-      expect(err.name).toBe("MasterKeyRequiredError");
-      expect(err.message).toContain("masterEncryptionKey");
+      expect(err.name).toBe("CryptoSecretsRequiredError");
+      expect(err.message).toContain("secrets");
     });
   });
 
@@ -89,7 +89,7 @@ describe("errors", () => {
       new StreamNotFoundError("s"),
       new CryptoKeyRevokedError("k"),
       new CryptoKeyNotFoundError("k"),
-      new MasterKeyRequiredError(),
+      new CryptoSecretsRequiredError(),
       new EventStoreNotInitializedError(),
       new InvalidSchemaNameError("x"),
     ];

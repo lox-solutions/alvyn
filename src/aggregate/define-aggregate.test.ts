@@ -9,7 +9,7 @@ import {
   stopPostgres,
   createTestPool,
   uniqueSchema,
-  testMasterKey,
+  testSecretValue,
 } from "../__tests__/setup";
 
 let pool: pg.Pool;
@@ -316,7 +316,7 @@ describe("defineAggregate", () => {
       const store = new EventStore({
         pool,
         schema: uniqueSchema(),
-        masterEncryptionKey: testMasterKey(),
+        secrets: [{ version: 1, value: testSecretValue() }],
       });
       await store.setup();
       await store.createCryptoKey("user:enc1");
@@ -365,7 +365,7 @@ describe("defineAggregate", () => {
       const store = new EventStore({
         pool,
         schema: uniqueSchema(),
-        masterEncryptionKey: testMasterKey(),
+        secrets: [{ version: 1, value: testSecretValue() }],
       });
       await store.setup();
       await store.createCryptoKey("mix:m1");
