@@ -221,6 +221,25 @@ describe("entity crypto keys", () => {
       await expect(manager.getKeyForEncryption(options)).rejects.toThrow(
         CryptoKeyRevokedError,
       );
+
+      const result = await client.query<{
+        key_id: string;
+        encrypted_key: Buffer | null;
+        revoked_at: Date | null;
+        algorithm: string;
+        created_at: Date;
+      }>(
+        `SELECT key_id, encrypted_key, revoked_at, algorithm, created_at
+         FROM ${schema}.crypto_keys WHERE key_id = $1`,
+        [options.keyId],
+      );
+      expect(result.rows[0]).toMatchObject({
+        key_id: options.keyId,
+        encrypted_key: null,
+        algorithm: "aes-256-gcm",
+      });
+      expect(result.rows[0].revoked_at).toBeInstanceOf(Date);
+      expect(result.rows[0].created_at).toBeInstanceOf(Date);
     }));
 
   it("cannot revoke a key that does not exist", () =>

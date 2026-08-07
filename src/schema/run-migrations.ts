@@ -102,7 +102,7 @@ async function createSupportTables(
   await client.query(`
     CREATE TABLE IF NOT EXISTS ${schema}.crypto_keys (
       key_id           TEXT             PRIMARY KEY,
-      encrypted_key    BYTEA            NOT NULL,
+      encrypted_key    BYTEA            NULL,
       algorithm        TEXT             NOT NULL DEFAULT 'aes-256-gcm',
       revoked_at       TIMESTAMPTZ      NULL,
       created_at       TIMESTAMPTZ      NOT NULL DEFAULT now()

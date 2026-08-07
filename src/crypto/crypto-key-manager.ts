@@ -45,8 +45,8 @@ export interface CryptoKeyOptions {
  * Manages per-entity AES-256 encryption keys using envelope encryption.
  *
  * Each entity (e.g. a user) gets its own AES key, which is stored encrypted
- * by a configured secret. Revoking an entity's key makes their PII unreadable
- * without touching any other entity's data.
+ * by a configured secret. Revoking an entity's key destroys its stored key
+ * material, making their PII unreadable without touching any other entity's data.
  */
 export class CryptoKeyManager {
   private readonly secretKeys: Map<number, Buffer>;
@@ -143,27 +143,23 @@ export class CryptoKeyManager {
   }
 
   /**
-   * Revokes a crypto key by setting revoked_at.
+   * Revokes a crypto key and destroys its encrypted key material.
    * Events encrypted with this key will be returned as tombstones on read.
-   * The key is NOT deleted — this is intentional for audit trails.
+   * The key row is retained for its audit metadata.
    */
   async revokeKey(options: CryptoKeyOptions): Promise<void> {
     const { client, schema, keyId } = options;
     const result = await client.query(
-      `UPDATE ${schema}.crypto_keys SET revoked_at = now() WHERE key_id = $1 AND revoked_at IS NULL`,
+      `UPDATE ${schema}.crypto_keys
+       SET encrypted_key = NULL,
+           revoked_at = COALESCE(revoked_at, now())
+       WHERE key_id = $1
+       RETURNING key_id`,
       [keyId],
     );
 
     if (result.rowCount === 0) {
-      // Check if key exists at all
-      const exists = await client.query(
-        `SELECT 1 FROM ${schema}.crypto_keys WHERE key_id = $1`,
-        [keyId],
-      );
-      if (exists.rows.length === 0) {
-        throw new CryptoKeyNotFoundError(keyId);
-      }
-      // Key exists but was already revoked — idempotent, no error
+      throw new CryptoKeyNotFoundError(keyId);
     }
   }
 
@@ -173,7 +169,7 @@ export class CryptoKeyManager {
   ): Promise<{ key: Buffer; version: number } | null> {
     const { client, schema, keyId } = options;
     const result = await client.query<{
-      encrypted_key: Buffer;
+      encrypted_key: Buffer | null;
       revoked_at: Date | null;
     }>(
       `SELECT encrypted_key, revoked_at FROM ${schema}.crypto_keys WHERE key_id = $1${lockForEncryption ? " FOR UPDATE" : ""}`,
@@ -186,6 +182,9 @@ export class CryptoKeyManager {
 
     const row = result.rows[0];
     if (row.revoked_at !== null) return null;
+    if (row.encrypted_key === null) {
+      throw new Error(`Crypto key material is missing for key "${keyId}"`);
+    }
 
     return this.decryptStoredKey(row.encrypted_key, keyId);
   }

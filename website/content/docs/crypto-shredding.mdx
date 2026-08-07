@@ -317,15 +317,27 @@ const user = await User.load(eventStore, "abc123");
 
 Within a single transaction:
 
-1. Sets `revoked_at = now()` on the crypto key (the key is **not deleted** — kept for audit trail)
+1. Sets `revoked_at = now()` on the crypto key.
+2. Sets `encrypted_key = NULL`, permanently removing the database copy of the wrapped entity key.
 
-The key is never deleted from the database. This is intentional — the `revoked_at` timestamp provides an audit trail for GDPR compliance.
+The crypto-key row remains only to retain non-sensitive audit metadata such as
+`key_id`, `revoked_at`, `algorithm`, and `created_at`. Revocation is idempotent:
+repeating it keeps the row tombstoned and the key material absent.
 
 Appends lock the entity-key row until their transaction commits. Revocation
 uses the same PostgreSQL row lock, so the ordering is safe across multiple
 application replicas: an append that acquired the lock first commits before
 revocation, while an append that starts after revocation sees the revoked key
 and fails with `CryptoKeyRevokedError`.
+
+## Erasure limitations
+
+This destroys the key material in the live database and prevents recovery with
+any currently configured secret. It cannot erase copies already captured in
+database backups, replicas, WAL archives, caches, logs, memory, or secret
+backups. Retention and deletion policies for those systems must be managed
+separately. Any future encryption or algorithm migration job must exclude rows
+where `revoked_at IS NOT NULL`.
 
 ## Tombstoned Events
 
