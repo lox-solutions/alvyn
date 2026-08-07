@@ -34,7 +34,9 @@ longer resolves to personal data:
 
 ```typescript
 await db.transaction(async (tx) => {
-  await tx.query("DELETE FROM person_addresses WHERE person_id = $1", [personId]);
+  await tx.query("DELETE FROM person_addresses WHERE person_id = $1", [
+    personId,
+  ]);
   await tx.query("DELETE FROM persons WHERE person_id = $1", [personId]);
 });
 ```
