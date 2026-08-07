@@ -10,6 +10,7 @@ import {
 import { computeSafeWatermark } from "../stream/compute-safe-watermark";
 import { buildSubjectFilter } from "./subject-filter";
 import type { SubscribeOptions } from "./subscribe-options";
+import { validateSubscribeOptions } from "../input-validation";
 
 const DEFAULT_BATCH_SIZE = 500;
 const DEFAULT_POLL_INTERVAL_MS = 1000;
@@ -160,6 +161,7 @@ export async function* subscribe(
   deps: SubscribeDeps,
 ): AsyncGenerator<StoredEvent, void, void> {
   const options = deps.options ?? {};
+  validateSubscribeOptions(options);
   const signal = options.signal;
   const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
   const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;

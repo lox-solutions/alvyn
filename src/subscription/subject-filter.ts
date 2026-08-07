@@ -28,6 +28,10 @@ export interface BuiltFilter {
   params: (string | string[])[];
 }
 
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, "\\$&");
+}
+
 /**
  * Builds the SQL predicate fragment for a subject/event-type filter.
  *
@@ -48,9 +52,11 @@ export function buildSubjectFilter(
       params.push(filter.subject);
       idx += 1;
       const prefix = `$${idx}`;
-      params.push(`${filter.subject}%`);
+      params.push(`${escapeLikePattern(filter.subject)}%`);
       idx += 1;
-      clauses.push(`(subject = ${exact} OR subject LIKE ${prefix})`);
+      clauses.push(
+        `(subject = ${exact} OR subject LIKE ${prefix} ESCAPE '\\')`,
+      );
     } else {
       clauses.push(`subject = $${idx}`);
       params.push(filter.subject);

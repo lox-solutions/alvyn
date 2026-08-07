@@ -97,6 +97,7 @@ export {
   CryptoKeyRevokedError,
   CryptoSecretVersionNotFoundError,
   EventStoreNotInitializedError,
+  InvalidArgumentError,
   InvalidSchemaNameError,
   InvalidCryptoSecretsError,
   CryptoSecretsRequiredError,

@@ -18,7 +18,8 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:load": "tsx load-tests/runner.ts",
     "test:load:http": "tsx load-tests/http-runner.ts",
@@ -30,6 +31,8 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "audit:prod": "pnpm audit --prod --audit-level high",
+    "pack:check": "node scripts/check-package.mjs",
     "prepublishOnly": "pnpm run build"
   },
   "keywords": [

@@ -516,6 +516,60 @@ describe("EventStore", () => {
         expect(err.actualVersion).toBe(2);
       }
     });
+
+    it("blocks a concurrent append on the same stream", async () => {
+      const schema = uniqueSchema();
+      const store = new EventStore({ pool, schema });
+      await store.setup();
+      const streamId = "LOCK-1";
+
+      const firstClient = await pool.connect();
+      const secondClient = await pool.connect();
+      let firstTransactionActive = false;
+      let secondTransactionActive = false;
+
+      try {
+        await firstClient.query("BEGIN");
+        firstTransactionActive = true;
+        await store.append(
+          {
+            streamId,
+            expectedVersion: -1,
+            events: [{ type: "A", data: {} }],
+          },
+          { client: firstClient },
+        );
+
+        await secondClient.query("BEGIN");
+        secondTransactionActive = true;
+        await secondClient.query("SET LOCAL lock_timeout = '50ms'");
+
+        await expect(
+          store.append(
+            {
+              streamId,
+              expectedVersion: 1,
+              events: [{ type: "B", data: {} }],
+            },
+            { client: secondClient },
+          ),
+        ).rejects.toMatchObject({ code: "55P03" });
+
+        await secondClient.query("ROLLBACK");
+        secondTransactionActive = false;
+        await firstClient.query("COMMIT");
+        firstTransactionActive = false;
+
+        await expect(store.load(streamId)).resolves.toMatchObject([
+          { type: "A", streamVersion: 1 },
+        ]);
+      } finally {
+        if (secondTransactionActive) await secondClient.query("ROLLBACK");
+        if (firstTransactionActive) await firstClient.query("ROLLBACK");
+        secondClient.release();
+        firstClient.release();
+      }
+    });
   });
 
   // ---------------------------------------------------------------------------

@@ -36,9 +36,10 @@ async function acquireLockAndValidateVersion(options: {
   expectedVersion: number;
 }): Promise<number> {
   const { client, schema, streamId, expectedVersion } = options;
-  await client.query(`SELECT pg_advisory_xact_lock(1936024421, hashtext($1))`, [
-    streamId,
-  ]);
+  await client.query(
+    `SELECT pg_advisory_xact_lock(hashtextextended($1, 1936024421))`,
+    [streamId],
+  );
   const versionResult = await client.query<{ max_version: number | null }>(
     `SELECT MAX(stream_version) as max_version FROM ${schema}.events WHERE stream_id = $1`,
     [streamId],

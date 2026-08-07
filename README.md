@@ -667,9 +667,20 @@ pnpm test
 
 # Run with coverage
 pnpm test:coverage
+
+# Run the release safety gates
+pnpm typecheck
+pnpm lint
+pnpm audit:prod
+pnpm pack:check
+
+# Build the documentation site
+pnpm --filter website build
 ```
 
 The test suite uses [Testcontainers](https://testcontainers.com/) to spin up PostgreSQL instances automatically — you just need Docker running.
+The dependency audit rejects high-severity production vulnerabilities, and the
+package check ensures that test and load-test artifacts are not published.
 
 Please open an [issue](https://github.com/lox-solutions/alvyn/issues) or [pull request](https://github.com/lox-solutions/alvyn/pulls) on GitHub.
 

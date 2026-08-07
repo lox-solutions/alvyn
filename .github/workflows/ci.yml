@@ -25,8 +25,13 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run format:check
       - run: pnpm run lint
+      - run: pnpm run typecheck
       - run: pnpm run build
-      - run: pnpm vitest run --coverage
+      - run: pnpm run test:coverage
+      - run: pnpm run audit:prod
+      - run: pnpm run pack:check
+      - run: pnpm --filter website run types:check
+      - run: pnpm --filter website run build
 
       - name: Post coverage comment on PR
         if: github.event_name == 'pull_request'
