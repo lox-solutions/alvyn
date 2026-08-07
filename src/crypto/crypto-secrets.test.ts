@@ -35,6 +35,12 @@ describe("environment crypto secrets", () => {
     expect(parseCryptoSecretVersion(" 7 ")).toBe(7);
   });
 
+  it("rejects a non-string current version", () => {
+    expect(() => parseCryptoSecretVersion(7 as unknown as string)).toThrow(
+      InvalidCryptoSecretsError,
+    );
+  });
+
   it("accepts both version boundaries", () => {
     expect(parseCryptoSecrets("0:first,4294967295:last")).toEqual([
       { version: 0, value: "first" },
@@ -168,6 +174,10 @@ describe("code-configured crypto secrets", () => {
       { currentVersion: 2, secrets: [{ version: 1, value: "secret" }] },
     ],
     ["missing current version", { secrets: [{ version: 1, value: "secret" }] }],
+    [
+      "non-array secrets",
+      { currentVersion: 1, secrets: { version: 1, value: "secret" } },
+    ],
     [
       "non-numeric current version",
       { currentVersion: "1", secrets: [{ version: 1, value: "secret" }] },

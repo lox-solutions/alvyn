@@ -187,6 +187,24 @@ describe("entity crypto keys", () => {
     expect(queriedKeyIds).toEqual(["user:a", "user:z"]);
   });
 
+  it("throws when locking a key that does not exist", async () => {
+    const client = {
+      query: () => ({ rows: [] }),
+    } as unknown as pg.PoolClient;
+    const manager = new CryptoKeyManager({
+      currentVersion: 1,
+      secrets: DEFAULT_SECRETS,
+    });
+
+    await expect(
+      manager.lockKeysForEncryption({
+        client,
+        schema: "test_schema",
+        keyIds: ["missing"],
+      }),
+    ).rejects.toThrow(CryptoKeyNotFoundError);
+  });
+
   it("keeps the original key when creation is repeated", () =>
     withManager(async (context) => {
       const options = {
@@ -207,6 +225,20 @@ describe("entity crypto keys", () => {
       await expect(
         manager.getKey({ client, schema, keyId: "missing" }),
       ).rejects.toThrow(CryptoKeyNotFoundError);
+    }));
+
+  it("rejects key rows with missing key material", () =>
+    withManager(async ({ client, manager, schema }) => {
+      const keyId = "user:missing-material";
+      await manager.createKey({ client, schema, keyId });
+      await client.query(
+        `UPDATE ${schema}.crypto_keys SET encrypted_key = NULL WHERE key_id = $1`,
+        [keyId],
+      );
+
+      await expect(manager.getKey({ client, schema, keyId })).rejects.toThrow(
+        `Crypto key material is missing for key "${keyId}"`,
+      );
     }));
 
   it("returns null after revocation and makes revocation idempotent", () =>
