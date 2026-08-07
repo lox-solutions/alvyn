@@ -31,7 +31,7 @@ import type {
 import type { SnapshotHandle } from "./snapshot/types";
 import { UpcasterRegistry } from "./upcaster/upcaster-registry";
 import { SCHEMA_NAME_REGEX, DEFAULT_SCHEMA } from "./event-store-constants";
-import { parseCryptoSecrets } from "./crypto/crypto-secrets";
+import { parseCryptoSecretsConfig } from "./crypto/crypto-secrets";
 
 interface LoadLatestEventByTypeOptions {
   streamId: string;
@@ -60,15 +60,15 @@ export class EventStore {
     if (!SCHEMA_NAME_REGEX.test(this.schema))
       throw new InvalidSchemaNameError(this.schema);
     if (config.secrets !== undefined) {
-      this.cryptoKeyManager = new CryptoKeyManager({ secrets: config.secrets });
+      this.cryptoKeyManager = new CryptoKeyManager(config.secrets);
     } else {
-      const environmentSecrets = parseCryptoSecrets(
-        process.env.GDPR_CRYPTO_SECRETS,
-      );
-      this.cryptoKeyManager =
-        environmentSecrets.length > 0
-          ? new CryptoKeyManager({ secrets: environmentSecrets })
-          : null;
+      const environmentConfig = parseCryptoSecretsConfig({
+        secrets: process.env.GDPR_CRYPTO_SECRETS,
+        currentVersion: process.env.GDPR_CRYPTO_CURRENT_VERSION,
+      });
+      this.cryptoKeyManager = environmentConfig
+        ? new CryptoKeyManager(environmentConfig)
+        : null;
     }
     this.reader = new EventStoreReader({
       pool: this.pool,

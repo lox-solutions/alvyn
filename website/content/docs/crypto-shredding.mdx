@@ -17,7 +17,8 @@ graph TD
 
 **Two-layer envelope encryption:**
 
-1. The first configured **versioned secret** encrypts new per-entity AES keys; later secrets decrypt existing keys after rotation.
+1. The configured `currentVersion` secret encrypts new per-entity AES keys; the
+   remaining configured secrets decrypt existing keys after rotation.
 2. Each entity (e.g., a user) gets its own **AES-256-GCM key** stored encrypted in the `crypto_keys` table.
 3. Individual PII fields within event data are encrypted with the entity's key, each with a unique random IV.
 
@@ -62,15 +63,19 @@ Generate secret values for the versions you will use:
 openssl rand -base64 32
 ```
 
-Configure the current secret first. Older entries are decryption-only:
+Configure the complete keyring and explicitly select the version used for new
+encryption. The order of entries is not significant:
 
 ```typescript
 const eventStore = new EventStore({
   pool,
-  secrets: [
-    { version: 2, value: process.env.GDPR_CRYPTO_SECRET_V2! },
-    { version: 1, value: process.env.GDPR_CRYPTO_SECRET_V1! },
-  ],
+  secrets: {
+    currentVersion: 2,
+    secrets: [
+      { version: 1, value: process.env.GDPR_CRYPTO_SECRET_V1! },
+      { version: 2, value: process.env.GDPR_CRYPTO_SECRET_V2! },
+    ],
+  },
 });
 ```
 
@@ -78,6 +83,7 @@ The same configuration can be supplied through the environment:
 
 ```bash
 GDPR_CRYPTO_SECRETS=2:new-secret-base64,1:old-secret-base64
+GDPR_CRYPTO_CURRENT_VERSION=2
 ```
 
 Secret values are strings. All values are strengthened with `scrypt` to derive
@@ -88,9 +94,9 @@ data has been intentionally retired; removing a configured version makes those
 envelopes unreadable.
 
 Secret versions are unsigned 32-bit integers from `0` to `4294967295`. Gaps are
-allowed, but every newly rotated secret must use a higher version than the
-current secret. This monotonic ordering prevents a replica with an older
-configuration from downgrading an envelope during a rolling deployment.
+allowed, and `currentVersion` must identify one of the configured secrets. Use a
+higher version for each new rotation, but do not encode the active version by
+reordering the keyring.
 
 > **Format warning:** This release intentionally supports only authenticated,
 > versioned crypto envelopes. It does not read records created by earlier
@@ -198,19 +204,22 @@ And `encrypted_data` column contains:
 
 ## Rotating Secrets Without Downtime
 
-For a single application instance, configure the new version first and retain
-the old version for decryption. For an HA or rolling deployment, use two
-phases so every replica can read version `2` before any replica writes it.
+For a single application instance, add the new version to the keyring and set
+it as `currentVersion`. For an HA or rolling deployment, use two phases so every
+replica can read version `2` before any replica writes it.
 
 ### Phase 1: distribute the new secret
 
 Deploy this configuration to every replica while version `1` remains current:
 
 ```typescript
-secrets: [
-  { version: 1, value: "old-secret" },
-  { version: 2, value: "new-secret" },
-];
+secrets: {
+  currentVersion: 1,
+  secrets: [
+    { version: 1, value: "old-secret" },
+    { version: 2, value: "new-secret" },
+  ],
+};
 ```
 
 Wait until all replicas have this configuration. They continue writing version
@@ -218,13 +227,17 @@ Wait until all replicas have this configuration. They continue writing version
 
 ### Phase 2: activate the new secret
 
-After phase 1 is complete, roll out the reversed order:
+After phase 1 is complete, keep the same keyring and change only the active
+version:
 
 ```typescript
-secrets: [
-  { version: 2, value: "new-secret" },
-  { version: 1, value: "old-secret" },
-];
+secrets: {
+  currentVersion: 2,
+  secrets: [
+    { version: 1, value: "old-secret" },
+    { version: 2, value: "new-secret" },
+  ],
+};
 ```
 
 New entity-key envelopes and encrypted fields use version `2`. A replica still
@@ -348,11 +361,11 @@ evolve: {
 
 ## Error Handling
 
-| Error                        | When                                                        | Recovery                                      |
-| ---------------------------- | ----------------------------------------------------------- | --------------------------------------------- |
-| `CryptoKeyRevokedError`      | Trying to encrypt **new** events with a revoked key         | Do not write PII for deleted users            |
-| `CryptoKeyNotFoundError`     | Crypto key does not exist in the key store                  | Create the key first with `createCryptoKey()` |
-| `CryptoSecretsRequiredError` | Crypto operation without `secrets` or `GDPR_CRYPTO_SECRETS` | Provide configured secrets                    |
+| Error                        | When                                                                 | Recovery                                      |
+| ---------------------------- | -------------------------------------------------------------------- | --------------------------------------------- |
+| `CryptoKeyRevokedError`      | Trying to encrypt **new** events with a revoked key                  | Do not write PII for deleted users            |
+| `CryptoKeyNotFoundError`     | Crypto key does not exist in the key store                           | Create the key first with `createCryptoKey()` |
+| `CryptoSecretsRequiredError` | Crypto operation without `secrets` or a complete environment keyring | Provide configured secrets                    |
 
 `CryptoKeyRevokedError` is only thrown on **write** operations. On **read**, revoked keys simply produce tombstoned events without throwing.
 

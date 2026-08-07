@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { InvalidCryptoSecretsError } from "../errors";
 import { CryptoKeyManager } from "./crypto-key-manager";
-import { parseCryptoSecrets, validateCryptoSecrets } from "./crypto-secrets";
+import {
+  parseCryptoSecretVersion,
+  parseCryptoSecrets,
+  parseCryptoSecretsConfig,
+  validateCryptoSecrets,
+} from "./crypto-secrets";
 
 describe("environment crypto secrets", () => {
   it.each([undefined, "", "   "])(
@@ -17,6 +22,17 @@ describe("environment crypto secrets", () => {
       { version: 7, value: "new:secret" },
       { version: 3, value: "old-secret" },
     ]);
+  });
+
+  it.each([undefined, "", "   "])(
+    "treats current version %j as no configuration",
+    (value) => {
+      expect(parseCryptoSecretVersion(value)).toBeUndefined();
+    },
+  );
+
+  it("parses the explicit current version", () => {
+    expect(parseCryptoSecretVersion(" 7 ")).toBe(7);
   });
 
   it("accepts both version boundaries", () => {
@@ -41,6 +57,35 @@ describe("environment crypto secrets", () => {
     expect(() => parseCryptoSecrets(value)).toThrow(InvalidCryptoSecretsError);
   });
 
+  it.each([
+    ["decimal version", "1.5"],
+    ["negative version", "-1"],
+    ["non-numeric version", "one"],
+    ["overflowing version", "4294967296"],
+  ])("rejects invalid current version: %s", (_case, value) => {
+    expect(() => parseCryptoSecretVersion(value)).toThrow(
+      InvalidCryptoSecretsError,
+    );
+  });
+
+  it("requires a current version when environment secrets are configured", () => {
+    expect(() =>
+      parseCryptoSecretsConfig({
+        secrets: "1:secret",
+        currentVersion: undefined,
+      }),
+    ).toThrow(InvalidCryptoSecretsError);
+  });
+
+  it("treats absent environment configuration as optional", () => {
+    expect(
+      parseCryptoSecretsConfig({
+        secrets: undefined,
+        currentVersion: undefined,
+      }),
+    ).toBeNull();
+  });
+
   it("does not disclose a malformed secret entry in its error", () => {
     const secret = "configured-secret-without-separator";
     let thrown: unknown;
@@ -62,52 +107,89 @@ describe("environment crypto secrets", () => {
 });
 
 describe("code-configured crypto secrets", () => {
-  it("returns an ordered copy and preserves secret values exactly", () => {
+  it("returns a copy and preserves secret values exactly", () => {
     const configured = [
       { version: 7, value: " current " },
       { version: 3, value: "old" },
     ];
 
-    const validated = validateCryptoSecrets(configured);
+    const config = { currentVersion: 7, secrets: configured };
+    const validated = validateCryptoSecrets(config);
 
-    expect(validated).toEqual(configured);
-    expect(validated).not.toBe(configured);
+    expect(validated).toEqual(config);
+    expect(validated).not.toBe(config);
+    expect(validated.secrets).not.toBe(configured);
   });
 
   it.each([
     ["non-array configuration", null],
-    ["empty array", []],
-    ["missing entry", [null]],
-    ["non-string value", [{ version: 1, value: 42 }]],
-    ["non-numeric version", [{ version: "1", value: "secret" }]],
-    ["blank value", [{ version: 1, value: "   " }]],
-    ["negative version", [{ version: -1, value: "secret" }]],
-    ["decimal version", [{ version: 1.5, value: "secret" }]],
-    ["overflowing version", [{ version: 0x1_0000_0000, value: "secret" }]],
+    ["legacy array configuration", [{ version: 1, value: "secret" }]],
+    ["empty secrets", { currentVersion: 1, secrets: [] }],
+    ["missing entry", { currentVersion: 1, secrets: [null] }],
+    [
+      "non-string value",
+      { currentVersion: 1, secrets: [{ version: 1, value: 42 }] },
+    ],
+    [
+      "non-numeric secret version",
+      { currentVersion: 1, secrets: [{ version: "1", value: "secret" }] },
+    ],
+    [
+      "blank value",
+      { currentVersion: 1, secrets: [{ version: 1, value: "   " }] },
+    ],
+    [
+      "negative secret version",
+      { currentVersion: 1, secrets: [{ version: -1, value: "secret" }] },
+    ],
+    [
+      "decimal secret version",
+      { currentVersion: 1, secrets: [{ version: 1.5, value: "secret" }] },
+    ],
+    [
+      "overflowing secret version",
+      {
+        currentVersion: 1,
+        secrets: [{ version: 0x1_0000_0000, value: "secret" }],
+      },
+    ],
     [
       "duplicate version",
-      [
-        { version: 1, value: "first" },
-        { version: 1, value: "second" },
-      ],
+      {
+        currentVersion: 1,
+        secrets: [
+          { version: 1, value: "first" },
+          { version: 1, value: "second" },
+        ],
+      },
     ],
-  ])("rejects %s", (_case, secrets) => {
+    [
+      "unconfigured current version",
+      { currentVersion: 2, secrets: [{ version: 1, value: "secret" }] },
+    ],
+    ["missing current version", { secrets: [{ version: 1, value: "secret" }] }],
+    [
+      "non-numeric current version",
+      { currentVersion: "1", secrets: [{ version: 1, value: "secret" }] },
+    ],
+  ])("rejects %s", (_case, config) => {
     expect(() =>
       validateCryptoSecrets(
-        secrets as unknown as Parameters<typeof validateCryptoSecrets>[0],
+        config as unknown as Parameters<typeof validateCryptoSecrets>[0],
       ),
     ).toThrow(InvalidCryptoSecretsError);
   });
 
-  it("uses the first entry for encryption without requiring consecutive versions", () => {
+  it("uses the explicit current version regardless of secret order", () => {
     const manager = new CryptoKeyManager({
+      currentVersion: 7,
       secrets: [
-        { version: 7, value: "current" },
         { version: 3, value: "old" },
+        { version: 7, value: "current" },
       ],
     });
 
     expect(manager.currentSecretVersion).toBe(7);
-    expect(manager.configuredSecretVersions).toEqual([7, 3]);
+    expect(manager.configuredSecretVersions).toEqual([3, 7]);
   });
 });

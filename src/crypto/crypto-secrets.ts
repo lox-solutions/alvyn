@@ -1,5 +1,5 @@
 import { InvalidCryptoSecretsError } from "../errors";
-import type { CryptoSecret } from "../types";
+import type { CryptoSecret, CryptoSecretsConfig } from "../types";
 
 const MAX_SECRET_VERSION = 0xffffffff;
 
@@ -54,52 +54,132 @@ export function parseCryptoSecrets(value: string | undefined): CryptoSecret[] {
   return secrets;
 }
 
-/** Validates and returns an ordered copy of explicitly configured secrets. */
-export function validateCryptoSecrets(
-  secrets: readonly CryptoSecret[],
-): CryptoSecret[] {
-  const configured: unknown = secrets;
-  if (!Array.isArray(configured)) {
-    throw new InvalidCryptoSecretsError("Crypto secrets must be an array");
+export function parseCryptoSecretVersion(
+  value: string | undefined,
+): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+    throw new InvalidCryptoSecretsError(
+      "GDPR_CRYPTO_CURRENT_VERSION must be a string",
+    );
   }
-  if (configured.length === 0) {
+  const versionText = value.trim();
+  if (versionText === "") return undefined;
+  if (!/^\d+$/.test(versionText)) {
+    throw new InvalidCryptoSecretsError(
+      "Invalid current crypto secret version; versions must be integers",
+    );
+  }
+  const version = Number(versionText);
+  validateVersion(version);
+  return version;
+}
+
+export function parseCryptoSecretsConfig(options: {
+  secrets: string | undefined;
+  currentVersion: string | undefined;
+}): CryptoSecretsConfig | null {
+  const secrets = parseCryptoSecrets(options.secrets);
+  const currentVersion = parseCryptoSecretVersion(options.currentVersion);
+  if (secrets.length === 0 && currentVersion === undefined) return null;
+  if (currentVersion === undefined) {
+    throw new InvalidCryptoSecretsError(
+      "GDPR_CRYPTO_CURRENT_VERSION is required when GDPR_CRYPTO_SECRETS is configured",
+    );
+  }
+  return { currentVersion, secrets };
+}
+
+/** Validates and returns a copy of explicitly configured secrets. */
+export function validateCryptoSecrets(
+  config: CryptoSecretsConfig,
+): CryptoSecretsConfig {
+  const { currentVersion, configuredSecrets } = validateConfigShape(config);
+  if (configuredSecrets.length === 0) {
     throw new InvalidCryptoSecretsError(
       "At least one crypto secret is required",
     );
   }
 
   const versions = new Set<number>();
-  return configured.map((secret: unknown) => {
-    if (
-      !secret ||
-      typeof secret !== "object" ||
-      !("value" in secret) ||
-      typeof secret.value !== "string"
-    ) {
-      throw new InvalidCryptoSecretsError(
-        "Each crypto secret must have a string value",
-      );
-    }
-    if (!("version" in secret) || typeof secret.version !== "number") {
-      throw new InvalidCryptoSecretsError(
-        "Each crypto secret must have a numeric version",
-      );
-    }
-    const { value, version } = secret;
-    validateVersion(version);
-    if (value.trim() === "") {
-      throw new InvalidCryptoSecretsError(
-        `Secret version ${version} must have a non-empty value`,
-      );
-    }
-    if (versions.has(version)) {
-      throw new InvalidCryptoSecretsError(
-        `Duplicate crypto secret version ${version}`,
-      );
-    }
-    versions.add(version);
-    return { version, value };
-  });
+  const secrets = configuredSecrets.map((secret) =>
+    validateSecretEntry(secret, versions),
+  );
+
+  if (!secrets.some((secret) => secret.version === currentVersion)) {
+    throw new InvalidCryptoSecretsError(
+      `Current crypto secret version ${currentVersion} is not configured`,
+    );
+  }
+
+  return { currentVersion, secrets };
+}
+
+function validateConfigShape(config: unknown): {
+  currentVersion: number;
+  configuredSecrets: unknown[];
+} {
+  const configured = config;
+  if (
+    !configured ||
+    typeof configured !== "object" ||
+    Array.isArray(configured)
+  ) {
+    throw new InvalidCryptoSecretsError(
+      "Crypto secrets must be an object with currentVersion and secrets",
+    );
+  }
+  const configRecord = configured as Record<string, unknown>;
+  if (typeof configRecord.currentVersion !== "number") {
+    throw new InvalidCryptoSecretsError(
+      "Crypto secrets must have a numeric currentVersion",
+    );
+  }
+  if (!Array.isArray(configRecord.secrets)) {
+    throw new InvalidCryptoSecretsError(
+      "Crypto secrets must have a secrets array",
+    );
+  }
+
+  const currentVersion = configRecord.currentVersion;
+  validateVersion(currentVersion);
+  return { currentVersion, configuredSecrets: configRecord.secrets };
+}
+
+function validateSecretEntry(
+  secret: unknown,
+  versions: Set<number>,
+): CryptoSecret {
+  if (!secret || typeof secret !== "object") {
+    throw new InvalidCryptoSecretsError(
+      "Each crypto secret must have a string value",
+    );
+  }
+  const configured = secret as Record<string, unknown>;
+  if (typeof configured.value !== "string") {
+    throw new InvalidCryptoSecretsError(
+      "Each crypto secret must have a string value",
+    );
+  }
+  if (typeof configured.version !== "number") {
+    throw new InvalidCryptoSecretsError(
+      "Each crypto secret must have a numeric version",
+    );
+  }
+  const { value, version } = configured;
+  validateVersion(version);
+  if (value.trim() === "") {
+    throw new InvalidCryptoSecretsError(
+      `Secret version ${version} must have a non-empty value`,
+    );
+  }
+  if (versions.has(version)) {
+    throw new InvalidCryptoSecretsError(
+      `Duplicate crypto secret version ${version}`,
+    );
+  }
+  versions.add(version);
+  return { version, value };
 }
 
 function validateVersion(version: number): void {

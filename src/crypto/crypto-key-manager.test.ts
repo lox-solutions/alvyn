@@ -14,7 +14,7 @@ import {
   CryptoSecretVersionNotFoundError,
 } from "../errors";
 import { EventStore } from "../event-store";
-import type { CryptoSecret } from "../types";
+import type { CryptoSecretsConfig } from "../types";
 import { CryptoKeyManager } from "./crypto-key-manager";
 
 const SECRET_1 = "11".repeat(32);
@@ -42,16 +42,26 @@ afterAll(async () => {
 
 async function withManager(
   test: (context: ManagerTestContext) => Promise<void>,
-  secrets: readonly CryptoSecret[] = DEFAULT_SECRETS,
+  config: CryptoSecretsConfig = {
+    currentVersion: 1,
+    secrets: DEFAULT_SECRETS,
+  },
 ): Promise<void> {
   const schema = uniqueSchema();
-  const store = new EventStore({ pool, schema, secrets: [...secrets] });
+  const store = new EventStore({
+    pool,
+    schema,
+    secrets: {
+      currentVersion: config.currentVersion,
+      secrets: [...config.secrets],
+    },
+  });
   await store.setup();
   const client = await pool.connect();
   try {
     await test({
       client,
-      manager: new CryptoKeyManager({ secrets }),
+      manager: new CryptoKeyManager(config),
       schema,
     });
   } finally {
@@ -151,7 +161,7 @@ describe("entity crypto keys", () => {
           }),
         ).toHaveLength(32);
       },
-      [{ version: 1, value: secretValue }],
+      { currentVersion: 1, secrets: [{ version: 1, value: secretValue }] },
     ),
   );
 
@@ -163,7 +173,10 @@ describe("entity crypto keys", () => {
         return { rows: [{ revoked_at: null }] };
       },
     } as unknown as pg.PoolClient;
-    const manager = new CryptoKeyManager({ secrets: DEFAULT_SECRETS });
+    const manager = new CryptoKeyManager({
+      currentVersion: 1,
+      secrets: DEFAULT_SECRETS,
+    });
 
     await manager.lockKeysForEncryption({
       client,
@@ -296,10 +309,13 @@ describe("entity key envelope", () => {
 
         await expect(context.manager.getKey(options)).rejects.toThrow();
       },
-      [
-        { version: 2, value: SECRET_2 },
-        { version: 1, value: SECRET_2 },
-      ],
+      {
+        currentVersion: 2,
+        secrets: [
+          { version: 2, value: SECRET_2 },
+          { version: 1, value: SECRET_2 },
+        ],
+      },
     ));
 
   it("binds an envelope to its key ID", () =>
@@ -338,6 +354,7 @@ describe("entity key envelope", () => {
       };
       await context.manager.createKey(options);
       const wrongManager = new CryptoKeyManager({
+        currentVersion: 1,
         secrets: [{ version: 1, value: SECRET_2 }],
       });
 
@@ -381,6 +398,7 @@ describe("secret rotation", () => {
       await context.manager.createKey(options);
       const before = await readEnvelope(context, options.keyId);
       const rotated = new CryptoKeyManager({
+        currentVersion: 3,
         secrets: [
           { version: 3, value: SECRET_3 },
           { version: 1, value: SECRET_1 },
@@ -402,6 +420,7 @@ describe("secret rotation", () => {
       await context.manager.createKey(options);
       const originalKey = await context.manager.getKey(options);
       const rotated = new CryptoKeyManager({
+        currentVersion: 3,
         secrets: [
           { version: 3, value: SECRET_3 },
           { version: 1, value: SECRET_1 },
@@ -414,6 +433,7 @@ describe("secret rotation", () => {
         3,
       );
       const newOnly = new CryptoKeyManager({
+        currentVersion: 3,
         secrets: [{ version: 3, value: SECRET_3 }],
       });
       await expect(newOnly.getKey(options)).resolves.toEqual(originalKey);
@@ -430,6 +450,7 @@ describe("secret rotation", () => {
         await context.manager.createKey(options);
         const before = await readEnvelope(context, options.keyId);
         const olderReplica = new CryptoKeyManager({
+          currentVersion: 1,
           secrets: [
             { version: 1, value: SECRET_1 },
             { version: 3, value: SECRET_3 },
@@ -440,10 +461,13 @@ describe("secret rotation", () => {
 
         expect(await readEnvelope(context, options.keyId)).toEqual(before);
       },
-      [
-        { version: 3, value: SECRET_3 },
-        { version: 1, value: SECRET_1 },
-      ],
+      {
+        currentVersion: 3,
+        secrets: [
+          { version: 3, value: SECRET_3 },
+          { version: 1, value: SECRET_1 },
+        ],
+      },
     ));
 });
 

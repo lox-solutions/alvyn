@@ -25,11 +25,11 @@ export interface EventStoreConfig {
   /** PostgreSQL schema name for all event store tables (default: "event_store") */
   schema?: string;
   /**
-   * Ordered versioned secrets for crypto-shredding. The first entry is
-   * used for new data; later entries are retained for decryption only.
-   * `GDPR_CRYPTO_SECRETS` is used when this option is omitted.
+   * Versioned secrets for crypto-shredding and the version used for new data.
+   * The order of `secrets` is not significant. `GDPR_CRYPTO_SECRETS` and
+   * `GDPR_CRYPTO_CURRENT_VERSION` are used when this option is omitted.
    */
-  secrets?: CryptoSecret[];
+  secrets?: CryptoSecretsConfig;
   /**
    * Default CloudEvents `source` URI-reference for events produced by this store.
    * Defaults to "event-store". Override with an application-specific URI
@@ -44,6 +44,12 @@ export interface EventStoreConfig {
 export interface CryptoSecret {
   version: number;
   value: string;
+}
+
+/** A crypto keyring with an explicit version used for new encryption. */
+export interface CryptoSecretsConfig {
+  currentVersion: number;
+  secrets: readonly CryptoSecret[];
 }
 
 // ---------------------------------------------------------------------------

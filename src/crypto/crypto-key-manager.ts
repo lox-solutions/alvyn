@@ -29,7 +29,9 @@ const ENVELOPE_LENGTH =
 const SECRET_KDF_SALT = "alvyn:crypto-secret:v1";
 
 export interface CryptoKeyManagerOptions {
-  /** Ordered secrets; the first one is used for new encryption. */
+  /** Version used for new encryption. */
+  currentVersion: number;
+  /** Unordered secrets retained for decryption and rotation. */
   secrets: readonly CryptoSecret[];
 }
 
@@ -52,11 +54,12 @@ export class CryptoKeyManager {
   public readonly configuredSecretVersions: number[];
 
   constructor(config: CryptoKeyManagerOptions) {
-    const secrets = validateCryptoSecrets(config.secrets);
+    const validated = validateCryptoSecrets(config);
+    const { currentVersion, secrets } = validated;
     this.secretKeys = new Map(
       secrets.map((secret) => [secret.version, deriveSecretKey(secret.value)]),
     );
-    this.currentSecretVersion = secrets[0].version;
+    this.currentSecretVersion = currentVersion;
     this.configuredSecretVersions = secrets.map((secret) => secret.version);
   }
 

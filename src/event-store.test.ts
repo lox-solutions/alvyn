@@ -68,7 +68,10 @@ describe("EventStore", () => {
             new EventStore({
               pool,
               schema: uniqueSchema(),
-              secrets: [{ version: 1, value: "explicit-secret" }],
+              secrets: {
+                currentVersion: 1,
+                secrets: [{ version: 1, value: "explicit-secret" }],
+              },
             }),
         ).not.toThrow();
       } finally {

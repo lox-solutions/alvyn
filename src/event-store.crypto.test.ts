@@ -10,11 +10,14 @@ import {
 import { CryptoKeyManager } from "./crypto/crypto-key-manager";
 import { EventStore } from "./event-store";
 import { CryptoKeyNotFoundError, CryptoKeyRevokedError } from "./errors";
-import type { CryptoSecret, TombstonedEvent } from "./types";
+import type { CryptoSecretsConfig, TombstonedEvent } from "./types";
 
 const SECRET_1 = "11".repeat(32);
 const SECRET_2 = "22".repeat(32);
-const VERSION_1 = [{ version: 1, value: SECRET_1 }] as const;
+const VERSION_1 = {
+  currentVersion: 1,
+  secrets: [{ version: 1, value: SECRET_1 }],
+} as const;
 
 interface RawEvent {
   data: Record<string, unknown>;
@@ -39,12 +42,15 @@ afterAll(async () => {
 
 function makeStore(
   schema: string,
-  secrets: readonly CryptoSecret[] = VERSION_1,
+  secrets: CryptoSecretsConfig = VERSION_1,
 ): EventStore {
   return new EventStore({
     pool,
     schema,
-    secrets: [...secrets],
+    secrets: {
+      currentVersion: secrets.currentVersion,
+      secrets: [...secrets.secrets],
+    },
   });
 }
 
@@ -269,7 +275,9 @@ describe("secret rotation", () => {
   it("uses GDPR_CRYPTO_SECRETS when code configuration is absent", async () => {
     const schema = uniqueSchema();
     const previous = process.env.GDPR_CRYPTO_SECRETS;
+    const previousCurrentVersion = process.env.GDPR_CRYPTO_CURRENT_VERSION;
     process.env.GDPR_CRYPTO_SECRETS = "8:environment-secret,3:old-secret";
+    process.env.GDPR_CRYPTO_CURRENT_VERSION = "8";
     try {
       const store = new EventStore({ pool, schema });
       await store.setup();
@@ -281,6 +289,9 @@ describe("secret rotation", () => {
     } finally {
       if (previous === undefined) delete process.env.GDPR_CRYPTO_SECRETS;
       else process.env.GDPR_CRYPTO_SECRETS = previous;
+      if (previousCurrentVersion === undefined)
+        delete process.env.GDPR_CRYPTO_CURRENT_VERSION;
+      else process.env.GDPR_CRYPTO_CURRENT_VERSION = previousCurrentVersion;
     }
   });
 
@@ -297,10 +308,13 @@ describe("secret rotation", () => {
       expectedVersion: -1,
     });
     const before = await readEnvelope(schema, "user:read-only");
-    const rotated = makeStore(schema, [
-      { version: 2, value: SECRET_2 },
-      { version: 1, value: SECRET_1 },
-    ]);
+    const rotated = makeStore(schema, {
+      currentVersion: 2,
+      secrets: [
+        { version: 2, value: SECRET_2 },
+        { version: 1, value: SECRET_1 },
+      ],
+    });
     await rotated.setup();
 
     expect((await rotated.load("User-read-only"))[0].data).toEqual({
@@ -323,10 +337,13 @@ describe("secret rotation", () => {
     });
     const oldEventBefore = (await readRawEvents(schema, "User-rotated"))[0]
       .encrypted_data;
-    const rotated = makeStore(schema, [
-      { version: 2, value: SECRET_2 },
-      { version: 1, value: SECRET_1 },
-    ]);
+    const rotated = makeStore(schema, {
+      currentVersion: 2,
+      secrets: [
+        { version: 2, value: SECRET_2 },
+        { version: 1, value: SECRET_1 },
+      ],
+    });
     await rotated.setup();
 
     await appendPrivateName({
@@ -345,7 +362,10 @@ describe("secret rotation", () => {
     expect(
       rawEvents.map((event) => event.encrypted_data!.name.version),
     ).toEqual([1, 2]);
-    const newOnly = makeStore(schema, [{ version: 2, value: SECRET_2 }]);
+    const newOnly = makeStore(schema, {
+      currentVersion: 2,
+      secrets: [{ version: 2, value: SECRET_2 }],
+    });
     await newOnly.setup();
     expect(
       (await newOnly.load("User-rotated")).map((event) => event.data),
@@ -357,10 +377,13 @@ describe("secret rotation", () => {
     const original = makeStore(schema);
     await original.setup();
     await original.createCryptoKey("user:ha");
-    const phaseOneSecrets = [
-      { version: 1, value: SECRET_1 },
-      { version: 2, value: SECRET_2 },
-    ];
+    const phaseOneSecrets = {
+      currentVersion: 1,
+      secrets: [
+        { version: 1, value: SECRET_1 },
+        { version: 2, value: SECRET_2 },
+      ],
+    };
     const replicas = [
       makeStore(schema, phaseOneSecrets),
       makeStore(schema, phaseOneSecrets),
@@ -374,10 +397,13 @@ describe("secret rotation", () => {
       name: "Phase one",
       expectedVersion: -1,
     });
-    const upgradedReplica = makeStore(schema, [
-      { version: 2, value: SECRET_2 },
-      { version: 1, value: SECRET_1 },
-    ]);
+    const upgradedReplica = makeStore(schema, {
+      currentVersion: 2,
+      secrets: [
+        { version: 1, value: SECRET_1 },
+        { version: 2, value: SECRET_2 },
+      ],
+    });
     await upgradedReplica.setup();
     await appendPrivateName({
       store: upgradedReplica,
@@ -397,7 +423,10 @@ describe("secret rotation", () => {
     });
 
     expect(await readEnvelope(schema, "user:ha")).toEqual(upgradedEnvelope);
-    const newOnly = makeStore(schema, [{ version: 2, value: SECRET_2 }]);
+    const newOnly = makeStore(schema, {
+      currentVersion: 2,
+      secrets: [{ version: 2, value: SECRET_2 }],
+    });
     await newOnly.setup();
     expect((await newOnly.load("User-ha")).map((event) => event.data)).toEqual([
       { name: "Phase one" },
@@ -413,7 +442,7 @@ describe("revocation and append concurrency", () => {
     const store = makeStore(schema);
     await store.setup();
     await store.createCryptoKey("user:concurrent");
-    const manager = new CryptoKeyManager({ secrets: VERSION_1 });
+    const manager = new CryptoKeyManager(VERSION_1);
     const appendClient = await pool.connect();
     const revokeClient = await pool.connect();
     try {

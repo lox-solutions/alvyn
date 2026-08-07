@@ -316,7 +316,10 @@ describe("defineAggregate", () => {
       const store = new EventStore({
         pool,
         schema: uniqueSchema(),
-        secrets: [{ version: 1, value: testSecretValue() }],
+        secrets: {
+          currentVersion: 1,
+          secrets: [{ version: 1, value: testSecretValue() }],
+        },
       });
       await store.setup();
       await store.createCryptoKey("user:enc1");
@@ -365,7 +368,10 @@ describe("defineAggregate", () => {
       const store = new EventStore({
         pool,
         schema: uniqueSchema(),
-        secrets: [{ version: 1, value: testSecretValue() }],
+        secrets: {
+          currentVersion: 1,
+          secrets: [{ version: 1, value: testSecretValue() }],
+        },
       });
       await store.setup();
       await store.createCryptoKey("mix:m1");

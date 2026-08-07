@@ -70,7 +70,7 @@ export class CryptoSecretsRequiredError extends Error {
   constructor() {
     super(
       "Versioned crypto secrets are required for crypto operations. " +
-        "Provide `secrets` or GDPR_CRYPTO_SECRETS in the EventStore configuration.",
+        "Provide `secrets` or GDPR_CRYPTO_SECRETS with GDPR_CRYPTO_CURRENT_VERSION in the EventStore configuration.",
     );
   }
 }
