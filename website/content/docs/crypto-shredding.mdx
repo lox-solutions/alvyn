@@ -7,6 +7,64 @@ description: Envelope encryption for GDPR-compliant PII handling with per-entity
 
 The event store implements **envelope encryption** for GDPR-compliant PII handling. Per-entity encryption keys allow surgical data erasure by revoking a single key, making all PII for that entity irrecoverable without touching any other data.
 
+## Alternative: Keep PII Outside the Event Store
+
+Crypto-shredding is not the only way to support the GDPR right to erasure. A
+simpler option is to keep personal data in regular application tables and store
+only an opaque reference to the person in each event. For example, an event can
+contain `personId: "person_abc123"`, while the corresponding name, email, and
+address live in a `persons` table.
+
+```sql
+CREATE TABLE persons (
+  person_id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  address JSONB NOT NULL
+);
+
+-- The event payload contains only the reference and non-personal data:
+-- { "personId": "person_abc123", "orderId": "order_42" }
+```
+
+When a person requests erasure, delete their row (and any related PII rows)
+using the application's normal database transaction and retain the events. The
+event history remains available for auditing and replay, but the reference no
+longer resolves to personal data:
+
+```typescript
+await db.transaction(async (tx) => {
+  await tx.query("DELETE FROM person_addresses WHERE person_id = $1", [personId]);
+  await tx.query("DELETE FROM persons WHERE person_id = $1", [personId]);
+});
+```
+
+This approach avoids key management, encrypted-field configuration, and
+tombstoned events. It is a good fit when events need to preserve business facts
+but not a self-contained copy of personal details. For example, an
+`OrderPlaced` event can retain the `personId`, order amount, and product IDs;
+after erasure, those order facts can still be replayed, but the person's name
+and email cannot be resolved. Consumers must handle missing references
+explicitly, and writes to the PII table and the event store should be
+coordinated so an event cannot point to a person that was never persisted.
+
+With this approach, personal details are unavailable whenever the reference
+cannot be resolved. With crypto-shredding, PII embedded in events remains
+readable while the key is active and becomes irrecoverable only after the key is
+revoked.
+
+An identifier is not automatically anonymous merely because it is called an
+ID. Use an opaque, non-semantic identifier and assess whether it can be linked
+back to a person in your system. Keep personal data out of event extensions,
+logs, projections, snapshots, caches, and other copied representations as
+well. Database backups, replicas, and WAL archives still require their own
+retention and deletion policies.
+
+Use this reference-based design when deleting the PII record is sufficient for
+your retention requirements. Use [crypto-shredding](#gdpr-right-to-erasure)
+when PII must remain embedded in event payloads while becoming irrecoverable on
+erasure.
+
 ## Architecture
 
 ```mermaid
