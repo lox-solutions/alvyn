@@ -442,6 +442,7 @@ evolve: {
 | ---------------------------- | -------------------------------------------------------------------- | --------------------------------------------- |
 | `CryptoKeyRevokedError`      | Trying to encrypt **new** events with a revoked key                  | Do not write PII for deleted users            |
 | `CryptoKeyNotFoundError`     | Crypto key does not exist in the key store                           | Create the key first with `createCryptoKey()` |
+| `CryptoKeyIdRequiredError`   | `encryptedFields` has no non-empty `cryptoKeyId`                     | Provide the entity key ID                     |
 | `CryptoSecretsRequiredError` | Crypto operation without `secrets` or a complete environment keyring | Provide configured secrets                    |
 
 `CryptoKeyRevokedError` is only thrown on **write** operations. On **read**, revoked keys simply produce tombstoned events without throwing.

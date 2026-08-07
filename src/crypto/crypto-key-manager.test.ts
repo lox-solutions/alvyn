@@ -248,6 +248,7 @@ describe("entity crypto keys", () => {
 
       await manager.revokeKey(options);
       await manager.revokeKey(options);
+      await manager.createKey(options);
 
       await expect(manager.getKey(options)).resolves.toBeNull();
       await expect(manager.getKeyForEncryption(options)).rejects.toThrow(

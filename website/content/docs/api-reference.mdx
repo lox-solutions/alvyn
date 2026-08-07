@@ -524,6 +524,10 @@ Thrown when attempting to encrypt **new** events with a revoked key. Not thrown 
 
 Thrown when a crypto key is not found in the key store.
 
+### `CryptoKeyIdRequiredError`
+
+Thrown when `encryptedFields` are configured without a non-empty `cryptoKeyId`.
+
 ### `CryptoSecretsRequiredError`
 
 Thrown when crypto operations are attempted but no complete versioned crypto

@@ -6,6 +6,7 @@ import {
   createTestPool,
   startPostgres,
   stopPostgres,
+  testSecretValue,
   uniqueSchema,
 } from "../__tests__/setup";
 import { defineSnapshot } from "./define-snapshot";
@@ -61,6 +62,25 @@ const FrequentlySnapshottedBalance = defineSnapshot<
     Withdrawal: (state, event) => ({
       balance: state.balance - (event.data?.amount ?? 0),
     }),
+  },
+});
+
+const EncryptedBalance = defineSnapshot<
+  { balance: number },
+  TransactionEvents
+>()({
+  streamPrefix: "Transaction",
+  snapshotName: "EncryptedBalance",
+  every: 1,
+  initialState: { balance: 0 },
+  evolve: {
+    Deposit: (state, event) => ({
+      balance: state.balance + (event.data?.amount ?? 0),
+    }),
+  },
+  encryption: {
+    cryptoKeyId: (entityId) => `account:${entityId}`,
+    encryptedFields: ["balance"],
   },
 });
 
@@ -210,6 +230,60 @@ describe("defineSnapshot", () => {
       state: { balance: 80 },
       version: 3,
       snapshotVersion: 3,
+      replayedEvents: 0,
+    });
+  });
+
+  it("encrypts generated snapshot fields and restores them on load", async () => {
+    const schema = uniqueSchema();
+    const store = new EventStore({
+      pool,
+      schema,
+      secrets: {
+        currentVersion: 1,
+        secrets: [{ version: 1, value: testSecretValue() }],
+      },
+      snapshots: [EncryptedBalance],
+    });
+    await store.setup();
+    await store.createCryptoKey("account:encrypted");
+
+    await store.append({
+      streamId: "Transaction-encrypted",
+      expectedVersion: -1,
+      events: [
+        {
+          type: "Deposit",
+          data: { amount: 100 },
+          encryptedFields: ["amount"],
+          cryptoKeyId: "account:encrypted",
+        },
+      ],
+    });
+
+    const raw = await pool.query<{
+      data: Record<string, unknown>;
+      encrypted_data: Record<string, unknown> | null;
+      event_type: string;
+    }>(
+      `SELECT data, encrypted_data, event_type
+       FROM ${schema}.events
+       WHERE stream_id = $1
+       ORDER BY stream_version`,
+      ["Transaction-encrypted"],
+    );
+    expect(raw.rows).toHaveLength(2);
+    expect(raw.rows[1]).toMatchObject({
+      event_type: "EncryptedBalanceSnapshot",
+      data: {},
+    });
+    expect(raw.rows[1].encrypted_data).toHaveProperty("balance");
+
+    await expect(
+      EncryptedBalance.load(store, "encrypted"),
+    ).resolves.toMatchObject({
+      state: { balance: 100 },
+      snapshotVersion: 2,
       replayedEvents: 0,
     });
   });

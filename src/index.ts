@@ -92,6 +92,7 @@ export type { TransactionContext } from "./types";
 
 // Errors (for catch blocks)
 export {
+  CryptoKeyIdRequiredError,
   CryptoKeyNotFoundError,
   CryptoKeyRevokedError,
   CryptoSecretVersionNotFoundError,

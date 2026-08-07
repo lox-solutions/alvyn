@@ -1,7 +1,10 @@
 import type { PoolClient } from "pg";
 import type { CryptoKeyManager } from "../crypto/crypto-key-manager";
 import { encryptFields } from "../crypto/field-encryptor";
-import { CryptoSecretsRequiredError } from "../errors";
+import {
+  CryptoKeyIdRequiredError,
+  CryptoSecretsRequiredError,
+} from "../errors";
 import type { AppendEventInput, CloudEventExtensions } from "../types";
 
 const CLOUDEVENTS_SPEC_VERSION = "1.0";
@@ -102,14 +105,16 @@ export async function prepareEventRow(options: {
   let encryptedData: unknown = null;
   let cryptoKeyId: string | null = event.cryptoKeyId ?? null;
 
-  if (event.encryptedFields?.length && cryptoKeyId) {
+  if (event.encryptedFields?.length) {
+    const keyId = cryptoKeyId;
+    if (!keyId) throw new CryptoKeyIdRequiredError();
     if (!cryptoKeyManager) throw new CryptoSecretsRequiredError();
     const encrypted = await encryptEventData({
       event,
       cryptoKeyManager,
       client,
       schema,
-      keyId: cryptoKeyId,
+      keyId,
       eventId: `${options.streamId}/${options.version}`,
     });
     dataToStore = encrypted.dataToStore;

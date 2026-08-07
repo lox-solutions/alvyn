@@ -9,7 +9,13 @@ import {
 } from "./__tests__/setup";
 import { CryptoKeyManager } from "./crypto/crypto-key-manager";
 import { EventStore } from "./event-store";
-import { CryptoKeyNotFoundError, CryptoKeyRevokedError } from "./errors";
+import {
+  CryptoKeyIdRequiredError,
+  CryptoKeyNotFoundError,
+  CryptoKeyRevokedError,
+  CryptoSecretVersionNotFoundError,
+  CryptoSecretsRequiredError,
+} from "./errors";
 import type { CryptoSecretsConfig, TombstonedEvent } from "./types";
 
 const SECRET_1 = "11".repeat(32);
@@ -102,6 +108,55 @@ async function readRawEvents(
 }
 
 describe("encrypted events", () => {
+  it("rejects encrypted writes without configured secrets", async () => {
+    const schema = uniqueSchema();
+    const store = new EventStore({ pool, schema });
+    await store.setup();
+
+    await expect(
+      store.append({
+        streamId: "User-no-secrets",
+        expectedVersion: -1,
+        events: [
+          {
+            type: "Registered",
+            data: { name: "Alice" },
+            encryptedFields: ["name"],
+            cryptoKeyId: "user:no-secrets",
+          },
+        ],
+      }),
+    ).rejects.toThrow(CryptoSecretsRequiredError);
+
+    expect(await readRawEvents(schema, "User-no-secrets")).toHaveLength(0);
+  });
+
+  it.each([undefined, ""])(
+    "rejects encrypted writes without a crypto key ID (%j)",
+    async (cryptoKeyId) => {
+      const schema = uniqueSchema();
+      const store = makeStore(schema);
+      await store.setup();
+
+      await expect(
+        store.append({
+          streamId: "User-no-key-id",
+          expectedVersion: -1,
+          events: [
+            {
+              type: "Registered",
+              data: { name: "Alice" },
+              encryptedFields: ["name"],
+              cryptoKeyId,
+            },
+          ],
+        }),
+      ).rejects.toThrow(CryptoKeyIdRequiredError);
+
+      expect(await readRawEvents(schema, "User-no-key-id")).toHaveLength(0);
+    },
+  );
+
   it("keeps PII out of the data column and restores it when loading", async () => {
     const schema = uniqueSchema();
     const store = makeStore(schema);
@@ -136,6 +191,94 @@ describe("encrypted events", () => {
       address: { street: "Main Street", city: "Berlin" },
       active: true,
     });
+  });
+
+  it("keeps encrypted PII out of transactional outbox payloads", async () => {
+    const schema = uniqueSchema();
+    const store = makeStore(schema);
+    await store.setup();
+    await store.createCryptoKey("user:outbox");
+
+    await store.append({
+      streamId: "User-outbox",
+      expectedVersion: -1,
+      outboxTopics: ["users"],
+      events: [
+        {
+          type: "Registered",
+          data: { name: "Alice", active: true },
+          encryptedFields: ["name"],
+          cryptoKeyId: "user:outbox",
+        },
+      ],
+    });
+
+    const payloads: Record<string, unknown>[] = [];
+    await store.processOutbox((entries) => {
+      payloads.push(
+        ...entries.map((entry) => entry.payload as Record<string, unknown>),
+      );
+      return Promise.resolve();
+    });
+
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0].data).toEqual({ active: true });
+    expect(JSON.stringify(payloads)).not.toContain("Alice");
+  });
+
+  it("returns a tombstone when the encrypted event key row is missing", async () => {
+    const schema = uniqueSchema();
+    const store = makeStore(schema);
+    await store.setup();
+    await store.createCryptoKey("user:missing-row");
+    await appendPrivateName({
+      store,
+      streamId: "User-missing-row",
+      keyId: "user:missing-row",
+      name: "Alice",
+      expectedVersion: -1,
+    });
+
+    await pool.query(`DELETE FROM ${schema}.crypto_keys WHERE key_id = $1`, [
+      "user:missing-row",
+    ]);
+
+    await expect(store.load("User-missing-row")).resolves.toMatchObject([
+      { data: null, tombstoned: true },
+    ]);
+  });
+
+  it("returns a tombstone when encrypted data is read without secrets", async () => {
+    const schema = uniqueSchema();
+    const source = makeStore(schema);
+    await source.setup();
+    await source.createCryptoKey("user:no-read-secrets");
+    await appendPrivateName({
+      store: source,
+      streamId: "User-no-read-secrets",
+      keyId: "user:no-read-secrets",
+      name: "Alice",
+      expectedVersion: -1,
+    });
+
+    const previous = process.env.GDPR_CRYPTO_SECRETS;
+    const previousCurrentVersion = process.env.GDPR_CRYPTO_CURRENT_VERSION;
+    delete process.env.GDPR_CRYPTO_SECRETS;
+    delete process.env.GDPR_CRYPTO_CURRENT_VERSION;
+    try {
+      const reader = new EventStore({ pool, schema });
+      await reader.setup();
+
+      await expect(reader.load("User-no-read-secrets")).resolves.toMatchObject([
+        { data: null, tombstoned: true },
+      ]);
+    } finally {
+      if (previous === undefined) delete process.env.GDPR_CRYPTO_SECRETS;
+      else process.env.GDPR_CRYPTO_SECRETS = previous;
+      if (previousCurrentVersion === undefined)
+        delete process.env.GDPR_CRYPTO_CURRENT_VERSION;
+      else process.env.GDPR_CRYPTO_CURRENT_VERSION = previousCurrentVersion;
+    }
   });
 
   it("loads public and encrypted events from the same stream", async () => {
@@ -321,6 +464,30 @@ describe("secret rotation", () => {
       name: "Alice",
     });
     expect(await readEnvelope(schema, "user:read-only")).toEqual(before);
+  });
+
+  it("fails closed when an old secret is removed before rewrapping", async () => {
+    const schema = uniqueSchema();
+    const original = makeStore(schema);
+    await original.setup();
+    await original.createCryptoKey("user:removed-secret");
+    await appendPrivateName({
+      store: original,
+      streamId: "User-removed-secret",
+      keyId: "user:removed-secret",
+      name: "Alice",
+      expectedVersion: -1,
+    });
+
+    const rotated = makeStore(schema, {
+      currentVersion: 2,
+      secrets: [{ version: 2, value: SECRET_2 }],
+    });
+    await rotated.setup();
+
+    await expect(rotated.load("User-removed-secret")).rejects.toThrow(
+      CryptoSecretVersionNotFoundError,
+    );
   });
 
   it("lazily rewraps on write and then works with only the new secret", async () => {

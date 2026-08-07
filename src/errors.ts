@@ -60,6 +60,15 @@ export class CryptoKeyNotFoundError extends Error {
   }
 }
 
+/** Thrown when encrypted fields are configured without a crypto key ID. */
+export class CryptoKeyIdRequiredError extends Error {
+  public readonly name = "CryptoKeyIdRequiredError" as const;
+
+  constructor() {
+    super("A cryptoKeyId is required when encryptedFields are configured.");
+  }
+}
+
 /**
  * Thrown when crypto operations are attempted but no versioned crypto secrets
  * were provided in the EventStore configuration.
