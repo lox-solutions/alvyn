@@ -208,6 +208,13 @@ For a single application instance, add the new version to the keyring and set
 it as `currentVersion`. For an HA or rolling deployment, use two phases so every
 replica can read version `2` before any replica writes it.
 
+> **Backup recommendation:** A restorable backup of the event-store database
+> before every secret rotation is strongly recommended. Verify that the backup
+> includes both `events` and `crypto_keys`, and keep the old secret securely
+> available until the rollout and recovery procedure have been verified. A
+> database backup without its corresponding secret cannot decrypt encrypted
+> entity keys.
+
 ### Phase 1: distribute the new secret
 
 Deploy this configuration to every replica while version `1` remains current:
