@@ -17,7 +17,10 @@ export default defineConfig(
   js.configs.recommended,
   tseslint.configs.recommendedTypeChecked,
   tseslint.configs.stylisticTypeChecked,
-  ...llmCore.configs.all,
+  ...llmCore.configs.all.map((config) => ({
+    ...config,
+    ignores: [...(config.ignores ?? []), "eslint.config.js"],
+  })),
   {
     languageOptions: {
       parserOptions: {
@@ -32,9 +35,16 @@ export default defineConfig(
         "error",
         { allowNumber: true },
       ],
+      "llm-core/max-file-length": ["error", { max: 350 }],
       // complementary core rules for AI-generated code
       "no-nested-ternary": "error",
       "no-useless-assignment": "error",
+    },
+  },
+  {
+    files: ["eslint.config.js"],
+    rules: {
+      "llm-core/max-file-length": "off",
     },
   },
   {

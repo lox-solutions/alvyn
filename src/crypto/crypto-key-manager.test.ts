@@ -1,3 +1,4 @@
+import { createDecipheriv, scryptSync } from "node:crypto";
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -91,6 +92,36 @@ function flipByte(value: Buffer, offset: number): Buffer {
   return changed;
 }
 
+function decryptEnvelopeWithSecret(options: {
+  envelope: Buffer;
+  keyId: string;
+  secretKey: Buffer;
+}): Buffer {
+  const { envelope, keyId, secretKey } = options;
+  const header = envelope.subarray(0, 8);
+  const decipher = createDecipheriv(
+    "aes-256-gcm",
+    secretKey,
+    envelope.subarray(8, 20),
+    { authTagLength: 16 },
+  );
+  decipher.setAAD(
+    Buffer.from(
+      JSON.stringify([
+        "alvyn:entity-key-envelope:v1",
+        keyId,
+        header.toString("base64"),
+      ]),
+      "utf8",
+    ),
+  );
+  decipher.setAuthTag(envelope.subarray(20, 36));
+  return Buffer.concat([
+    decipher.update(envelope.subarray(36)),
+    decipher.final(),
+  ]);
+}
+
 describe("entity crypto keys", () => {
   it("creates and decrypts a random 256-bit key", () =>
     withManager(async ({ client, manager, schema }) => {
@@ -102,17 +133,46 @@ describe("entity crypto keys", () => {
       expect(key).toHaveLength(32);
     }));
 
-  it("supports passphrase secrets as well as hexadecimal secrets", () =>
+  it.each([
+    ["passphrase", "a human-readable secret"],
+    ["hex-looking value", SECRET_1],
+  ])("uses scrypt for a %s secret", (_kind, secretValue) =>
     withManager(
       async ({ client, manager, schema }) => {
-        await manager.createKey({ client, schema, keyId: "user:passphrase" });
+        const keyId = "user:scrypt";
+        await manager.createKey({ client, schema, keyId });
+        const envelope = await readEnvelope({ client, manager, schema }, keyId);
 
-        await expect(
-          manager.getKey({ client, schema, keyId: "user:passphrase" }),
-        ).resolves.toHaveLength(32);
+        expect(
+          decryptEnvelopeWithSecret({
+            envelope,
+            keyId,
+            secretKey: scryptSync(secretValue, "alvyn:crypto-secret:v1", 32),
+          }),
+        ).toHaveLength(32);
       },
-      [{ version: 1, value: "a human-readable secret" }],
-    ));
+      [{ version: 1, value: secretValue }],
+    ),
+  );
+
+  it("locks a batch of keys in deterministic key ID order", async () => {
+    const queriedKeyIds: string[] = [];
+    const client = {
+      query: (_text: string, values: string[]) => {
+        queriedKeyIds.push(values[0]);
+        return { rows: [{ revoked_at: null }] };
+      },
+    } as unknown as pg.PoolClient;
+    const manager = new CryptoKeyManager({ secrets: DEFAULT_SECRETS });
+
+    await manager.lockKeysForEncryption({
+      client,
+      schema: "test_schema",
+      keyIds: ["user:z", "user:a", "user:z"],
+    });
+
+    expect(queriedKeyIds).toEqual(["user:a", "user:z"]);
+  });
 
   it("keeps the original key when creation is repeated", () =>
     withManager(async (context) => {
@@ -172,6 +232,29 @@ describe("entity key envelope", () => {
       expect(envelope.subarray(0, 4).toString("utf8")).toBe("ALVY");
       expect(envelopeVersion(envelope)).toBe(1);
       expect(envelope).toHaveLength(68);
+    }));
+
+  it("rejects unversioned entity key envelopes", () =>
+    withManager(async (context) => {
+      const keyId = "user:unversioned";
+      await context.manager.createKey({
+        client: context.client,
+        schema: context.schema,
+        keyId,
+      });
+      await writeEnvelope({
+        context,
+        keyId,
+        envelope: Buffer.alloc(60),
+      });
+
+      await expect(
+        context.manager.getKey({
+          client: context.client,
+          schema: context.schema,
+          keyId,
+        }),
+      ).rejects.toThrow("Invalid versioned crypto key envelope");
     }));
 
   it("selects the secret directly by envelope version", () =>

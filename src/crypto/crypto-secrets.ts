@@ -22,7 +22,7 @@ export function parseCryptoSecrets(value: string | undefined): CryptoSecret[] {
     const separator = entry.indexOf(":");
     if (separator <= 0) {
       throw new InvalidCryptoSecretsError(
-        `Invalid entry "${entry}"; expected version:value`,
+        "Invalid crypto secret entry; expected version:value",
       );
     }
 

@@ -1,8 +1,8 @@
 import {
   createCipheriv,
   createDecipheriv,
-  createHash,
   randomBytes,
+  scryptSync,
 } from "node:crypto";
 
 import type { PoolClient } from "pg";
@@ -26,6 +26,7 @@ const ENVELOPE_HEADER_LENGTH =
   SECRET_VERSION_OFFSET + SECRET_VERSION_BYTE_LENGTH;
 const ENVELOPE_LENGTH =
   ENVELOPE_HEADER_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH + KEY_LENGTH;
+const SECRET_KDF_SALT = "alvyn:crypto-secret:v1";
 
 export interface CryptoKeyManagerOptions {
   /** Ordered secrets; the first one is used for new encryption. */
@@ -74,6 +75,31 @@ export class CryptoKeyManager {
        ON CONFLICT (key_id) DO NOTHING`,
       [keyId, encryptedKey],
     );
+  }
+
+  /**
+   * Locks all keys needed by one append in deterministic key ID order.
+   * The locks are held by the caller's transaction until it completes.
+   */
+  async lockKeysForEncryption(options: {
+    client: PoolClient;
+    schema: string;
+    keyIds: readonly string[];
+  }): Promise<void> {
+    const { client, schema } = options;
+    const keyIds = [...new Set(options.keyIds)].sort(
+      (left, right) => Number(left > right) - Number(left < right),
+    );
+
+    for (const keyId of keyIds) {
+      const result = await client.query<{ revoked_at: Date | null }>(
+        `SELECT revoked_at FROM ${schema}.crypto_keys WHERE key_id = $1 FOR UPDATE`,
+        [keyId],
+      );
+      if (result.rows.length === 0) throw new CryptoKeyNotFoundError(keyId);
+      if (result.rows[0].revoked_at !== null)
+        throw new CryptoKeyRevokedError(keyId);
+    }
   }
 
   /**
@@ -247,7 +273,13 @@ export class CryptoKeyManager {
   }
 }
 
+/**
+ * Converts a configured secret into the 32-byte key used to protect each
+ * entity's randomly generated AES-256 encryption key.
+ *
+ * All configured values are strengthened with scrypt before they are used to
+ * protect entity keys.
+ */
 function deriveSecretKey(value: string): Buffer {
-  if (/^[0-9a-f]{64}$/i.test(value)) return Buffer.from(value, "hex");
-  return createHash("sha256").update(value, "utf8").digest();
+  return scryptSync(value, SECRET_KDF_SALT, KEY_LENGTH);
 }

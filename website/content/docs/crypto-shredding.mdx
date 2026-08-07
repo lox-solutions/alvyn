@@ -80,20 +80,23 @@ The same configuration can be supplied through the environment:
 GDPR_CRYPTO_SECRETS=2:new-secret-base64,1:old-secret-base64
 ```
 
-Secret values are strings. Keep every old secret needed to read existing data
-until that data has been intentionally retired; removing a configured version
-makes envelopes using it unreadable.
+Secret values are strings. All values are strengthened with `scrypt` to derive
+the 32-byte key used to protect entity keys. Use a high-entropy generated value;
+`scrypt` makes guessing more expensive but cannot add entropy to a weak secret.
+Keep every old secret needed to read existing versioned envelopes until that
+data has been intentionally retired; removing a configured version makes those
+envelopes unreadable.
 
 Secret versions are unsigned 32-bit integers from `0` to `4294967295`. Gaps are
 allowed, but every newly rotated secret must use a higher version than the
 current secret. This monotonic ordering prevents a replica with an older
 configuration from downgrading an envelope during a rolling deployment.
 
-> **Pre-release format warning:** This release intentionally has no
-> compatibility reader for crypto records created with an earlier,
-> unauthenticated pre-release format. Recreate development or test data before
-> upgrading. Production rotation between versions created by this release does
-> not require a database migration.
+> **Format warning:** This release intentionally supports only authenticated,
+> versioned crypto envelopes. It does not read records created by earlier
+> pre-release implementations. Start with an empty crypto database, or recreate
+> development and test data, before adopting this format. Rotating between
+> secret versions in this format does not require a database migration.
 
 ### 2. Create Entity Keys
 

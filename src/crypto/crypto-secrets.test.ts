@@ -41,6 +41,19 @@ describe("environment crypto secrets", () => {
     expect(() => parseCryptoSecrets(value)).toThrow(InvalidCryptoSecretsError);
   });
 
+  it("does not disclose a malformed secret entry in its error", () => {
+    const secret = "configured-secret-without-separator";
+    let thrown: unknown;
+    try {
+      parseCryptoSecrets(secret);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(InvalidCryptoSecretsError);
+    expect((thrown as Error).message).not.toContain(secret);
+  });
+
   it("rejects a non-string runtime value", () => {
     expect(() => parseCryptoSecrets(42 as unknown as string)).toThrowError(
       InvalidCryptoSecretsError,
