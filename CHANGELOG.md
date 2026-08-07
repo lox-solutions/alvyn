@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.3...alvyn-v0.1.4) (2026-08-07)
+
+
+### Features
+
+* **crypto:** replace master key with versioned secrets ([#30](https://github.com/lox-solutions/alvyn/issues/30)) ([e65162e](https://github.com/lox-solutions/alvyn/commit/e65162e288b619e9a5a5d6ea442e9eaaa5744404))
+
 ## [0.1.3](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.2...alvyn-v0.1.3) (2026-07-16)
 
 
