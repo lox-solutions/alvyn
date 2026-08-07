@@ -51,8 +51,8 @@ export function uniqueSchema(): string {
 }
 
 /**
- * Generates a valid 256-bit master encryption key (64 hex chars).
+ * Generates a high-entropy crypto secret value.
  */
-export function testMasterKey(): string {
+export function testSecretValue(): string {
   return randomBytes(32).toString("hex");
 }

@@ -15,6 +15,7 @@ export default defineConfig({
       thresholds: {
         lines: 90,
         branches: 85,
+        "src/crypto/**.ts": { 100: true },
       },
     },
   },

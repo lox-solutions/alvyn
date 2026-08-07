@@ -3,8 +3,17 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
+const MAX_KEY_VERSION = 0xffffffff;
+const FIELD_AAD_DOMAIN = "alvyn:encrypted-field:v1";
 
-interface EncryptedFieldEntry {
+export interface FieldEncryptionContext {
+  eventId: string;
+  cryptoKeyId: string;
+}
+
+export interface EncryptedFieldEntry {
+  /** Version of the configured secret used for this encrypted entry. */
+  version: number;
   /** Base64-encoded ciphertext */
   ciphertext: string;
   /** Base64-encoded initialization vector */
@@ -26,7 +35,6 @@ export interface EncryptResult {
  */
 function getNestedField(obj: Record<string, unknown>, path: string): unknown {
   const parts = path.split(".");
-  if (!parts.every(isSafePathSegment)) return undefined;
   let current: unknown = obj;
   for (const part of parts) {
     if (
@@ -36,6 +44,7 @@ function getNestedField(obj: Record<string, unknown>, path: string): unknown {
     ) {
       return undefined;
     }
+    if (!Object.prototype.hasOwnProperty.call(current, part)) return undefined;
     current = (current as Record<string, unknown>)[part];
   }
   return current;
@@ -47,10 +56,73 @@ function getNestedField(obj: Record<string, unknown>, path: string): unknown {
  */
 function isSafePathSegment(segment: string): boolean {
   return (
+    segment.length > 0 &&
     segment !== "__proto__" &&
     segment !== "constructor" &&
     segment !== "prototype"
   );
+}
+
+function assertValidFieldPath(path: string): void {
+  if (!path.split(".").every(isSafePathSegment)) {
+    throw new Error(`Invalid encrypted field path "${path}"`);
+  }
+}
+
+function assertDistinctFieldPaths(fields: string[]): void {
+  const accepted: string[] = [];
+  for (const field of fields) {
+    assertValidFieldPath(field);
+    if (
+      accepted.some(
+        (other) =>
+          field === other ||
+          field.startsWith(`${other}.`) ||
+          other.startsWith(`${field}.`),
+      )
+    ) {
+      throw new Error(`Encrypted field path "${field}" overlaps another path`);
+    }
+    accepted.push(field);
+  }
+}
+
+function assertValidKeyVersion(version: number): void {
+  if (
+    !Number.isSafeInteger(version) ||
+    version < 0 ||
+    version > MAX_KEY_VERSION
+  ) {
+    throw new Error("Invalid encrypted field version");
+  }
+}
+
+function fieldAad(options: {
+  context: FieldEncryptionContext;
+  field: string;
+  version: number;
+}): Buffer {
+  return Buffer.from(
+    JSON.stringify([
+      FIELD_AAD_DOMAIN,
+      options.context.eventId,
+      options.context.cryptoKeyId,
+      options.field,
+      options.version,
+    ]),
+    "utf8",
+  );
+}
+
+function decodeBase64(value: unknown, label: string): Buffer {
+  if (typeof value !== "string") {
+    throw new Error(`Invalid encrypted field ${label}`);
+  }
+  const decoded = Buffer.from(value, "base64");
+  if (decoded.toString("base64") !== value) {
+    throw new Error(`Invalid encrypted field ${label}`);
+  }
+  return decoded;
 }
 
 function setNestedField(options: {
@@ -60,10 +132,6 @@ function setNestedField(options: {
 }): void {
   const { obj, path, value } = options;
   const parts = path.split(".");
-  if (parts.length === 0 || !parts.every(isSafePathSegment)) {
-    return;
-  }
-
   let current: Record<string, unknown> = obj;
   for (let i = 0; i < parts.length - 1; i++) {
     const part = parts[i];
@@ -86,17 +154,9 @@ function setNestedField(options: {
  */
 function removeNestedField(obj: Record<string, unknown>, path: string): void {
   const parts = path.split(".");
-  if (!parts.every(isSafePathSegment)) return;
   let current: Record<string, unknown> = obj;
   for (let i = 0; i < parts.length - 1; i++) {
     const part = parts[i];
-    if (
-      !(part in current) ||
-      typeof current[part] !== "object" ||
-      current[part] === null
-    ) {
-      return;
-    }
     current = current[part] as Record<string, unknown>;
   }
   const lastKey = parts[parts.length - 1];
@@ -116,8 +176,12 @@ export function encryptFields(options: {
   data: Record<string, unknown>;
   fields: string[];
   aesKey: Buffer;
+  keyVersion: number;
+  context: FieldEncryptionContext;
 }): EncryptResult {
-  const { data, fields, aesKey } = options;
+  const { data, fields, aesKey, keyVersion, context } = options;
+  assertValidKeyVersion(keyVersion);
+  assertDistinctFieldPaths(fields);
   // Deep-clone to avoid mutating the original
   const cleanData = JSON.parse(JSON.stringify(data)) as Record<string, unknown>;
   const encryptedData: Record<string, EncryptedFieldEntry> = {};
@@ -131,6 +195,7 @@ export function encryptFields(options: {
     const cipher = createCipheriv(ALGORITHM, aesKey, iv, {
       authTagLength: AUTH_TAG_LENGTH,
     });
+    cipher.setAAD(fieldAad({ context, field, version: keyVersion }));
 
     const encrypted = Buffer.concat([
       cipher.update(plaintext, "utf8"),
@@ -139,6 +204,7 @@ export function encryptFields(options: {
     const authTag = cipher.getAuthTag();
 
     encryptedData[field] = {
+      version: keyVersion,
       ciphertext: encrypted.toString("base64"),
       iv: iv.toString("base64"),
       authTag: authTag.toString("base64"),
@@ -162,21 +228,34 @@ export function decryptFields(options: {
   cleanData: Record<string, unknown>;
   encryptedData: Record<string, EncryptedFieldEntry>;
   aesKey: Buffer;
+  context: FieldEncryptionContext;
 }): Record<string, unknown> {
-  const { cleanData, encryptedData, aesKey } = options;
+  const { cleanData, encryptedData, aesKey, context } = options;
   const result = JSON.parse(JSON.stringify(cleanData)) as Record<
     string,
     unknown
   >;
 
   for (const [field, entry] of Object.entries(encryptedData)) {
-    const ciphertext = Buffer.from(entry.ciphertext, "base64");
-    const iv = Buffer.from(entry.iv, "base64");
-    const authTag = Buffer.from(entry.authTag, "base64");
+    assertValidFieldPath(field);
+    if (!entry || typeof entry !== "object") {
+      throw new Error(`Invalid encrypted field entry for "${field}"`);
+    }
+    assertValidKeyVersion(entry.version);
+    const ciphertext = decodeBase64(entry.ciphertext, "ciphertext");
+    const iv = decodeBase64(entry.iv, "initialization vector");
+    const authTag = decodeBase64(entry.authTag, "authentication tag");
+    if (iv.length !== IV_LENGTH) {
+      throw new Error("Invalid encrypted field initialization vector");
+    }
+    if (authTag.length !== AUTH_TAG_LENGTH) {
+      throw new Error("Invalid encrypted field authentication tag");
+    }
 
     const decipher = createDecipheriv(ALGORITHM, aesKey, iv, {
       authTagLength: AUTH_TAG_LENGTH,
     });
+    decipher.setAAD(fieldAad({ context, field, version: entry.version }));
     decipher.setAuthTag(authTag);
 
     const decrypted = Buffer.concat([

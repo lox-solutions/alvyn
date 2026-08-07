@@ -5,7 +5,7 @@ import {
   createCryptoKey as createCryptoKeyOp,
   revokeCryptoKey as revokeCryptoKeyOp,
 } from "./crypto/crypto-key-operations";
-import { MasterKeyRequiredError } from "./errors";
+import { CryptoSecretsRequiredError } from "./errors";
 import { cleanupOutbox, processOutbox } from "./outbox/outbox-processor";
 import { inTransaction } from "./pg-helpers";
 import { runProjection as runProjectionFn } from "./projection/run-projection";
@@ -78,7 +78,7 @@ export class EventStoreMaintenance {
   }
 
   private requireCryptoKeyManager(): CryptoKeyManager {
-    if (!this.cryptoKeyManager) throw new MasterKeyRequiredError();
+    if (!this.cryptoKeyManager) throw new CryptoSecretsRequiredError();
     return this.cryptoKeyManager;
   }
 }

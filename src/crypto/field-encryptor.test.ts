@@ -1,215 +1,324 @@
-import { describe, it, expect } from "vitest";
 import { randomBytes } from "node:crypto";
-import { encryptFields, decryptFields } from "./field-encryptor";
+import { describe, expect, it } from "vitest";
 
-function makeKey(): Buffer {
-  return randomBytes(32);
+import {
+  decryptFields,
+  encryptFields,
+  type EncryptedFieldEntry,
+  type EncryptResult,
+  type FieldEncryptionContext,
+} from "./field-encryptor";
+
+const KEY = randomBytes(32);
+const CONTEXT: FieldEncryptionContext = {
+  eventId: "User-1/1",
+  cryptoKeyId: "user:1",
+};
+
+function encrypt(
+  data: Record<string, unknown>,
+  fields: string[],
+): EncryptResult {
+  return encryptFields({
+    data,
+    fields,
+    aesKey: KEY,
+    keyVersion: 7,
+    context: CONTEXT,
+  });
 }
 
-describe("field-encryptor", () => {
-  describe("encryptFields / decryptFields round-trip", () => {
-    it("encrypts and decrypts top-level string fields", () => {
-      const key = makeKey();
-      const data = { name: "Alice", email: "alice@example.com", age: 30 };
+function decrypt(
+  result: EncryptResult,
+  options: {
+    key?: Buffer;
+    context?: FieldEncryptionContext;
+    encryptedData?: Record<string, EncryptedFieldEntry>;
+  } = {},
+): Record<string, unknown> {
+  return decryptFields({
+    cleanData: result.cleanData,
+    encryptedData: options.encryptedData ?? result.encryptedData,
+    aesKey: options.key ?? KEY,
+    context: options.context ?? CONTEXT,
+  });
+}
 
-      const { cleanData, encryptedData } = encryptFields({
-        data,
-        fields: ["name", "email"],
-        aesKey: key,
-      });
+function flipBase64Bit(value: string): string {
+  const bytes = Buffer.from(value, "base64");
+  bytes[0] ^= 1;
+  return bytes.toString("base64");
+}
 
-      expect(cleanData.name).toBeUndefined();
-      expect(cleanData.email).toBeUndefined();
-      expect(cleanData.age).toBe(30);
-      expect(encryptedData.name).toBeDefined();
-      expect(encryptedData.name.ciphertext).toBeTruthy();
-      expect(encryptedData.name.iv).toBeTruthy();
-      expect(encryptedData.name.authTag).toBeTruthy();
-
-      const restored = decryptFields({ cleanData, encryptedData, aesKey: key });
-      expect(restored.name).toBe("Alice");
-      expect(restored.email).toBe("alice@example.com");
-      expect(restored.age).toBe(30);
-    });
-
-    it("encrypts and decrypts nested fields via dot-path", () => {
-      const key = makeKey();
+describe("field encryption", () => {
+  describe("round trips", () => {
+    it("removes encrypted fields from clean data and restores every JSON value", () => {
       const data = {
-        address: { street: "123 Main", city: "Berlin" },
-        active: true,
-      };
-
-      const { cleanData, encryptedData } = encryptFields({
-        data,
-        fields: ["address.street", "address.city"],
-        aesKey: key,
-      });
-
-      expect(
-        (cleanData.address as Record<string, unknown>).street,
-      ).toBeUndefined();
-      expect(
-        (cleanData.address as Record<string, unknown>).city,
-      ).toBeUndefined();
-      expect(cleanData.active).toBe(true);
-
-      const restored = decryptFields({ cleanData, encryptedData, aesKey: key });
-      expect((restored.address as Record<string, unknown>).street).toBe(
-        "123 Main",
-      );
-      expect((restored.address as Record<string, unknown>).city).toBe("Berlin");
-    });
-
-    it("handles non-string values (numbers, objects, arrays)", () => {
-      const key = makeKey();
-      const data = {
-        secret: { nested: [1, 2, 3] },
+        name: "Alice",
         count: 42,
+        enabled: true,
+        nullable: null,
+        details: { roles: ["admin", "author"] },
         public: "visible",
       };
 
-      const { cleanData, encryptedData } = encryptFields({
-        data,
-        fields: ["secret", "count"],
-        aesKey: key,
+      const encrypted = encrypt(data, [
+        "name",
+        "count",
+        "enabled",
+        "nullable",
+        "details",
+      ]);
+
+      expect(encrypted.cleanData).toEqual({ public: "visible" });
+      expect(decrypt(encrypted)).toEqual(data);
+    });
+
+    it("supports nested dot paths without removing public siblings", () => {
+      const data = {
+        address: { street: "Main Street", city: "Berlin" },
+        active: true,
+      };
+
+      const encrypted = encrypt(data, ["address.street"]);
+
+      expect(encrypted.cleanData).toEqual({
+        address: { city: "Berlin" },
+        active: true,
       });
+      expect(decrypt(encrypted)).toEqual(data);
+    });
 
-      expect(cleanData.secret).toBeUndefined();
-      expect(cleanData.count).toBeUndefined();
+    it("skips fields that are absent from this event", () => {
+      const encrypted = encrypt({ name: "Alice" }, [
+        "name",
+        "missing",
+        "nested.missing",
+      ]);
 
-      const restored = decryptFields({ cleanData, encryptedData, aesKey: key });
-      expect(restored.secret).toEqual({ nested: [1, 2, 3] });
-      expect(restored.count).toBe(42);
+      expect(Object.keys(encrypted.encryptedData)).toEqual(["name"]);
+    });
+
+    it("returns a clone when no fields are selected", () => {
+      const data = { name: "Alice" };
+      const encrypted = encrypt(data, []);
+
+      expect(encrypted).toEqual({ cleanData: data, encryptedData: {} });
+      expect(encrypted.cleanData).not.toBe(data);
+    });
+
+    it("does not mutate encryption or decryption inputs", () => {
+      const data = { name: "Alice", public: "visible" };
+      const encrypted = encrypt(data, ["name"]);
+      const cleanBeforeDecryption = structuredClone(encrypted.cleanData);
+
+      decrypt(encrypted);
+
+      expect(data).toEqual({ name: "Alice", public: "visible" });
+      expect(encrypted.cleanData).toEqual(cleanBeforeDecryption);
+    });
+
+    it.each([
+      ["a missing parent", {}],
+      ["a primitive parent", { profile: "public" }],
+      ["a null parent", { profile: null }],
+    ])("restores a nested field over %s in clean data", (_case, cleanData) => {
+      const encrypted = encrypt({ profile: { secret: "value" } }, [
+        "profile.secret",
+      ]);
+
+      const restored = decrypt({ ...encrypted, cleanData });
+
+      expect(restored).toEqual({ profile: { secret: "value" } });
+    });
+
+    it("uses a distinct random IV for each field", () => {
+      const { encryptedData } = encrypt({ first: "same", second: "same" }, [
+        "first",
+        "second",
+      ]);
+
+      expect(encryptedData.first.iv).not.toBe(encryptedData.second.iv);
     });
   });
 
-  describe("edge cases", () => {
-    it("skips undefined fields without error", () => {
-      const key = makeKey();
-      const data = { name: "Alice" };
-
-      const { cleanData, encryptedData } = encryptFields({
-        data,
-        fields: ["name", "nonexistent", "deep.path.missing"],
-        aesKey: key,
-      });
-
-      expect(cleanData.name).toBeUndefined();
-      expect(Object.keys(encryptedData)).toEqual(["name"]);
-    });
-
-    it("returns original data when fields array is empty", () => {
-      const key = makeKey();
-      const data = { name: "Alice", age: 30 };
-
-      const { cleanData, encryptedData } = encryptFields({
-        data,
-        fields: [],
-        aesKey: key,
-      });
-
-      expect(cleanData).toEqual(data);
-      expect(Object.keys(encryptedData)).toHaveLength(0);
-    });
-
-    it("does not mutate the original data object", () => {
-      const key = makeKey();
-      const original = { name: "Alice", age: 30 };
-      const copy = { ...original };
-
-      encryptFields({ data: original, fields: ["name"], aesKey: key });
-
-      expect(original).toEqual(copy);
-    });
-
-    it("decryptFields does not mutate cleanData input", () => {
-      const key = makeKey();
-      const data = { name: "Alice", age: 30 };
-      const { cleanData, encryptedData } = encryptFields({
-        data,
-        fields: ["name"],
-        aesKey: key,
-      });
-      const cleanCopy = JSON.parse(
-        JSON.stringify(cleanData),
-      ) as typeof cleanData;
-
-      decryptFields({ cleanData, encryptedData, aesKey: key });
-
-      expect(cleanData).toEqual(cleanCopy);
-    });
-
-    it("rejects prototype pollution paths silently", () => {
-      const key = makeKey();
-      const data = { safe: "value" };
-
-      // These should not throw, just skip
-      const { cleanData } = encryptFields({
-        data,
-        fields: ["__proto__", "constructor", "prototype"],
-        aesKey: key,
-      });
-      expect(cleanData.safe).toBe("value");
-    });
-
-    it("decryption fails with wrong key", () => {
-      const key1 = makeKey();
-      const key2 = makeKey();
-      const data = { secret: "classified" };
-
-      const { cleanData, encryptedData } = encryptFields({
-        data,
-        fields: ["secret"],
-        aesKey: key1,
-      });
+  describe("authenticated context", () => {
+    it("rejects ciphertext moved to another field", () => {
+      const encrypted = encrypt({ name: "Alice", email: "alice@example.com" }, [
+        "name",
+        "email",
+      ]);
 
       expect(() =>
-        decryptFields({ cleanData, encryptedData, aesKey: key2 }),
+        decrypt(encrypted, {
+          encryptedData: {
+            name: encrypted.encryptedData.email,
+            email: encrypted.encryptedData.name,
+          },
+        }),
       ).toThrow();
     });
 
-    it("each field gets unique IV (no IV reuse)", () => {
-      const key = makeKey();
-      const data = { field1: "a", field2: "a" };
+    it.each([
+      ["event identity", { ...CONTEXT, eventId: "User-1/2" }],
+      ["crypto key identity", { ...CONTEXT, cryptoKeyId: "user:2" }],
+    ])("rejects a changed %s", (_label, context) => {
+      const encrypted = encrypt({ secret: "classified" }, ["secret"]);
 
-      const { encryptedData } = encryptFields({
-        data,
-        fields: ["field1", "field2"],
-        aesKey: key,
-      });
-
-      expect(encryptedData.field1.iv).not.toBe(encryptedData.field2.iv);
+      expect(() => decrypt(encrypted, { context })).toThrow();
     });
 
-    it("decryptFields silently skips prototype pollution paths in encryptedData", () => {
-      const key = makeKey();
-      const data = { safe: "value" };
-      const { cleanData, encryptedData } = encryptFields({
-        data,
-        fields: ["safe"],
-        aesKey: key,
-      });
+    it("rejects a changed key version", () => {
+      const encrypted = encrypt({ secret: "classified" }, ["secret"]);
+      const changedVersion = {
+        ...encrypted.encryptedData.secret,
+        version: 8,
+      };
 
-      // Inject a malicious key alongside real encrypted data
-      const poisoned = Object.assign(
-        { ...encryptedData },
-        {
-          constructor: encryptedData.safe,
-        },
-      ) as Record<string, unknown>;
+      expect(() =>
+        decrypt(encrypted, {
+          encryptedData: { secret: changedVersion },
+        }),
+      ).toThrow();
+    });
+  });
 
-      const result = decryptFields({
-        cleanData,
-        encryptedData: poisoned as unknown as Record<
-          string,
-          { ciphertext: string; iv: string; authTag: string }
-        >,
-        aesKey: key,
-      });
-      // safe field decrypted normally
-      expect(result.safe).toBe("value");
-      // constructor should not have been set as own data property
-      expect(result.constructor).toBe(Object);
+  describe("tamper resistance", () => {
+    it("rejects the wrong AES key", () => {
+      const encrypted = encrypt({ secret: "classified" }, ["secret"]);
+
+      expect(() => decrypt(encrypted, { key: randomBytes(32) })).toThrow();
+    });
+
+    it.each(["ciphertext", "iv", "authTag"] as const)(
+      "rejects a modified %s",
+      (property) => {
+        const encrypted = encrypt({ secret: "classified" }, ["secret"]);
+        const entry = encrypted.encryptedData.secret;
+        const tampered = {
+          ...entry,
+          [property]: flipBase64Bit(entry[property]),
+        };
+
+        expect(() =>
+          decrypt(encrypted, { encryptedData: { secret: tampered } }),
+        ).toThrow();
+      },
+    );
+  });
+
+  describe("malformed data", () => {
+    it.each(["", ".secret", "secret.", "__proto__", "a.constructor.b"])(
+      "rejects unsafe field path %j",
+      (field) => {
+        expect(() => encrypt({ secret: "value" }, [field])).toThrow(
+          "Invalid encrypted field path",
+        );
+      },
+    );
+
+    it.each([
+      ["duplicate paths", ["profile", "profile"]],
+      ["parent before child", ["profile", "profile.secret"]],
+      ["child before parent", ["profile.secret", "profile"]],
+    ])("rejects %s", (_case, fields) => {
+      expect(() => encrypt({ profile: { secret: "value" } }, fields)).toThrow(
+        "overlaps another path",
+      );
+    });
+
+    it("does not treat inherited properties as event fields", () => {
+      const encrypted = encrypt({ name: "Alice" }, ["toString"]);
+
+      expect(encrypted.encryptedData).toEqual({});
+    });
+
+    it.each([null, "public"])(
+      "skips a nested field below a non-object parent (%j)",
+      (profile) => {
+        const encrypted = encrypt({ profile }, ["profile.secret"]);
+
+        expect(encrypted.encryptedData).toEqual({});
+      },
+    );
+
+    it.each([undefined, -1, 1.5, 0x1_0000_0000])(
+      "rejects invalid key version %s",
+      (version) => {
+        expect(() =>
+          encryptFields({
+            data: { secret: "value" },
+            fields: ["secret"],
+            aesKey: KEY,
+            keyVersion: version!,
+            context: CONTEXT,
+          }),
+        ).toThrow("Invalid encrypted field version");
+      },
+    );
+
+    it("rejects a missing encrypted field entry", () => {
+      expect(() =>
+        decryptFields({
+          cleanData: {},
+          encryptedData: { secret: null as unknown as EncryptedFieldEntry },
+          aesKey: KEY,
+          context: CONTEXT,
+        }),
+      ).toThrow("Invalid encrypted field entry");
+    });
+
+    it("rejects a non-string encoded component", () => {
+      const encrypted = encrypt({ secret: "classified" }, ["secret"]);
+      const malformed = {
+        ...encrypted.encryptedData.secret,
+        ciphertext: 42 as unknown as string,
+      };
+
+      expect(() =>
+        decrypt(encrypted, { encryptedData: { secret: malformed } }),
+      ).toThrow("Invalid encrypted field ciphertext");
+    });
+
+    it.each([
+      {
+        property: "ciphertext",
+        value: "not base64!",
+        errorLabel: "ciphertext",
+      },
+      {
+        property: "iv",
+        value: Buffer.alloc(11).toString("base64"),
+        errorLabel: "initialization vector",
+      },
+      {
+        property: "authTag",
+        value: Buffer.alloc(15).toString("base64"),
+        errorLabel: "authentication tag",
+      },
+    ] as const)(
+      "rejects an invalid $property",
+      ({ property, value, errorLabel }) => {
+        const encrypted = encrypt({ secret: "classified" }, ["secret"]);
+        const malformed = {
+          ...encrypted.encryptedData.secret,
+          [property]: value,
+        };
+
+        expect(() =>
+          decrypt(encrypted, { encryptedData: { secret: malformed } }),
+        ).toThrow(`Invalid encrypted field ${errorLabel}`);
+      },
+    );
+
+    it("rejects an unsafe path read from encrypted data", () => {
+      const encrypted = encrypt({ secret: "classified" }, ["secret"]);
+
+      expect(() =>
+        decrypt(encrypted, {
+          encryptedData: { constructor: encrypted.encryptedData.secret },
+        }),
+      ).toThrow("Invalid encrypted field path");
     });
   });
 });

@@ -153,6 +153,34 @@ async function prepareRows(options: {
   return preparedRows;
 }
 
+/** Collects the distinct per-entity keys needed by encrypted events. */
+function encryptionKeyIds(events: AppendEventInput[]): string[] {
+  return [
+    ...new Set(
+      events.flatMap((event) =>
+        event.encryptedFields?.length && event.cryptoKeyId
+          ? [event.cryptoKeyId]
+          : [],
+      ),
+    ),
+  ];
+}
+
+/** Locks encrypted-event keys before preparing rows in the append transaction. */
+async function lockEncryptionKeys(options: {
+  events: AppendEventInput[];
+  cryptoKeyManager: CryptoKeyManager | null;
+  client: PoolClient;
+  schema: string;
+}): Promise<void> {
+  if (!options.cryptoKeyManager) return;
+  await options.cryptoKeyManager.lockKeysForEncryption({
+    client: options.client,
+    schema: options.schema,
+    keyIds: encryptionKeyIds(options.events),
+  });
+}
+
 async function writeOutbox(options: {
   client: PoolClient;
   schema: string;
@@ -186,6 +214,7 @@ export async function appendToStream(
     expectedVersion,
   });
   const fromVersion = currentVersion + 1;
+  await lockEncryptionKeys({ events, cryptoKeyManager, client, schema });
   const preparedRows = await prepareRows({
     events,
     streamId,

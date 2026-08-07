@@ -21,23 +21,50 @@ new EventStore(config: EventStoreConfig)
 interface EventStoreConfig {
   pool: Pool;
   schema?: string;
-  masterEncryptionKey?: string;
+  secrets?: CryptoSecretsConfig;
   defaultSource?: string;
   snapshots?: SnapshotHandle<unknown>[];
 }
 ```
 
-| Parameter             | Type                        | Required | Description                                                          |
-| --------------------- | --------------------------- | -------- | -------------------------------------------------------------------- |
-| `pool`                | `Pool`                      | Yes      | PostgreSQL connection pool (caller manages lifecycle)                |
-| `schema`              | `string`                    | No       | PostgreSQL schema name (default: `"event_store"`)                    |
-| `masterEncryptionKey` | `string`                    | No       | 256-bit hex key (64 chars) for envelope encryption                   |
-| `defaultSource`       | `string`                    | No       | CloudEvents `source` URI-reference applied to all events             |
-| `snapshots`           | `SnapshotHandle<unknown>[]` | No       | Snapshot definitions maintained synchronously after matching appends |
+| Parameter       | Type                        | Required | Description                                                          |
+| --------------- | --------------------------- | -------- | -------------------------------------------------------------------- |
+| `pool`          | `Pool`                      | Yes      | PostgreSQL connection pool (caller manages lifecycle)                |
+| `schema`        | `string`                    | No       | PostgreSQL schema name (default: `"event_store"`)                    |
+| `secrets`       | `CryptoSecretsConfig`       | No       | Versioned keyring and explicit version used for new encryption       |
+| `defaultSource` | `string`                    | No       | CloudEvents `source` URI-reference applied to all events             |
+| `snapshots`     | `SnapshotHandle<unknown>[]` | No       | Snapshot definitions maintained synchronously after matching appends |
 
 Register independent snapshot handles here when you want Alvyn to maintain them on incoming writes. A snapshot is tied to a `streamPrefix`, but it is not always a `1:1` aggregate feature; one stream prefix can have multiple snapshots for different expensive calculations.
 
 The schema name is validated against `/^[a-z_][a-z0-9_]{0,62}$/`. Invalid names throw `InvalidSchemaNameError`.
+
+`secrets` contains the complete keyring and an explicit `currentVersion`; the
+order of entries is not significant:
+
+```typescript
+secrets: {
+  currentVersion: 2,
+  secrets: [
+    { version: 1, value: process.env.GDPR_CRYPTO_SECRET_V1! },
+    { version: 2, value: process.env.GDPR_CRYPTO_SECRET_V2! },
+  ],
+}
+```
+
+The same configuration can be supplied through
+`GDPR_CRYPTO_SECRETS=version:value,...` and
+`GDPR_CRYPTO_CURRENT_VERSION=2`. Keep old entries during rotation; no database
+migration or downtime is required, and entity keys are lazily re-wrapped on
+their next encrypted write. Versions must be unsigned 32-bit integers, and
+`currentVersion` must be present in the keyring. Use a higher version for each
+new secret; gaps are allowed. In an HA deployment, deploy the complete
+keyring to every replica first, then change only `currentVersion`. See
+[Crypto-Shredding](/docs/crypto-shredding#rotating-secrets-without-downtime) for
+the rollout and old-secret removal procedure. All secret values are strengthened
+with `scrypt`; use a high-entropy generated value because a KDF cannot add
+entropy to a weak secret. Only the authenticated, versioned envelope format is
+supported; records from earlier pre-release implementations must be recreated.
 
 ### Lifecycle
 
@@ -231,13 +258,13 @@ from those domain-facing methods.
 
 Creates a per-entity AES-256 encryption key. Idempotent.
 
-**Throws:** `MasterKeyRequiredError` if no `masterEncryptionKey` was configured.
+**Throws:** `CryptoSecretsRequiredError` if no `secrets` or complete environment keyring was configured.
 
 #### `revokeKey(keyId): Promise<void>`
 
 Revokes a crypto key (GDPR erasure). Encrypted events become tombstones on read.
 
-**Throws:** `MasterKeyRequiredError`, `CryptoKeyNotFoundError`.
+**Throws:** `CryptoSecretsRequiredError`, `CryptoKeyNotFoundError`.
 
 See [Crypto-Shredding](/docs/crypto-shredding) for details.
 
@@ -321,6 +348,16 @@ interface TombstonedEvent {
   extensions: CloudEventExtensions;
   createdAt: Date;
   tombstoned: true;
+}
+
+interface CryptoSecret {
+  version: number;
+  value: string;
+}
+
+interface CryptoSecretsConfig {
+  currentVersion: number;
+  secrets: CryptoSecret[];
 }
 
 type ReplayedEvent<T = unknown> = StoredEvent<T> | TombstonedEvent;
@@ -487,9 +524,23 @@ Thrown when attempting to encrypt **new** events with a revoked key. Not thrown 
 
 Thrown when a crypto key is not found in the key store.
 
-### `MasterKeyRequiredError`
+### `CryptoKeyIdRequiredError`
 
-Thrown when crypto operations are attempted but no `masterEncryptionKey` was provided.
+Thrown when `encryptedFields` are configured without a non-empty `cryptoKeyId`.
+
+### `CryptoSecretsRequiredError`
+
+Thrown when crypto operations are attempted but no complete versioned crypto
+keyring was provided, or when crypto environment configuration is missing its
+current version.
+
+### `InvalidCryptoSecretsError`
+
+Thrown when configured crypto secrets are empty, malformed, duplicated, or use an invalid version.
+
+### `CryptoSecretVersionNotFoundError`
+
+Thrown when an encrypted entity-key envelope references a secret version that is not configured.
 
 ### `EventStoreNotInitializedError`
 

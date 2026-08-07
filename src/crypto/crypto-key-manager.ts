@@ -1,17 +1,39 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  randomBytes,
+  scryptSync,
+} from "node:crypto";
 
 import type { PoolClient } from "pg";
 
 import {
+  CryptoSecretVersionNotFoundError,
   CryptoKeyNotFoundError,
   CryptoKeyRevokedError,
-  MasterKeyRequiredError,
 } from "../errors";
+import { validateCryptoSecrets } from "./crypto-secrets";
+import type { CryptoSecret } from "../types";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
 const KEY_LENGTH = 32; // 256 bits
+const ENVELOPE_MAGIC = Buffer.from("ALVY");
+const SECRET_VERSION_OFFSET = ENVELOPE_MAGIC.length;
+const SECRET_VERSION_BYTE_LENGTH = 4;
+const ENVELOPE_HEADER_LENGTH =
+  SECRET_VERSION_OFFSET + SECRET_VERSION_BYTE_LENGTH;
+const ENVELOPE_LENGTH =
+  ENVELOPE_HEADER_LENGTH + IV_LENGTH + AUTH_TAG_LENGTH + KEY_LENGTH;
+const SECRET_KDF_SALT = "alvyn:crypto-secret:v1";
+
+export interface CryptoKeyManagerOptions {
+  /** Version used for new encryption. */
+  currentVersion: number;
+  /** Unordered secrets retained for decryption and rotation. */
+  secrets: readonly CryptoSecret[];
+}
 
 export interface CryptoKeyOptions {
   client: PoolClient;
@@ -23,22 +45,22 @@ export interface CryptoKeyOptions {
  * Manages per-entity AES-256 encryption keys using envelope encryption.
  *
  * Each entity (e.g. a user) gets its own AES key, which is stored encrypted
- * by the master key. Revoking an entity's key makes their PII unreadable
- * without touching any other entity's data.
+ * by a configured secret. Revoking an entity's key destroys its stored key
+ * material, making their PII unreadable without touching any other entity's data.
  */
 export class CryptoKeyManager {
-  private readonly masterKey: Buffer;
+  private readonly secretKeys: Map<number, Buffer>;
+  public readonly currentSecretVersion: number;
+  public readonly configuredSecretVersions: number[];
 
-  constructor(masterEncryptionKey: string) {
-    if (!masterEncryptionKey) {
-      throw new MasterKeyRequiredError();
-    }
-    this.masterKey = Buffer.from(masterEncryptionKey, "hex");
-    if (this.masterKey.length !== KEY_LENGTH) {
-      throw new Error(
-        `Master encryption key must be 256 bits (64 hex chars), got ${masterEncryptionKey.length} hex chars`,
-      );
-    }
+  constructor(config: CryptoKeyManagerOptions) {
+    const validated = validateCryptoSecrets(config);
+    const { currentVersion, secrets } = validated;
+    this.secretKeys = new Map(
+      secrets.map((secret) => [secret.version, deriveSecretKey(secret.value)]),
+    );
+    this.currentSecretVersion = currentVersion;
+    this.configuredSecretVersions = secrets.map((secret) => secret.version);
   }
 
   /**
@@ -48,7 +70,7 @@ export class CryptoKeyManager {
   async createKey(options: CryptoKeyOptions): Promise<void> {
     const { client, schema, keyId } = options;
     const entityKey = randomBytes(KEY_LENGTH);
-    const encryptedKey = this.encryptWithMasterKey(entityKey);
+    const encryptedKey = this.encryptWithCurrentSecret(entityKey, keyId);
 
     await client.query(
       `INSERT INTO ${schema}.crypto_keys (key_id, encrypted_key)
@@ -59,32 +81,38 @@ export class CryptoKeyManager {
   }
 
   /**
+   * Locks all keys needed by one append in deterministic key ID order.
+   * The locks are held by the caller's transaction until it completes.
+   */
+  async lockKeysForEncryption(options: {
+    client: PoolClient;
+    schema: string;
+    keyIds: readonly string[];
+  }): Promise<void> {
+    const { client, schema } = options;
+    const keyIds = [...new Set(options.keyIds)].sort(
+      (left, right) => Number(left > right) - Number(left < right),
+    );
+
+    for (const keyId of keyIds) {
+      const result = await client.query<{ revoked_at: Date | null }>(
+        `SELECT revoked_at FROM ${schema}.crypto_keys WHERE key_id = $1 FOR UPDATE`,
+        [keyId],
+      );
+      if (result.rows.length === 0) throw new CryptoKeyNotFoundError(keyId);
+      if (result.rows[0].revoked_at !== null)
+        throw new CryptoKeyRevokedError(keyId);
+    }
+  }
+
+  /**
    * Retrieves and decrypts the per-entity AES key.
    * Returns null if the key has been revoked (tombstone semantics).
    * Throws CryptoKeyNotFoundError if the key does not exist at all.
    */
   async getKey(options: CryptoKeyOptions): Promise<Buffer | null> {
-    const { client, schema, keyId } = options;
-    const result = await client.query<{
-      encrypted_key: Buffer;
-      revoked_at: Date | null;
-    }>(
-      `SELECT encrypted_key, revoked_at FROM ${schema}.crypto_keys WHERE key_id = $1`,
-      [keyId],
-    );
-
-    if (result.rows.length === 0) {
-      throw new CryptoKeyNotFoundError(keyId);
-    }
-
-    const row = result.rows[0];
-
-    // Revoked keys return null — the caller should produce a tombstone
-    if (row.revoked_at !== null) {
-      return null;
-    }
-
-    return this.decryptWithMasterKey(row.encrypted_key);
+    const stored = await this.getStoredKey(options);
+    return stored?.key ?? null;
   }
 
   /**
@@ -93,65 +121,167 @@ export class CryptoKeyManager {
    * encrypt new events with a revoked key.
    */
   async getKeyForEncryption(options: CryptoKeyOptions): Promise<Buffer> {
-    const key = await this.getKey(options);
-    if (key === null) {
+    const stored = await this.getStoredKey(options, true);
+    if (stored === null) {
       throw new CryptoKeyRevokedError(options.keyId);
     }
-    return key;
+
+    // Re-wrap older-version envelopes only when the entity is written.
+    // Existing encrypted event data remains untouched.
+    if (stored.version < this.currentSecretVersion) {
+      await options.client.query(
+        `UPDATE ${options.schema}.crypto_keys
+         SET encrypted_key = $1
+         WHERE key_id = $2 AND revoked_at IS NULL`,
+        [
+          this.encryptWithCurrentSecret(stored.key, options.keyId),
+          options.keyId,
+        ],
+      );
+    }
+    return stored.key;
   }
 
   /**
-   * Revokes a crypto key by setting revoked_at.
+   * Revokes a crypto key and destroys its encrypted key material.
    * Events encrypted with this key will be returned as tombstones on read.
-   * The key is NOT deleted — this is intentional for audit trails.
+   * The key row is retained for its audit metadata.
    */
   async revokeKey(options: CryptoKeyOptions): Promise<void> {
     const { client, schema, keyId } = options;
     const result = await client.query(
-      `UPDATE ${schema}.crypto_keys SET revoked_at = now() WHERE key_id = $1 AND revoked_at IS NULL`,
+      `UPDATE ${schema}.crypto_keys
+       SET encrypted_key = NULL,
+           revoked_at = COALESCE(revoked_at, now())
+       WHERE key_id = $1
+       RETURNING key_id`,
       [keyId],
     );
 
     if (result.rowCount === 0) {
-      // Check if key exists at all
-      const exists = await client.query(
-        `SELECT 1 FROM ${schema}.crypto_keys WHERE key_id = $1`,
-        [keyId],
-      );
-      if (exists.rows.length === 0) {
-        throw new CryptoKeyNotFoundError(keyId);
-      }
-      // Key exists but was already revoked — idempotent, no error
+      throw new CryptoKeyNotFoundError(keyId);
     }
   }
 
-  // --- Envelope encryption helpers ---
+  private async getStoredKey(
+    options: CryptoKeyOptions,
+    lockForEncryption = false,
+  ): Promise<{ key: Buffer; version: number } | null> {
+    const { client, schema, keyId } = options;
+    const result = await client.query<{
+      encrypted_key: Buffer | null;
+      revoked_at: Date | null;
+    }>(
+      `SELECT encrypted_key, revoked_at FROM ${schema}.crypto_keys WHERE key_id = $1${lockForEncryption ? " FOR UPDATE" : ""}`,
+      [keyId],
+    );
 
-  private encryptWithMasterKey(entityKey: Buffer): Buffer {
+    if (result.rows.length === 0) {
+      throw new CryptoKeyNotFoundError(keyId);
+    }
+
+    const row = result.rows[0];
+    if (row.revoked_at !== null) return null;
+    if (row.encrypted_key === null) {
+      throw new Error(`Crypto key material is missing for key "${keyId}"`);
+    }
+
+    return this.decryptStoredKey(row.encrypted_key, keyId);
+  }
+
+  // --- Versioned envelope encryption helpers ---
+
+  private encryptWithCurrentSecret(entityKey: Buffer, keyId: string): Buffer {
+    const secretKey = this.secretKeys.get(this.currentSecretVersion)!;
     const iv = randomBytes(IV_LENGTH);
-    const cipher = createCipheriv(ALGORITHM, this.masterKey, iv, {
+    const version = Buffer.alloc(SECRET_VERSION_BYTE_LENGTH);
+    version.writeUInt32BE(this.currentSecretVersion, 0);
+    const header = Buffer.concat([ENVELOPE_MAGIC, version]);
+    const cipher = createCipheriv(ALGORITHM, secretKey, iv, {
       authTagLength: AUTH_TAG_LENGTH,
     });
+    cipher.setAAD(this.envelopeAad(header, keyId));
     const encrypted = Buffer.concat([cipher.update(entityKey), cipher.final()]);
     const authTag = cipher.getAuthTag();
 
-    // Format: [iv (12 bytes)][authTag (16 bytes)][ciphertext]
-    return Buffer.concat([iv, authTag, encrypted]);
+    // Format: [magic (4 bytes)][key version (uint32)][iv][authTag][ciphertext]
+    return Buffer.concat([header, iv, authTag, encrypted]);
   }
 
-  private decryptWithMasterKey(encryptedKey: Buffer): Buffer {
-    const iv = encryptedKey.subarray(0, IV_LENGTH);
-    const authTag = encryptedKey.subarray(
-      IV_LENGTH,
-      IV_LENGTH + AUTH_TAG_LENGTH,
-    );
-    const ciphertext = encryptedKey.subarray(IV_LENGTH + AUTH_TAG_LENGTH);
+  private decryptStoredKey(
+    encryptedKey: Buffer,
+    keyId: string,
+  ): {
+    key: Buffer;
+    version: number;
+  } {
+    if (
+      !encryptedKey.subarray(0, ENVELOPE_MAGIC.length).equals(ENVELOPE_MAGIC) ||
+      encryptedKey.length !== ENVELOPE_LENGTH
+    ) {
+      throw new Error("Invalid versioned crypto key envelope");
+    }
 
-    const decipher = createDecipheriv(ALGORITHM, this.masterKey, iv, {
+    const version = encryptedKey.readUInt32BE(SECRET_VERSION_OFFSET);
+    const secretKey = this.secretKeys.get(version);
+    if (!secretKey) {
+      throw new CryptoSecretVersionNotFoundError(version);
+    }
+    return {
+      key: this.decryptWithSecret({
+        encryptedKey,
+        secretKey,
+        offset: ENVELOPE_HEADER_LENGTH,
+        keyId,
+      }),
+      version,
+    };
+  }
+
+  private decryptWithSecret(options: {
+    encryptedKey: Buffer;
+    secretKey: Buffer;
+    offset: number;
+    keyId: string;
+  }): Buffer {
+    const { encryptedKey, secretKey, offset, keyId } = options;
+    const iv = encryptedKey.subarray(offset, offset + IV_LENGTH);
+    const authTag = encryptedKey.subarray(
+      offset + IV_LENGTH,
+      offset + IV_LENGTH + AUTH_TAG_LENGTH,
+    );
+    const ciphertext = encryptedKey.subarray(
+      offset + IV_LENGTH + AUTH_TAG_LENGTH,
+    );
+
+    const decipher = createDecipheriv(ALGORITHM, secretKey, iv, {
       authTagLength: AUTH_TAG_LENGTH,
     });
+    decipher.setAAD(this.envelopeAad(encryptedKey.subarray(0, offset), keyId));
     decipher.setAuthTag(authTag);
 
     return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
   }
+
+  private envelopeAad(header: Buffer, keyId: string): Buffer {
+    return Buffer.from(
+      JSON.stringify([
+        "alvyn:entity-key-envelope:v1",
+        keyId,
+        header.toString("base64"),
+      ]),
+      "utf8",
+    );
+  }
+}
+
+/**
+ * Converts a configured secret into the 32-byte key used to protect each
+ * entity's randomly generated AES-256 encryption key.
+ *
+ * All configured values are strengthened with scrypt before they are used to
+ * protect entity keys.
+ */
+function deriveSecretKey(value: string): Buffer {
+  return scryptSync(value, SECRET_KDF_SALT, KEY_LENGTH);
 }

@@ -2,9 +2,10 @@ import { describe, it, expect } from "vitest";
 import {
   OptimisticConcurrencyError,
   StreamNotFoundError,
+  CryptoKeyIdRequiredError,
   CryptoKeyRevokedError,
   CryptoKeyNotFoundError,
-  MasterKeyRequiredError,
+  CryptoSecretsRequiredError,
   EventStoreNotInitializedError,
   InvalidSchemaNameError,
 } from "./errors";
@@ -55,12 +56,21 @@ describe("errors", () => {
     });
   });
 
-  describe("MasterKeyRequiredError", () => {
+  describe("CryptoKeyIdRequiredError", () => {
     it("sets name and descriptive message", () => {
-      const err = new MasterKeyRequiredError();
+      const err = new CryptoKeyIdRequiredError();
       expect(err).toBeInstanceOf(Error);
-      expect(err.name).toBe("MasterKeyRequiredError");
-      expect(err.message).toContain("masterEncryptionKey");
+      expect(err.name).toBe("CryptoKeyIdRequiredError");
+      expect(err.message).toContain("cryptoKeyId");
+    });
+  });
+
+  describe("CryptoSecretsRequiredError", () => {
+    it("sets name and descriptive message", () => {
+      const err = new CryptoSecretsRequiredError();
+      expect(err).toBeInstanceOf(Error);
+      expect(err.name).toBe("CryptoSecretsRequiredError");
+      expect(err.message).toContain("secrets");
     });
   });
 
@@ -87,9 +97,10 @@ describe("errors", () => {
     const errors: Error[] = [
       new OptimisticConcurrencyError("s", 1, 2),
       new StreamNotFoundError("s"),
+      new CryptoKeyIdRequiredError(),
       new CryptoKeyRevokedError("k"),
       new CryptoKeyNotFoundError("k"),
-      new MasterKeyRequiredError(),
+      new CryptoSecretsRequiredError(),
       new EventStoreNotInitializedError(),
       new InvalidSchemaNameError("x"),
     ];
