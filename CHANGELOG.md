@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.4...alvyn-v0.1.5) (2026-08-08)
+
+
+### Features
+
+* harden event store APIs and release validation ([#34](https://github.com/lox-solutions/alvyn/issues/34)) ([839ba9a](https://github.com/lox-solutions/alvyn/commit/839ba9afbb4d882060db27bdc5a740474a22f84f))
+
 ## [0.1.4](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.3...alvyn-v0.1.4) (2026-08-07)
 
 
