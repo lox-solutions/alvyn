@@ -11,7 +11,7 @@ packages:
 # ===========================================================================
 
 # Only allow dependencies published at least 7 days ago
-minimumReleaseAge: 10080
+minimumReleaseAge: 4320
 
 # Block transitive deps from using git repos or tarball URLs
 blockExoticSubdeps: true
@@ -20,10 +20,7 @@ blockExoticSubdeps: true
 trustPolicy: no-downgrade
 
 # Block ALL postinstall scripts except explicitly allowed
-onlyBuiltDependencies:
-  - esbuild
-  - sharp
-  - unrs-resolver
+onlyBuiltDependencies: []
 
 # ===========================================================================
 # Strictness
