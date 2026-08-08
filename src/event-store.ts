@@ -32,6 +32,12 @@ import type { SnapshotHandle } from "./snapshot/types";
 import { UpcasterRegistry } from "./upcaster/upcaster-registry";
 import { SCHEMA_NAME_REGEX, DEFAULT_SCHEMA } from "./event-store-constants";
 import { parseCryptoSecretsConfig } from "./crypto/crypto-secrets";
+import {
+  assertNonNegativeSafeInteger,
+  assertPositiveSafeInteger,
+  validateAppendInput,
+  validateListStreamsOptions,
+} from "./input-validation";
 
 interface LoadLatestEventByTypeOptions {
   streamId: string;
@@ -100,6 +106,7 @@ export class EventStore {
     options?: { client?: PoolClient },
   ): Promise<AppendResult> {
     this.ensureInitialized();
+    validateAppendInput(input);
     const opts = {
       schema: this.schema,
       input: { ...input, defaultSource: this.defaultSource },
@@ -124,6 +131,7 @@ export class EventStore {
     options?: { client?: PoolClient },
   ): Promise<AppendResult> {
     this.ensureInitialized();
+    validateAppendInput(input);
     const opts = {
       schema: this.schema,
       input: { ...input, defaultSource: this.defaultSource },
@@ -142,6 +150,8 @@ export class EventStore {
     maxEvents?: number,
   ): Promise<ReplayedEvent<T>[]> {
     this.ensureInitialized();
+    if (maxEvents !== undefined)
+      assertPositiveSafeInteger(maxEvents, "maxEvents");
     return this.reader.load<T>(streamId, maxEvents);
   }
 
@@ -150,6 +160,9 @@ export class EventStore {
     options: { fromVersion: number; maxEvents?: number; client?: PoolClient },
   ): Promise<ReplayedEvent<T>[]> {
     this.ensureInitialized();
+    assertPositiveSafeInteger(options.fromVersion, "fromVersion");
+    if (options.maxEvents !== undefined)
+      assertPositiveSafeInteger(options.maxEvents, "maxEvents");
     return this.reader.loadFrom<T>(streamId, options);
   }
 
@@ -183,6 +196,7 @@ export class EventStore {
 
   async listStreams(options?: ListStreamsOptions): Promise<string[]> {
     this.ensureInitialized();
+    validateListStreamsOptions(options);
     return this.reader.listStreams(options);
   }
 
@@ -198,6 +212,7 @@ export class EventStore {
 
   async processOutbox(handler: OutboxHandler, limit?: number): Promise<number> {
     this.ensureInitialized();
+    if (limit !== undefined) assertPositiveSafeInteger(limit, "limit");
     return this.maintenance.processOutbox(handler, limit);
   }
 
@@ -206,6 +221,10 @@ export class EventStore {
     batchSize?: number,
   ): Promise<number> {
     this.ensureInitialized();
+    if (olderThanMs !== undefined)
+      assertNonNegativeSafeInteger(olderThanMs, "olderThanMs");
+    if (batchSize !== undefined)
+      assertPositiveSafeInteger(batchSize, "batchSize");
     return this.maintenance.cleanupOutbox(olderThanMs, batchSize);
   }
 
@@ -214,6 +233,8 @@ export class EventStore {
     batchSize?: number,
   ): Promise<number> {
     this.ensureInitialized();
+    if (batchSize !== undefined)
+      assertPositiveSafeInteger(batchSize, "batchSize");
     return this.maintenance.runProjection(projection, batchSize);
   }
 
@@ -241,6 +262,7 @@ export class EventStore {
 
   async withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
     this.ensureInitialized();
+    assertNonNegativeSafeInteger(maxRetries, "maxRetries");
     return retryOnConcurrencyError(fn, maxRetries);
   }
 

@@ -229,6 +229,36 @@ describe("subscribe", () => {
     ).toEqual(["Order-1", "Order-2"]);
   });
 
+  it("treats recursive subject prefixes as literals", async () => {
+    const store = await newStore();
+    await store.append({
+      streamId: "Order_1",
+      expectedVersion: -1,
+      events: [{ type: "OrderPlaced", data: {} }],
+    });
+    await store.append({
+      streamId: "OrderA1",
+      expectedVersion: -1,
+      events: [{ type: "OrderPlaced", data: {} }],
+    });
+    await store.append({
+      streamId: "Order_1-child",
+      expectedVersion: -1,
+      events: [{ type: "OrderPlaced", data: {} }],
+    });
+
+    const matchingSubjects = await collect(store, {
+      count: 2,
+      subject: "Order_1",
+      recursive: true,
+    });
+
+    expect(matchingSubjects.map((event) => event.subject)).toEqual([
+      "Order_1",
+      "Order_1-child",
+    ]);
+  });
+
   it("delivers live events via NOTIFY well before the poll interval elapses", async () => {
     const store = await newStore();
 

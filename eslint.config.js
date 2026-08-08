@@ -9,6 +9,7 @@ export default defineConfig(
     ignores: [
       "dist/",
       "node_modules/",
+      "scripts/",
       "website/",
       "coverage/",
       "examples/example-alvyn-full-stack-app/",

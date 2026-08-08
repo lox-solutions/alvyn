@@ -129,6 +129,18 @@ export class InvalidSchemaNameError extends Error {
   }
 }
 
+/** Thrown when a public API receives a malformed or unsafe runtime value. */
+export class InvalidArgumentError extends Error {
+  public readonly name = "InvalidArgumentError" as const;
+
+  constructor(
+    public readonly argument: string,
+    reason: string,
+  ) {
+    super(`Invalid argument "${argument}": ${reason}`);
+  }
+}
+
 /**
  * Thrown when user code attempts to append an event type reserved for Alvyn.
  */
