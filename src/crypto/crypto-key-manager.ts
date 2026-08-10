@@ -129,6 +129,9 @@ export class CryptoKeyManager {
     // Re-wrap older-version envelopes only when the entity is written.
     // Existing encrypted event data remains untouched.
     if (stored.version < this.currentSecretVersion) {
+      if (!/^[a-zA-Z0-9_]+$/.test(options.schema)) {
+        throw new Error('Invalid input');
+      }
       await options.client.query(
         `UPDATE ${options.schema}.crypto_keys
          SET encrypted_key = $1
