@@ -14,6 +14,7 @@ import {
 } from "../errors";
 import { validateCryptoSecrets } from "./crypto-secrets";
 import type { CryptoSecret } from "../types";
+import { assertValidSchemaName } from "../sql-helpers";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
@@ -129,6 +130,7 @@ export class CryptoKeyManager {
     // Re-wrap older-version envelopes only when the entity is written.
     // Existing encrypted event data remains untouched.
     if (stored.version < this.currentSecretVersion) {
+      assertValidSchemaName(options.schema);
       await options.client.query(
         `UPDATE ${options.schema}.crypto_keys
          SET encrypted_key = $1

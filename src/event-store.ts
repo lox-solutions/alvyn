@@ -1,9 +1,6 @@
 import type { Pool, PoolClient } from "pg";
 import { CryptoKeyManager } from "./crypto/crypto-key-manager";
-import {
-  EventStoreNotInitializedError,
-  InvalidSchemaNameError,
-} from "./errors";
+import { EventStoreNotInitializedError } from "./errors";
 import {
   inTransaction,
   retryOnConcurrencyError,
@@ -30,8 +27,9 @@ import type {
 } from "./types";
 import type { SnapshotHandle } from "./snapshot/types";
 import { UpcasterRegistry } from "./upcaster/upcaster-registry";
-import { SCHEMA_NAME_REGEX, DEFAULT_SCHEMA } from "./event-store-constants";
+import { DEFAULT_SCHEMA } from "./event-store-constants";
 import { parseCryptoSecretsConfig } from "./crypto/crypto-secrets";
+import { assertValidSchemaName } from "./sql-helpers";
 import {
   assertNonNegativeSafeInteger,
   assertPositiveSafeInteger,
@@ -63,8 +61,7 @@ export class EventStore {
     this.defaultSource = config.defaultSource ?? "event-store";
     this.upcasterRegistry = new UpcasterRegistry();
     this.snapshots = config.snapshots ?? [];
-    if (!SCHEMA_NAME_REGEX.test(this.schema))
-      throw new InvalidSchemaNameError(this.schema);
+    assertValidSchemaName(this.schema);
     if (config.secrets !== undefined) {
       this.cryptoKeyManager = new CryptoKeyManager(config.secrets);
     } else {
