@@ -2,7 +2,7 @@ import { Provider } from "@/components/provider";
 import "./global.css";
 import { Inter } from "next/font/google";
 import type { Metadata } from "next";
-import { basePath, baseUrl } from "@/lib/shared";
+import { baseUrl } from "@/lib/shared";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -11,8 +11,8 @@ const inter = Inter({
 export const metadata: Metadata = {
   metadataBase: new URL(
     process.env.NODE_ENV === "development"
-      ? `http://localhost:${process.env.PORT ?? 3000}${basePath}/`
-      : `${baseUrl}${basePath}/`,
+      ? `http://localhost:${process.env.PORT ?? 3000}/`
+      : `${baseUrl}/`,
   ),
   title: {
     default: "Alvyn | Event Sourcing for TypeScript",
@@ -38,7 +38,7 @@ export const metadata: Metadata = {
     images: ["/opengraph-image"],
   },
   icons: {
-    icon: `${basePath}/icon`,
+    icon: "/icon",
   },
 };
 

@@ -12,7 +12,6 @@ import {
 } from "fumadocs-ui/components/dialog/search";
 import { useDocsSearch } from "fumadocs-core/search/client";
 import { create } from "@orama/orama";
-import { basePath } from "@/lib/shared";
 
 function initOrama() {
   return create({
@@ -24,7 +23,7 @@ function initOrama() {
 export default function DefaultSearchDialog(props: SharedProps) {
   const { search, setSearch, query } = useDocsSearch({
     type: "static",
-    from: `${basePath}/api/search`,
+    from: "/api/search",
     initOrama,
   });
 
