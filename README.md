@@ -261,15 +261,15 @@ where each event must be published once (use-case 2).
 
 ## Documentation
 
-Full documentation is available at **[lox-solutions.github.io/alvyn](https://lox-solutions.github.io/alvyn)**.
+Full documentation is available at **[alvyn.opensource.lox-solutions.eu](https://alvyn.opensource.lox-solutions.eu)**.
 
-- [Getting Started](https://lox-solutions.github.io/alvyn/docs)
-- [Aggregates](https://lox-solutions.github.io/alvyn/docs/aggregates)
-- [Crypto-Shredding & GDPR](https://lox-solutions.github.io/alvyn/docs/crypto-shredding)
-- [Projections & Outbox](https://lox-solutions.github.io/alvyn/docs/projections)
-- [Schema Evolution](https://lox-solutions.github.io/alvyn/docs/schema-evolution)
-- [API Reference](https://lox-solutions.github.io/alvyn/docs/api-reference)
-- [Database Schema](https://lox-solutions.github.io/alvyn/docs/database-schema)
+- [Getting Started](https://alvyn.opensource.lox-solutions.eu/docs)
+- [Aggregates](https://alvyn.opensource.lox-solutions.eu/docs/aggregates)
+- [Crypto-Shredding & GDPR](https://alvyn.opensource.lox-solutions.eu/docs/crypto-shredding)
+- [Projections & Outbox](https://alvyn.opensource.lox-solutions.eu/docs/projections)
+- [Schema Evolution](https://alvyn.opensource.lox-solutions.eu/docs/schema-evolution)
+- [API Reference](https://alvyn.opensource.lox-solutions.eu/docs/api-reference)
+- [Database Schema](https://alvyn.opensource.lox-solutions.eu/docs/database-schema)
 
 ## Requirements
 
