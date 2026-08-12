@@ -9,7 +9,6 @@ const withMDX = createMDX();
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   output: "export",
-  basePath: "/alvyn",
   outputFileTracingRoot: workspaceRoot,
 };
 

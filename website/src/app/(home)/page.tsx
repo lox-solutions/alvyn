@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { basePath } from "@/lib/shared";
 import { NeonHeadline } from "@/components/NeonHeadline";
 import { JourneySimulator } from "@/components/JourneySimulator";
 import { CodeShowcase } from "@/components/CodeShowcase";
@@ -32,7 +31,7 @@ export default function HomePage() {
           {/* Logo with high-end glassmorphism and minimal borders */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={`${basePath}/logo.png`}
+            src="/logo.png"
             alt="Alvyn"
             width={200}
             height={200}
