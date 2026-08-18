@@ -6,6 +6,7 @@ import {
   assertPositiveSafeInteger,
   validateAppendInput,
   validateListStreamsOptions,
+  validateReadEventsPageOptions,
   validateSubscribeOptions,
 } from "./input-validation";
 
@@ -71,6 +72,43 @@ describe("runtime input validation", () => {
     expect(() => validateListStreamsOptions({ limit: 0 })).toThrow(
       InvalidArgumentError,
     );
+  });
+
+  it("validates bounded multi-stream page options and maximum", () => {
+    expect(() =>
+      validateReadEventsPageOptions({ streamIds: ["a", "a"], limit: 1 }),
+    ).toThrow(InvalidArgumentError);
+    expect(() =>
+      validateReadEventsPageOptions({ streamIds: ["a"], limit: 0 }),
+    ).toThrow(InvalidArgumentError);
+    expect(() =>
+      validateReadEventsPageOptions({
+        streamIds: ["a"],
+        limit: Number.POSITIVE_INFINITY,
+      }),
+    ).toThrow(InvalidArgumentError);
+    expect(() =>
+      validateReadEventsPageOptions({ streamIds: ["a"], limit: 1001 }),
+    ).toThrow(InvalidArgumentError);
+    expect(() =>
+      validateReadEventsPageOptions({
+        streamIds: ["a"],
+        limit: 1,
+        order: "sideways" as never,
+      }),
+    ).toThrow(InvalidArgumentError);
+    expect(() =>
+      validateReadEventsPageOptions({ streamIds: ["a"], limit: 1, cursor: "" }),
+    ).toThrow(InvalidArgumentError);
+    expect(() =>
+      validateReadEventsPageOptions({ streamIds: [""], limit: 1 }),
+    ).toThrow(InvalidArgumentError);
+    expect(() =>
+      validateReadEventsPageOptions({ streamIds: ["a"], limit: 1000 }),
+    ).not.toThrow();
+    expect(() =>
+      validateReadEventsPageOptions({ streamIds: [], limit: 1 }),
+    ).not.toThrow();
   });
 
   it("rejects malformed encryption and outbox settings", () => {

@@ -7,8 +7,14 @@ import {
   readLatestEventByType,
   readStream,
 } from "./stream/stream-reader";
+import { readEventsPage } from "./stream/read-events-page";
 import type { UpcasterRegistry } from "./upcaster/upcaster-registry";
-import type { ListStreamsOptions, ReplayedEvent } from "./types";
+import type {
+  ListStreamsOptions,
+  ReadEventsPage,
+  ReadEventsPageOptions,
+  ReplayedEvent,
+} from "./types";
 
 interface EventStoreReaderOptions {
   pool: Pool;
@@ -75,6 +81,20 @@ export class EventStoreReader {
         maxEvents: options.maxEvents,
       });
     if (options.client) return read(options.client);
+    return this.withClient(read);
+  }
+
+  async readEventsPage<T = unknown>(
+    options: ReadEventsPageOptions,
+  ): Promise<ReadEventsPage<T>> {
+    const read = (client: PoolClient) =>
+      readEventsPage<T>({
+        client,
+        schema: this.schema,
+        options,
+        cryptoKeyManager: this.cryptoKeyManager,
+        upcasterRegistry: this.upcasterRegistry,
+      });
     return this.withClient(read);
   }
 

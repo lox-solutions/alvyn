@@ -1,6 +1,12 @@
 import { InvalidArgumentError } from "./errors";
-import type { AppendInput, ListStreamsOptions } from "./types";
+import type {
+  AppendInput,
+  ListStreamsOptions,
+  ReadEventsPageOptions,
+} from "./types";
 import type { SubscribeOptions } from "./subscription/subscribe-options";
+
+export const MAX_READ_EVENTS_PAGE_LIMIT = 1000;
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
@@ -151,6 +157,35 @@ export function validateAppendInput(input: AppendInput): void {
 export function validateListStreamsOptions(options?: ListStreamsOptions): void {
   if (options?.limit !== undefined) {
     assertPositiveSafeInteger(options.limit, "limit");
+  }
+}
+
+export function validateReadEventsPageOptions(
+  options: ReadEventsPageOptions,
+): void {
+  if (!isRecord(options)) {
+    throw new InvalidArgumentError("options", "must be an object");
+  }
+  assertStringArray(options.streamIds, "streamIds");
+  if (new Set(options.streamIds).size !== options.streamIds.length) {
+    throw new InvalidArgumentError("streamIds", "must not contain duplicates");
+  }
+  assertPositiveSafeInteger(options.limit, "limit");
+  if (options.limit > MAX_READ_EVENTS_PAGE_LIMIT) {
+    throw new InvalidArgumentError(
+      "limit",
+      `must not exceed ${MAX_READ_EVENTS_PAGE_LIMIT}`,
+    );
+  }
+  if (
+    options.order !== undefined &&
+    options.order !== "asc" &&
+    options.order !== "desc"
+  ) {
+    throw new InvalidArgumentError("order", 'must be "asc" or "desc"');
+  }
+  if (options.cursor !== undefined && !isNonEmptyString(options.cursor)) {
+    throw new InvalidArgumentError("cursor", "must be a non-empty string");
   }
 }
 

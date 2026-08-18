@@ -111,6 +111,34 @@ export interface TombstonedEvent
 export type ReplayedEvent<T = unknown> = StoredEvent<T> | TombstonedEvent;
 
 // ---------------------------------------------------------------------------
+// Bounded multi-stream reads
+// ---------------------------------------------------------------------------
+
+export type ReadEventsPageOrder = "asc" | "desc";
+
+/** Options for a bounded cursor read over an explicit stream allowlist. */
+export interface ReadEventsPageOptions {
+  /** Stream IDs to read. Unknown, deleted, and empty streams are ignored. */
+  streamIds: readonly string[];
+  /** Number of events to return. The public maximum is 1,000. */
+  limit: number;
+  /** Opaque cursor returned by a previous page in the same read. */
+  cursor?: string;
+  /** Global ordering direction (default: "asc"). */
+  order?: ReadEventsPageOrder;
+}
+
+/** One page from a bounded multi-stream cursor read. */
+export interface ReadEventsPage<T = unknown> {
+  /** Events retain the existing `globalPosition: bigint` metadata contract. */
+  events: ReplayedEvent<T>[];
+  /** Whether another page exists within this cursor's fixed read boundary. */
+  hasNextPage: boolean;
+  /** Opaque continuation cursor, or `null` when this is the final page. */
+  nextCursor: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // Append (Write)
 // ---------------------------------------------------------------------------
 

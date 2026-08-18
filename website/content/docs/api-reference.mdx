@@ -129,6 +129,52 @@ const events = await eventStore.loadFrom("Order-123", {
 });
 ```
 
+#### `readEventsPage(options): Promise<ReadEventsPage<T>>`
+
+Reads a bounded page from an explicit allowlist of stream IDs, without loading
+complete streams or reading unrelated streams. Unknown, deleted, and empty
+stream IDs are ignored; an allowlist containing only those IDs returns an empty
+page.
+
+```typescript
+const page = await eventStore.readEventsPage<OrderEvent>({
+  streamIds: ["Order-123", "Order-456"],
+  limit: 50,
+  order: "asc",
+});
+
+if (page.hasNextPage && page.nextCursor !== null) {
+  const next = await eventStore.readEventsPage({
+    streamIds: ["Order-123", "Order-456"],
+    limit: 50,
+    cursor: page.nextCursor,
+    order: "asc",
+  });
+}
+```
+
+`limit` must be a finite positive safe integer no greater than `1,000` (also
+exported as `MAX_READ_EVENTS_PAGE_LIMIT`). Pages are ordered by
+`global_position`, then `stream_id`, then event `id`; the latter fields are a
+deterministic tie-breaker for the cursor boundary. The cursor is opaque and
+must be reused with the same stream allowlist and order.
+
+The first page captures an immutable PostgreSQL MVCC snapshot together with a
+high-water position. Both are encoded in every continuation cursor, and each
+page reapplies that snapshot using the transaction ID stored with every event.
+Transactions that were still in progress at the first request remain excluded
+even if they later commit below the high-water position; concurrent appends are
+also excluded. This guarantees stable repeated cursors with no skipped or
+duplicated events; start a new read to include later commits. Ascending and
+descending reads use the same rule.
+
+Cursor positions and watermarks are encoded as decimal strings in the
+base64url cursor, so positions larger than JavaScript's safe integer range are
+not rounded. Returned events preserve the existing `globalPosition: bigint`
+metadata contract; use a JSON replacer or convert that field to a decimal
+string when serializing events because native `JSON.stringify` does not accept
+`bigint` values.
+
 #### `listStreams(options?): Promise<string[]>`
 
 Lists distinct stream IDs, optionally filtered by prefix.
@@ -361,6 +407,25 @@ interface CryptoSecretsConfig {
 }
 
 type ReplayedEvent<T = unknown> = StoredEvent<T> | TombstonedEvent;
+```
+
+### Bounded Multi-Stream Read Types
+
+```typescript
+type ReadEventsPageOrder = "asc" | "desc";
+
+interface ReadEventsPageOptions {
+  streamIds: readonly string[];
+  limit: number;
+  cursor?: string;
+  order?: ReadEventsPageOrder;
+}
+
+interface ReadEventsPage<T = unknown> {
+  events: ReplayedEvent<T>[];
+  hasNextPage: boolean;
+  nextCursor: string | null;
+}
 ```
 
 ### Append Types

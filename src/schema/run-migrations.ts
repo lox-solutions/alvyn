@@ -41,9 +41,22 @@ async function createEventsTable(
     )
   `);
 
+  await createEventIndexes(client, schema);
+  await addEventTxidColumn(client, schema);
+}
+
+async function createEventIndexes(
+  client: PoolClient,
+  schema: string,
+): Promise<void> {
   await client.query(`
     CREATE INDEX IF NOT EXISTS idx_events_stream_id
       ON ${schema}.events (stream_id, stream_version)
+  `);
+
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_events_stream_global_position
+      ON ${schema}.events (stream_id, global_position, id)
   `);
 
   await client.query(`
@@ -60,14 +73,11 @@ async function createEventsTable(
     CREATE INDEX IF NOT EXISTS idx_events_source_id
       ON ${schema}.events (source, id)
   `);
-
-  await addEventTxidColumn(client, schema);
 }
 
 /**
- * Gap-safe ordering: record the appending transaction id so cursor-based
- * consumers can compute a commit-safe high-water position and never skip a
- * lower global_position that commits late (see compute-safe-watermark.ts).
+ * Records the appending transaction id so cursor-based readers can reapply
+ * the immutable PostgreSQL snapshot captured with their first page.
  */
 async function addEventTxidColumn(
   client: PoolClient,
