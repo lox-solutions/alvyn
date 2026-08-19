@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.6](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.5...alvyn-v0.1.6) (2026-08-19)
+
+
+### Features
+
+* **event-store:** add cursor-based paginated reads ([#41](https://github.com/lox-solutions/alvyn/issues/41)) ([6d50a30](https://github.com/lox-solutions/alvyn/commit/6d50a30ec497b622e1712e2e5ff9bd4811d232a4))
+
+
+### Bug Fixes
+
+* **security:** autofix Potential SQL injection via string-based query concatenation ([#37](https://github.com/lox-solutions/alvyn/issues/37)) ([9dfdcf0](https://github.com/lox-solutions/alvyn/commit/9dfdcf02280fe911d0e48214513b67176f2aca43))
+
 ## [0.1.5](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.4...alvyn-v0.1.5) (2026-08-08)
 
 
