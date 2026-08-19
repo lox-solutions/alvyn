@@ -55,6 +55,15 @@ export type {
 // Types — stream discovery
 export type { ListStreamsOptions } from "./types";
 
+// Types — bounded multi-stream reads
+export type {
+  ReadEventsPage,
+  ReadEventsPageOptions,
+  ReadEventsPageOrder,
+} from "./types";
+
+export { MAX_READ_EVENTS_PAGE_LIMIT } from "./input-validation";
+
 // Types — projections & outbox
 //
 // NOTE: the outbox (OutboxHandler / processOutbox) is a *competing-consumer*

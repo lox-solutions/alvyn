@@ -19,6 +19,8 @@ import type {
   AppendResult,
   EventStoreConfig,
   ListStreamsOptions,
+  ReadEventsPage,
+  ReadEventsPageOptions,
   OutboxHandler,
   Projection,
   ReplayedEvent,
@@ -161,6 +163,14 @@ export class EventStore {
     if (options.maxEvents !== undefined)
       assertPositiveSafeInteger(options.maxEvents, "maxEvents");
     return this.reader.loadFrom<T>(streamId, options);
+  }
+
+  /** Reads a bounded page across an explicit set of streams. */
+  async readEventsPage<T = unknown>(
+    options: ReadEventsPageOptions,
+  ): Promise<ReadEventsPage<T>> {
+    this.ensureInitialized();
+    return this.reader.readEventsPage<T>(options);
   }
 
   /** @internal Loads the latest event of a specific type in a stream. */

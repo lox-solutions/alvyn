@@ -9,10 +9,12 @@ import {
 } from "./__tests__/setup";
 import {
   EventStoreNotInitializedError,
+  InvalidArgumentError,
   InvalidSchemaNameError,
   OptimisticConcurrencyError,
   CryptoSecretsRequiredError,
 } from "./errors";
+import { MAX_READ_EVENTS_PAGE_LIMIT } from "./input-validation";
 
 let pool: pg.Pool;
 
@@ -726,6 +728,303 @@ describe("EventStore", () => {
 
       const events = await store.load("Nonexistent-xyz");
       expect(events).toEqual([]);
+    });
+  });
+
+  describe("readEventsPage", () => {
+    it("reads empty, unknown, and deleted streams without failing", async () => {
+      const schema = uniqueSchema();
+      const store = makeStore({ schema });
+      await store.setup();
+      await store.append({
+        streamId: "PAGE-populated",
+        expectedVersion: -1,
+        events: [{ type: "Created", data: { value: 1 } }],
+      });
+      await store.append({
+        streamId: "PAGE-deleted",
+        expectedVersion: -1,
+        events: [{ type: "Deleted", data: {} }],
+      });
+      await pool.query(`DELETE FROM ${schema}.events WHERE stream_id = $1`, [
+        "PAGE-deleted",
+      ]);
+
+      const page = await store.readEventsPage({
+        streamIds: [
+          "PAGE-empty",
+          "PAGE-populated",
+          "PAGE-unknown",
+          "PAGE-deleted",
+        ],
+        limit: 10,
+      });
+
+      expect(page.events.map((event) => event.streamId)).toEqual([
+        "PAGE-populated",
+      ]);
+      expect(page.hasNextPage).toBe(false);
+      expect(page.nextCursor).toBeNull();
+    });
+
+    it("pages interleaved streams in ascending order with exact boundaries", async () => {
+      const store = makeStore();
+      await store.setup();
+      await store.append({
+        streamId: "PAGE-A",
+        expectedVersion: -1,
+        events: [{ type: "A1", data: {} }],
+      });
+      await store.append({
+        streamId: "PAGE-B",
+        expectedVersion: -1,
+        events: [{ type: "B1", data: {} }],
+      });
+      await store.append({
+        streamId: "PAGE-A",
+        expectedVersion: 1,
+        events: [{ type: "A2", data: {} }],
+      });
+
+      const first = await store.readEventsPage({
+        streamIds: ["PAGE-B", "PAGE-A"],
+        limit: 2,
+      });
+      expect(first.events.map((event) => event.type)).toEqual(["A1", "B1"]);
+      expect(first.hasNextPage).toBe(true);
+      expect(first.nextCursor).not.toBeNull();
+
+      const second = await store.readEventsPage({
+        streamIds: ["PAGE-A", "PAGE-B"],
+        limit: 2,
+        cursor: first.nextCursor!,
+      });
+      expect(second.events.map((event) => event.type)).toEqual(["A2"]);
+      expect(second.hasNextPage).toBe(false);
+      expect(second.nextCursor).toBeNull();
+    });
+
+    it("supports deterministic descending pages and stable cursor reuse", async () => {
+      const store = makeStore();
+      await store.setup();
+      await store.append({
+        streamId: "PAGE-D",
+        expectedVersion: -1,
+        events: [
+          { type: "D1", data: {} },
+          { type: "D2", data: {} },
+          { type: "D3", data: {} },
+        ],
+      });
+
+      const first = await store.readEventsPage({
+        streamIds: ["PAGE-D"],
+        limit: 2,
+        order: "desc",
+      });
+      expect(first.events.map((event) => event.type)).toEqual(["D3", "D2"]);
+      expect(first.hasNextPage).toBe(true);
+
+      const repeated = await store.readEventsPage({
+        streamIds: ["PAGE-D"],
+        limit: 2,
+        order: "desc",
+        cursor: first.nextCursor!,
+      });
+      const again = await store.readEventsPage({
+        streamIds: ["PAGE-D"],
+        limit: 2,
+        order: "desc",
+        cursor: first.nextCursor!,
+      });
+      expect(repeated.events.map((event) => event.id)).toEqual(
+        again.events.map((event) => event.id),
+      );
+      expect(repeated.nextCursor).toBe(again.nextCursor);
+      expect(repeated.events.map((event) => event.type)).toEqual(["D1"]);
+      expect(repeated.nextCursor).toBeNull();
+    });
+
+    it("excludes appends after the initial cursor boundary", async () => {
+      const store = makeStore();
+      await store.setup();
+      await store.append({
+        streamId: "PAGE-concurrent",
+        expectedVersion: -1,
+        events: [
+          { type: "C1", data: {} },
+          { type: "C2", data: {} },
+          { type: "C3", data: {} },
+        ],
+      });
+
+      const first = await store.readEventsPage({
+        streamIds: ["PAGE-concurrent"],
+        limit: 1,
+      });
+      await store.append({
+        streamId: "PAGE-concurrent",
+        expectedVersion: 3,
+        events: [{ type: "C4", data: {} }],
+      });
+
+      const pageTypes: string[] = first.events.map((event) => event.type);
+      let cursor = first.nextCursor;
+      while (cursor) {
+        const page = await store.readEventsPage({
+          streamIds: ["PAGE-concurrent"],
+          limit: 1,
+          cursor,
+        });
+        pageTypes.push(...page.events.map((event) => event.type));
+        cursor = page.nextCursor;
+      }
+      expect(pageTypes).toEqual(["C1", "C2", "C3"]);
+    });
+
+    it("keeps a cursor stable when a lower position commits after the first page", async () => {
+      const schema = uniqueSchema();
+      const store = makeStore({ schema });
+      await store.setup();
+      await store.append({
+        streamId: "PAGE-baseline",
+        expectedVersion: -1,
+        events: [
+          { type: "B1", data: {} },
+          { type: "B2", data: {} },
+        ],
+      });
+
+      const baselineTransaction = await pool.connect();
+      const lateTransaction = await pool.connect();
+      try {
+        await baselineTransaction.query("BEGIN");
+        await baselineTransaction.query("SELECT pg_current_xact_id()");
+        await lateTransaction.query("BEGIN");
+        await store.append(
+          {
+            streamId: "PAGE-slow",
+            expectedVersion: -1,
+            events: [{ type: "Slow", data: {} }],
+          },
+          { client: lateTransaction },
+        );
+        await store.append(
+          {
+            streamId: "PAGE-baseline",
+            expectedVersion: 2,
+            events: [
+              { type: "B3", data: {} },
+              { type: "B4", data: {} },
+            ],
+          },
+          { client: baselineTransaction },
+        );
+        await baselineTransaction.query("COMMIT");
+
+        const first = await store.readEventsPage({
+          streamIds: ["PAGE-baseline", "PAGE-slow"],
+          limit: 2,
+        });
+        expect(first.nextCursor).not.toBeNull();
+        const beforeCommit = await store.readEventsPage({
+          streamIds: ["PAGE-baseline", "PAGE-slow"],
+          limit: 2,
+          cursor: first.nextCursor!,
+        });
+
+        await lateTransaction.query("COMMIT");
+
+        const afterCommit = await store.readEventsPage({
+          streamIds: ["PAGE-baseline", "PAGE-slow"],
+          limit: 2,
+          cursor: first.nextCursor!,
+        });
+        expect(afterCommit.events.map((event) => event.id)).toEqual(
+          beforeCommit.events.map((event) => event.id),
+        );
+        expect(afterCommit.nextCursor).toBe(beforeCommit.nextCursor);
+      } finally {
+        await baselineTransaction.query("ROLLBACK");
+        baselineTransaction.release();
+        await lateTransaction.query("ROLLBACK");
+        lateTransaction.release();
+      }
+    });
+
+    it("keeps large bigint positions exact in events and cursors", async () => {
+      const schema = uniqueSchema();
+      const store = makeStore({ schema });
+      await store.setup();
+      await pool.query(
+        `SELECT setval(pg_get_serial_sequence($1, 'global_position'), $2::bigint, false)`,
+        [`${schema}.events`, "9007199254740993"],
+      );
+      await store.append({
+        streamId: "PAGE-bigint",
+        expectedVersion: -1,
+        events: [
+          { type: "Big1", data: {} },
+          { type: "Big2", data: {} },
+        ],
+      });
+
+      const page = await store.readEventsPage({
+        streamIds: ["PAGE-bigint"],
+        limit: 1,
+      });
+      expect(page.events[0].globalPosition).toBe(9007199254740993n);
+      expect(page.nextCursor).not.toBeNull();
+      const decoded = JSON.parse(
+        Buffer.from(page.nextCursor!, "base64url").toString("utf8"),
+      ) as { globalPosition: string; watermark: string };
+      expect(decoded.globalPosition).toBe("9007199254740993");
+      expect(decoded.watermark).toBe("9007199254740994");
+    });
+
+    it("rejects a cursor with changed stream scope or order and enforces the limit", async () => {
+      const store = makeStore();
+      await store.setup();
+      await store.append({
+        streamId: "PAGE-validation",
+        expectedVersion: -1,
+        events: [
+          { type: "V1", data: {} },
+          { type: "V2", data: {} },
+        ],
+      });
+      const first = await store.readEventsPage({
+        streamIds: ["PAGE-validation"],
+        limit: 1,
+      });
+      await expect(
+        store.readEventsPage({
+          streamIds: ["PAGE-validation", "PAGE-other"],
+          limit: 1,
+          cursor: first.nextCursor!,
+        }),
+      ).rejects.toThrow(InvalidArgumentError);
+      await expect(
+        store.readEventsPage({
+          streamIds: [],
+          limit: 1,
+          cursor: first.nextCursor!,
+        }),
+      ).rejects.toThrow(InvalidArgumentError);
+      await expect(
+        store.readEventsPage({
+          streamIds: ["PAGE-validation"],
+          limit: 1,
+          order: "desc",
+          cursor: first.nextCursor!,
+        }),
+      ).rejects.toThrow(InvalidArgumentError);
+      await expect(
+        store.readEventsPage({
+          streamIds: ["PAGE-validation"],
+          limit: MAX_READ_EVENTS_PAGE_LIMIT + 1,
+        }),
+      ).rejects.toThrow(InvalidArgumentError);
     });
   });
 });
