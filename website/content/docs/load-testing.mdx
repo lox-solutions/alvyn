@@ -5,7 +5,13 @@ description: Run Alvyn's deterministic HTTP load profiles and interpret their pe
 
 # Production Load Testing
 
-> **Production-readiness disclaimer:** These results are encouraging evidence that Alvyn can handle the tested daily workload, but they do not prove that Alvyn is fully production-ready for every large, highly available replicated deployment. Treat them as evidence for this specific scenario, not as a certification; validate capacity limits, write contention, long-running stability, real load-balancer behavior, replica replacement, and PostgreSQL high availability before adopting a production topology.
+<Callout type="info">
+  **Production sizing note:** These results demonstrate that Alvyn reliably
+  handles the tested daily workload under the benchmarked configuration. Because
+  performance in production depends on infrastructure, network topology, and
+  database sizing, always validate capacity limits, write contention, and
+  PostgreSQL high availability against your specific operational requirements.
+</Callout>
 
 The load-test suite measures Alvyn through a small HTTP application that models
 bank-account traffic. It starts independent application processes, each with its

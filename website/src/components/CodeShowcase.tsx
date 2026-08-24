@@ -32,7 +32,7 @@ export type CartEvents = {
     title: "2. Native PG Connection",
     icon: Server,
     language: "typescript",
-    code: `import { EventStore } from 'alvyn';
+    code: `import { EventStore } from '@lox-solutions/alvyn';
 import { Pool } from 'pg';
 
 // Initialize on top of the PostgreSQL pool you already trust
@@ -51,7 +51,7 @@ await eventStore.setup();`,
     title: "3. Define Aggregate",
     icon: Play,
     language: "typescript",
-    code: `import { defineAggregate } from 'alvyn';
+    code: `import { defineAggregate } from '@lox-solutions/alvyn';
 
 interface CartState {
   items: Array<{ sku: string; price: number }>;

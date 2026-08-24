@@ -156,13 +156,8 @@ envelopes unreadable.
 Secret versions are unsigned 32-bit integers from `0` to `4294967295`. Gaps are
 allowed, and `currentVersion` must identify one of the configured secrets. Use a
 higher version for each new rotation, but do not encode the active version by
-reordering the keyring.
-
-> **Format warning:** This release intentionally supports only authenticated,
-> versioned crypto envelopes. It does not read records created by earlier
-> pre-release implementations. Start with an empty crypto database, or recreate
-> development and test data, before adopting this format. Rotating between
-> secret versions in this format does not require a database migration.
+reordering the keyring. Rotating between secret versions does not require a
+database migration.
 
 ### 2. Create Entity Keys
 
@@ -268,12 +263,14 @@ For a single application instance, add the new version to the keyring and set
 it as `currentVersion`. For an HA or rolling deployment, use two phases so every
 replica can read version `2` before any replica writes it.
 
-> **Backup recommendation:** A restorable backup of the event-store database
-> before every secret rotation is strongly recommended. Verify that the backup
-> includes both `events` and `crypto_keys`, and keep the old secret securely
-> available until the rollout and recovery procedure have been verified. A
-> database backup without its corresponding secret cannot decrypt encrypted
-> entity keys.
+<Callout type="warn">
+  **Backup recommendation:** A restorable backup of the event-store database
+  before every secret rotation is strongly recommended. Verify that the backup
+  includes both `events` and `crypto_keys`, and keep the old secret securely
+  available until the rollout and recovery procedure have been verified. A
+  database backup without its corresponding secret cannot decrypt encrypted
+  entity keys.
+</Callout>
 
 ### Phase 1: distribute the new secret
 
@@ -337,9 +334,11 @@ Use your configured schema instead of `event_store`. Keep the old secret until
 the old version count is zero, retain it indefinitely, or intentionally retire
 the remaining data. An inactive key is not automatically rewrapped by reads.
 
-**Migration warning:** deploy the new secret configuration before removing the
-old secret. Removing a secret version makes envelopes using it permanently
-unreadable.
+<Callout type="warn">
+  **Migration warning:** Deploy the new secret configuration before removing the
+  old secret. Removing a secret version makes envelopes using it permanently
+  unreadable.
+</Callout>
 
 ## GDPR Right to Erasure
 
