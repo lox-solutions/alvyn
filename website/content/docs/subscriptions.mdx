@@ -192,12 +192,12 @@ When replayed, decrypted, and upcasted domain state is required, use `Order.load
 
 ## Subscription vs. Outbox
 
-| Feature | Subscriptions (`subscribe()`) | Transactional Outbox (`processOutbox()`) |
-| :--- | :--- | :--- |
-| **Pattern** | In-process Fan-out | Competing Consumers (Distributed Fleet) |
-| **Delivery Target** | Connected clients, WebSockets, GraphQL, SSE | Message Brokers (Kafka, NATS, RabbitMQ, SQS) |
-| **Scale Behavior** | Every replica receives every event | Exactly one worker process across the fleet relays each event |
-| **State Tracking** | Client in-memory cursor (`lowerBound`) | PostgreSQL table lock (`FOR UPDATE SKIP LOCKED`) |
-| **Delivery Guarantee** | At-least-once per subscriber | At-least-once to external message broker |
+| Feature                | Subscriptions (`subscribe()`)               | Transactional Outbox (`processOutbox()`)                      |
+| :--------------------- | :------------------------------------------ | :------------------------------------------------------------ |
+| **Pattern**            | In-process Fan-out                          | Competing Consumers (Distributed Fleet)                       |
+| **Delivery Target**    | Connected clients, WebSockets, GraphQL, SSE | Message Brokers (Kafka, NATS, RabbitMQ, SQS)                  |
+| **Scale Behavior**     | Every replica receives every event          | Exactly one worker process across the fleet relays each event |
+| **State Tracking**     | Client in-memory cursor (`lowerBound`)      | PostgreSQL table lock (`FOR UPDATE SKIP LOCKED`)              |
+| **Delivery Guarantee** | At-least-once per subscriber                | At-least-once to external message broker                      |
 
 Use `subscribe()` when you need real-time streaming to all replicas or clients. Use the [Transactional Outbox](/docs/outbox) when publishing fleet-wide messages to external brokers.

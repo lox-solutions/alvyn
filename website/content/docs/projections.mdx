@@ -11,13 +11,13 @@ Each projection tracks its own independent checkpoint position in PostgreSQL and
 
 ## Projections vs. Snapshots
 
-| Feature | Snapshot | Projection |
-| :--- | :--- | :--- |
-| **Purpose** | Fast stream replay shortcut | Queryable read tables, search, analytics |
-| **Scope** | Single aggregate stream (`stream_id`) | Global event stream across multiple aggregates |
-| **Storage** | Generated snapshot event in the stream | Custom database tables (e.g. `order_summaries`) |
-| **Execution** | Synchronous or on aggregate append | Asynchronous batch processing with checkpoint |
-| **Example** | Cached `Cart` state for `Cart-123` | Cross-customer sales report table |
+| Feature       | Snapshot                               | Projection                                      |
+| :------------ | :------------------------------------- | :---------------------------------------------- |
+| **Purpose**   | Fast stream replay shortcut            | Queryable read tables, search, analytics        |
+| **Scope**     | Single aggregate stream (`stream_id`)  | Global event stream across multiple aggregates  |
+| **Storage**   | Generated snapshot event in the stream | Custom database tables (e.g. `order_summaries`) |
+| **Execution** | Synchronous or on aggregate append     | Asynchronous batch processing with checkpoint   |
+| **Example**   | Cached `Cart` state for `Cart-123`     | Cross-customer sales report table               |
 
 ## Defining a Projection
 
@@ -107,7 +107,10 @@ Call `eventStore.runProjection(projection, batchSize)` to process the next batch
 
 ```typescript
 // Process up to 500 events in a single batch
-const processedCount = await eventStore.runProjection(orderSummaryProjection, 500);
+const processedCount = await eventStore.runProjection(
+  orderSummaryProjection,
+  500,
+);
 console.log(`Processed ${processedCount} events.`);
 ```
 
@@ -150,8 +153,8 @@ startProjectionWorker();
 <Callout>
   Because the read model queries and the checkpoint update share the same
   transaction via `ctx.client`, projection processing is **exactly-once** within
-  PostgreSQL. If the worker crashes or a SQL query fails, the entire batch
-  rolls back and the checkpoint remains unchanged.
+  PostgreSQL. If the worker crashes or a SQL query fails, the entire batch rolls
+  back and the checkpoint remains unchanged.
 </Callout>
 
 ## Best Practices

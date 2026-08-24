@@ -128,13 +128,16 @@ const jsm = await nc.jetstream();
 async function runOutboxRelay() {
   try {
     // Process up to 100 pending messages per batch
-    const processedCount = await eventStore.processOutbox(async (entries, client) => {
-      for (const entry of entries) {
-        // entry.topic matches the string from outboxTopics
-        // entry.payload contains the CloudEvent JSON object
-        await jsm.publish(entry.topic, JSON.stringify(entry.payload));
-      }
-    }, 100);
+    const processedCount = await eventStore.processOutbox(
+      async (entries, client) => {
+        for (const entry of entries) {
+          // entry.topic matches the string from outboxTopics
+          // entry.payload contains the CloudEvent JSON object
+          await jsm.publish(entry.topic, JSON.stringify(entry.payload));
+        }
+      },
+      100,
+    );
 
     if (processedCount > 0) {
       console.log(`Successfully dispatched ${processedCount} outbox events.`);
@@ -175,12 +178,12 @@ console.log(`Cleaned up ${deletedCount} archived outbox records.`);
 
 ## Outbox vs. Subscriptions
 
-| Feature | Transactional Outbox (`processOutbox()`) | Subscriptions (`subscribe()`) |
-| :--- | :--- | :--- |
-| **Model** | **Competing Consumers** (Distributed Workers) | **Fan-Out** (Every Subscriber) |
-| **Target** | External Brokers (Kafka, NATS, RabbitMQ, SQS) | In-process consumers, GraphQL, WebSockets, SSE |
-| **Concurrency** | Exactly 1 worker publishes each event | Every replica/subscriber receives all events |
-| **Locking** | PostgreSQL `FOR UPDATE SKIP LOCKED` | Lock-free streaming via `LISTEN/NOTIFY` + Polling |
-| **Storage** | Dedicated `outbox` table (cleaned up periodically) | Read directly from `events` table |
+| Feature         | Transactional Outbox (`processOutbox()`)           | Subscriptions (`subscribe()`)                     |
+| :-------------- | :------------------------------------------------- | :------------------------------------------------ |
+| **Model**       | **Competing Consumers** (Distributed Workers)      | **Fan-Out** (Every Subscriber)                    |
+| **Target**      | External Brokers (Kafka, NATS, RabbitMQ, SQS)      | In-process consumers, GraphQL, WebSockets, SSE    |
+| **Concurrency** | Exactly 1 worker publishes each event              | Every replica/subscriber receives all events      |
+| **Locking**     | PostgreSQL `FOR UPDATE SKIP LOCKED`                | Lock-free streaming via `LISTEN/NOTIFY` + Polling |
+| **Storage**     | Dedicated `outbox` table (cleaned up periodically) | Read directly from `events` table                 |
 
 For building query-optimized read models inside the same PostgreSQL database, see [Projections](/docs/projections).
