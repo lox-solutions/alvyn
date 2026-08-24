@@ -26,12 +26,13 @@ export function JourneySimulator() {
         return null;
       case 1:
         return {
-          table: "book_loans",
+          table: "member_current_loans",
           row: {
-            id: "loan_7b29",
+            id: "loan_usr_9921",
             member_id: "usr_9921",
+            book_id: "book_prompt",
             book_title: "Intro to Prompt Engineering",
-            due_date: "15:24:02",
+            due_date: "2026-09-07",
             status: "borrowed",
             fine_assessed: 0.0,
             updated_at: "15:24:02",
@@ -39,12 +40,13 @@ export function JourneySimulator() {
         };
       case 2:
         return {
-          table: "book_loans",
+          table: "member_current_loans",
           row: {
-            id: "loan_7b29",
+            id: "loan_usr_9921",
             member_id: "usr_9921",
+            book_id: "book_prompt",
             book_title: "Intro to Prompt Engineering",
-            due_date: "15:24:18",
+            due_date: "2026-09-21",
             status: "borrowed",
             fine_assessed: 0.0,
             updated_at: "15:24:18",
@@ -52,27 +54,29 @@ export function JourneySimulator() {
         };
       case 3:
         return {
-          table: "book_loans",
+          table: "member_current_loans",
           row: {
-            id: "loan_7b29",
+            id: "loan_usr_9921",
             member_id: "usr_9921",
+            book_id: "book_data",
             book_title: "Designing Data-Intensive Applications",
-            due_date: "15:24:35",
+            due_date: "2026-09-21",
             status: "borrowed",
-            fine_assessed: 15.0,
+            fine_assessed: 0.0,
             updated_at: "15:24:35",
           },
         };
       case 4:
         return {
-          table: "book_loans",
+          table: "member_current_loans",
           row: {
-            id: "loan_7b29",
+            id: "loan_usr_9921",
             member_id: "usr_9921",
+            book_id: "book_data",
             book_title: "Designing Data-Intensive Applications",
-            due_date: "15:24:35",
+            due_date: "2026-09-21",
             status: "returned",
-            fine_assessed: 15.0,
+            fine_assessed: 0.0,
             updated_at: "15:24:50",
           },
         };
@@ -87,11 +91,12 @@ export function JourneySimulator() {
         time: "15:24:02",
         type: "BookBorrowed",
         data: {
-          bookId: "book_prompt",
           memberId: "usr_9921",
+          bookId: "book_prompt",
           title: "Intro to Prompt Engineering",
+          dueDate: "2026-09-07",
         },
-        desc: "New loan session initialized by active library member.",
+        desc: "New checkout initiated for member usr_9921.",
       });
     }
     if (step >= 2) {
@@ -99,8 +104,15 @@ export function JourneySimulator() {
         id: "evt_02",
         time: "15:24:18",
         type: "LoanExtended",
-        data: { daysAdded: 14, extensionReason: "Need more time to read" },
-        desc: "Member requested loan extension to complete reading.",
+        data: {
+          memberId: "usr_9921",
+          bookId: "book_prompt",
+          title: "Intro to Prompt Engineering",
+          daysAdded: 14,
+          newDueDate: "2026-09-21",
+          reason: "Need more time to complete reading",
+        },
+        desc: "Member requested 14-day loan extension for Prompt Engineering.",
       });
     }
     if (step >= 3) {
@@ -108,35 +120,63 @@ export function JourneySimulator() {
         id: "evt_03",
         time: "15:24:30",
         type: "BookReportedLost",
-        data: { bookId: "book_prompt", fineAmount: 15.0 },
-        desc: "Member reported book as misplaced; replacement fine registered.",
+        data: {
+          memberId: "usr_9921",
+          bookId: "book_prompt",
+          title: "Intro to Prompt Engineering",
+          fineAssessed: 15.0,
+        },
+        desc: "Member reported Prompt Engineering misplaced; $15 replacement fine registered.",
       });
       list.push({
         id: "evt_04",
         time: "15:24:32",
-        type: "BookReturned",
-        data: { bookId: "book_prompt", returnedCondition: "excellent" },
-        desc: "Misplaced book found in backpack and returned; fine waived/refunded.",
+        type: "FineWaived",
+        data: {
+          memberId: "usr_9921",
+          bookId: "book_prompt",
+          amount: 15.0,
+          reason: "Book found in backpack and returned in excellent condition",
+        },
+        desc: "Misplaced book found and returned; $15 replacement fine waived.",
       });
       list.push({
         id: "evt_05",
+        time: "15:24:33",
+        type: "BookReturned",
+        data: {
+          memberId: "usr_9921",
+          bookId: "book_prompt",
+          title: "Intro to Prompt Engineering",
+          returnedCondition: "excellent",
+        },
+        desc: "Prompt Engineering returned to library in excellent condition.",
+      });
+      list.push({
+        id: "evt_06",
         time: "15:24:35",
         type: "BookBorrowed",
         data: {
-          bookId: "book_data",
           memberId: "usr_9921",
+          bookId: "book_data",
           title: "Designing Data-Intensive Applications",
+          dueDate: "2026-09-21",
         },
-        desc: "Member realized commodity prompts are trivial; upgraded to high-value data system guides.",
+        desc: "Member shifted focus to core data architectures; checked out DDIA.",
       });
     }
     if (step >= 4) {
       list.push({
-        id: "evt_06",
+        id: "evt_07",
         time: "15:24:50",
         type: "BookReturned",
-        data: { bookId: "book_data", returnedCondition: "excellent" },
-        desc: "Loan closed. All physical assets successfully accounted for.",
+        data: {
+          memberId: "usr_9921",
+          bookId: "book_data",
+          title: "Designing Data-Intensive Applications",
+          returnedCondition: "mint",
+        },
+        desc: "Loan closed. All physical library assets successfully accounted for.",
       });
     }
     return list;
@@ -158,27 +198,27 @@ export function JourneySimulator() {
           title: "Initial Intent Decoded",
           text: "The library member is researching AI and prompt engineering. They are exploring commodity-level AI software builders.",
           crudNote:
-            "CRUD stores one static record. Represents current status 'borrowed'.",
+            "CRUD stores one static row in member_current_loans with status 'borrowed'.",
           eventNote:
-            "Alvyn captures the atomic sequence: BookBorrowed event with metadata.",
+            "Alvyn captures the atomic sequence: BookBorrowed event with full book and member metadata.",
         };
       case 2:
         return {
           title: "Reading Habits Analyzed",
           text: "Member extended the loan. This signals higher engagement or more thorough analysis than a casual reader.",
           crudNote:
-            "CRUD overwrites fields: due_date is now extended. Previous due date is gone.",
+            "CRUD overwrites fields: due_date is now extended. Previous checkout due date is permanently lost.",
           eventNote:
-            "Alvyn appends LoanExtended. The timeline preserves original checkout constraints for analytics.",
+            "Alvyn appends LoanExtended. The stream preserves original checkout constraints for analytics.",
         };
       case 3:
         return {
-          title: "CRITICAL PIVOT: The AI Realization",
-          text: "The member misplaced the basic prompt book, resolved the fine, and immediately upgraded to 'Designing Data-Intensive Applications'. They realized that coding simple prompts is a commodity and building a robust data platform/moat is where the value lies.",
+          title: "CRITICAL PIVOT: The Architecture Realization",
+          text: "The member misplaced the prompt book, resolved the fine, and immediately upgraded to 'Designing Data-Intensive Applications'. They realized that coding simple prompts is a commodity and building a robust data platform/moat is where the durable value lies.",
           crudNote:
-            "CRUD overwrites entire row. No record remains that they ever borrowed the prompt engineering book or reported it lost.",
+            "CRUD overwrites the entire active loan row. No record remains that they ever borrowed the prompt engineering book, extended it, or reported it lost.",
           eventNote:
-            "Alvyn records BookReportedLost, BookReturned, and BookBorrowed. This is a massive business signal of the member's shifting profile.",
+            "Alvyn records BookReportedLost, FineWaived, BookReturned, and BookBorrowed. This is a massive business signal of the member's shifting profile.",
         };
       case 4:
         return {
@@ -253,7 +293,7 @@ export function JourneySimulator() {
             }`}
           >
             <ArrowLeftRight size={13} />
-            3. Report Lost & Swap
+            3. Lost & Swap
           </button>
           <button
             onClick={() => setStep(4)}
@@ -333,6 +373,18 @@ export function JourneySimulator() {
                       ,
                     </div>
                     <div className="pl-4">
+                      book_id:{" "}
+                      <span className="text-fd-foreground font-medium">
+                        &apos;{crud.row.book_id}&apos;
+                      </span>
+                      ,{" "}
+                      {step >= 3 && (
+                        <span className="text-red-500/60 text-[10px] font-medium">
+                          (overwrote book_prompt)
+                        </span>
+                      )}
+                    </div>
+                    <div className="pl-4">
                       book_title:{" "}
                       <span className="text-fd-foreground font-medium">
                         &apos;{crud.row.book_title}&apos;
@@ -376,7 +428,7 @@ export function JourneySimulator() {
                       ,{" "}
                       {step >= 3 && (
                         <span className="text-red-500/60 text-[10px] font-medium">
-                          (overwrote 0.00)
+                          (lost fine history)
                         </span>
                       )}
                     </div>
@@ -432,7 +484,7 @@ export function JourneySimulator() {
             {events.length > 0 ? (
               <div className="space-y-3">
                 <div className="flex items-center justify-between text-[11px] text-fd-muted-foreground pb-2 border-b border-fd-border">
-                  <span>Stream: loan-7b29</span>
+                  <span>Stream: member-usr_9921</span>
                   <span className="text-emerald-400 font-semibold">
                     {events.length} events recorded
                   </span>
@@ -470,9 +522,9 @@ export function JourneySimulator() {
                   size={24}
                   className="mb-3 text-fd-muted-foreground/40"
                 />
-                <p>No events emitted yet.</p>
+                <p>Event stream is empty.</p>
                 <p className="text-[11px] mt-1">
-                  Alvyn is ready to stream immutable timeline facts.
+                  Click "Borrow Book" to emit the first domain event.
                 </p>
               </div>
             )}
@@ -480,50 +532,34 @@ export function JourneySimulator() {
         </div>
       </div>
 
-      {/* AI Memory Agent Insights */}
-      <div className="p-6 border-t border-fd-border bg-fd-background flex flex-col md:flex-row gap-6 items-start text-left">
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="p-3 rounded-2xl bg-fd-secondary border border-fd-border text-fd-secondary-foreground">
-            <Brain size={20} />
-          </div>
-          <div>
-            <h4 className="text-xs font-semibold uppercase tracking-wider text-fd-foreground">
-              AI System Intelligence
-            </h4>
-            <span className="text-[10px] text-fd-muted-foreground block font-mono">
-              Model Capacity Multiplier
-            </span>
-          </div>
-        </div>
-
-        <div className="flex-1 space-y-3">
-          <div className="text-sm font-semibold text-fd-foreground flex items-center gap-1.5">
-            {step > 0 && (
-              <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" />
-            )}
+      {/* Intelligence & Business Insight Panel */}
+      <div className="p-6 bg-fd-secondary/40 border-t border-fd-border text-left">
+        <div className="flex items-center gap-2 mb-3">
+          <Brain size={16} className="text-primary" />
+          <h4 className="text-xs font-semibold tracking-wide text-fd-foreground">
             {ai.title}
-          </div>
-          <p className="text-xs text-fd-muted-foreground leading-relaxed font-light">
-            {ai.text}
-          </p>
+          </h4>
+        </div>
+        <p className="text-xs text-fd-muted-foreground leading-relaxed mb-4">
+          {ai.text}
+        </p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-fd-border">
-            <div>
-              <span className="text-[10px] font-semibold text-red-400 block mb-1 uppercase tracking-wider">
-                AI fed with CRUD record:
-              </span>
-              <span className="text-xs text-fd-muted-foreground block leading-relaxed">
-                {ai.crudNote}
-              </span>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+          <div className="bg-red-950/20 border border-red-900/30 rounded-2xl p-3 flex flex-col justify-between">
+            <div className="text-[10px] font-semibold text-red-400 mb-1 flex items-center gap-1.5">
+              <Database size={12} /> CRUD Database Perspective
             </div>
-            <div>
-              <span className="text-[10px] font-semibold text-emerald-400 block mb-1 uppercase tracking-wider">
-                AI fed with Alvyn Event Log:
-              </span>
-              <span className="text-xs text-fd-secondary-foreground block leading-relaxed font-semibold text-fd-foreground">
-                {ai.eventNote}
-              </span>
+            <p className="text-[11px] text-red-300/80 leading-normal">
+              {ai.crudNote}
+            </p>
+          </div>
+          <div className="bg-emerald-950/20 border border-emerald-900/30 rounded-2xl p-3 flex flex-col justify-between">
+            <div className="text-[10px] font-semibold text-emerald-400 mb-1 flex items-center gap-1.5">
+              <Sparkles size={12} /> Alvyn Stream Perspective
             </div>
+            <p className="text-[11px] text-emerald-300/80 leading-normal">
+              {ai.eventNote}
+            </p>
           </div>
         </div>
       </div>

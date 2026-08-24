@@ -1,19 +1,13 @@
 ---
 title: Subscriptions
-description: Fan-out event subscriptions with historical catch-up, live tailing, filtering, resumable cursors, and PostgreSQL wake-ups.
+description: Fan-out event subscriptions with historical catch-up, live tailing, filtering, resumable cursors, GraphQL subscriptions, and SSE endpoints.
 ---
 
 # Subscriptions
 
-`EventStore.subscribe()` is Alvyn's fan-out primitive for consumers that should
-observe events independently. It returns an `AsyncIterable<StoredEvent>` that
-first catches up on matching history and then tails new events as they are
-committed.
+`EventStore.subscribe()` is Alvyn's **fan-out** primitive for consumers that observe events independently. It returns an `AsyncIterable<StoredEvent>` that first catches up on matching history and then seamlessly transitions to tailing new events as they commit in PostgreSQL.
 
-Unlike the transactional outbox, subscriptions are not competing consumers.
-Every subscriber receives every matching event and maintains its own cursor.
-Use the outbox when exactly one replica should relay an event to an external
-system; use subscriptions when every replica or connected client should see it.
+Unlike the transactional outbox, subscriptions are **not** competing consumers. Every subscriber (e.g. every replica or connected client) receives every matching event and maintains its own in-memory cursor.
 
 ## Basic Usage
 
@@ -27,72 +21,79 @@ for await (const event of eventStore.subscribe({
   signal: controller.signal,
 })) {
   await handleOrderEvent(event);
-  // Persist event.globalPosition after successful processing.
+  // Persist event.globalPosition after successful processing
 }
 
-controller.abort(); // Stops iteration and releases the listener connection.
+// Stops iteration and releases the PostgreSQL LISTEN connection
+controller.abort();
 ```
 
-The iterator is ordered by `globalPosition`, delivers at least once, and is
-independent for each subscriber. Consumers should be idempotent and persist a
-cursor after handling an event.
+The iterator is ordered by `globalPosition`, delivers at least once, and is independent for each subscriber. Consumers should be idempotent and persist their cursor after handling an event.
 
 ## Catch-up and Live Tailing
 
-The subscription reads historical events first, then transitions to live
-tailing on the same iterator. Successful appends issue a transactional
-PostgreSQL `NOTIFY`; the subscription listens for that wake-up and retains a
-polling fallback for missed notifications or reconnects.
+The subscription reads historical events first, then transitions to live tailing on the same iterator:
 
-The read side uses a commit-safe watermark. This prevents a transaction that
-commits later with a lower `globalPosition` from being skipped by a cursor
-consumer. A long-running concurrent transaction can therefore delay delivery
-slightly in favor of correctness.
+1. **Catch-up phase:** Queries historical events matching your filter ordered by `global_position ASC` in batches of `batchSize`.
+2. **Live tailing phase:** Alvyn automatically registers a PostgreSQL `LISTEN` client on commit notifications (`NOTIFY`). When new events append, the listener wakes up immediately.
+3. **Polling fallback:** A background timer (default `pollIntervalMs: 1000`) guarantees delivery even if a database notification is dropped or during network reconnection.
+
+### Commit-Safe Watermark
+
+The read side uses a **commit-safe watermark**. This prevents a concurrent transaction that commits later with a lower `globalPosition` from being skipped by a live cursor consumer:
+
+```
+Transaction A (position 101) ----------> commits at t=2
+Transaction B (position 100) ---------------> commits at t=3 (delayed)
+```
+
+Without a watermark, a subscriber tailing at `t=2` would read `101`, advance its cursor past `101`, and permanently miss `100` when `B` commits at `t=3`. Alvyn calculates the safe watermark dynamically so consumers never miss out-of-order commits.
 
 ## Filters and Options
 
-| Option           | Description                                                                                  |
-| ---------------- | -------------------------------------------------------------------------------------------- |
-| `subject`        | Exact CloudEvents subject to observe; the subject is the stream ID.                          |
-| `recursive`      | With `true`, include subjects below the supplied prefix. The match is exact or prefix-based. |
-| `eventTypes`     | Restrict delivery to the listed CloudEvents `type` values.                                   |
-| `lowerBound`     | Resume from a global position using `{ id, type }`.                                          |
-| `signal`         | Abort the iterator and release its resources.                                                |
-| `batchSize`      | Historical catch-up batch size; defaults to `500`.                                           |
-| `pollIntervalMs` | Polling/fallback cadence in milliseconds; defaults to `1000`.                                |
+```typescript
+interface SubscribeOptions {
+  subject?: string; // CloudEvents subject (streamId), e.g. "Order-123" or "Order-"
+  recursive?: boolean; // When true, matches prefix (e.g. "Order-" matches "Order-1", "Order-2")
+  eventTypes?: string[]; // Restrict delivery to specific event types
+  lowerBound?: { id: string; type?: "exclusive" | "inclusive" }; // Resume cursor
+  signal?: AbortSignal; // Abort signal to stop stream and release DB connection
+  batchSize?: number; // Batch size for catch-up queries (default: 500)
+  pollIntervalMs?: number; // Polling fallback cadence in ms (default: 1000)
+}
+```
 
-`subject` and `eventTypes` can be combined. Without a subject filter, the
-subscription observes matching events from every stream.
+`subject` and `eventTypes` can be combined. Without a subject filter, the subscription observes matching events from all streams in the store.
 
 ## Resuming with a Cursor
 
-`lowerBound.id` is the string representation of the last processed
-`globalPosition`:
+To resume processing after a worker restart or server disconnect, pass `lowerBound.id` set to the string representation of the last processed `globalPosition`:
 
 ```typescript
 const lastProcessedPosition = "42";
 
 for await (const event of eventStore.subscribe({
+  subject: "Order-",
+  recursive: true,
   lowerBound: {
     id: lastProcessedPosition,
-    type: "exclusive", // default: start after position 42
+    type: "exclusive", // Default: start with the event immediately AFTER 42
   },
 })) {
   await handle(event);
+  lastProcessedPosition = event.globalPosition.toString();
 }
 ```
 
-Use `type: "inclusive"` when the event at the cursor should be delivered
-again. This is useful when the previous consumer may have crashed before
-persisting its processing result.
+Use `type: "inclusive"` if the event at the cursor should be delivered again (e.g. if the previous consumer crashed mid-processing before saving its state).
 
 ## Aggregate Subscriptions
 
-An aggregate handle provides a typed subscription for one entity stream. The
-stream subject is derived automatically, and generated snapshot events are
-hidden from domain consumers:
+An aggregate handle provides a strongly typed subscription for a specific entity stream. Stream subject derivation and snapshot event filtering happen automatically:
 
 ```typescript
+import { defineAggregate } from "@lox-solutions/alvyn";
+
 type OrderState = { status: "placed" | "shipped" };
 type OrderEvents = {
   OrderPlaced: { total: number };
@@ -107,34 +108,96 @@ const Order = defineAggregate<OrderState, OrderEvents>()({
   },
 });
 
+// Strongly typed: event.type and event.data match OrderEvents
 for await (const event of Order.subscribe({
   eventStore,
   entityId: "order-123",
   options: { eventTypes: ["OrderShipped"] },
 })) {
-  console.log(event.type, event.data);
+  console.log(event.type, event.data.trackingNumber);
 }
 ```
 
-`AggregateStoredEvent<TEvents>` infers the payload from the event map. See
-[Aggregates](/docs/aggregates) for `loadEvents()` and aggregate replay types.
+## Real-time Integration Use Cases
+
+### GraphQL Subscriptions
+
+Because `subscribe()` returns a standard `AsyncIterable`, it integrates directly with GraphQL subscription resolvers (such as GraphQL Yoga, Apollo Server, or Mercurius):
+
+```typescript
+const resolvers = {
+  Subscription: {
+    orderEvents: {
+      subscribe: (_parent, args, context) => {
+        const ac = new AbortController();
+
+        // Stream matching events to this specific connected client
+        return mapAsyncIterator(
+          context.eventStore.subscribe({
+            subject: "Order-",
+            recursive: true,
+            eventTypes: args.types,
+            signal: ac.signal,
+          }),
+          (event) => ({ orderEvents: event }),
+        );
+      },
+    },
+  },
+};
+```
+
+### Server-Sent Events (SSE) Endpoint
+
+You can expose a real-time HTTP event stream where the standard `Last-Event-ID` header acts as the resumable cursor:
+
+```typescript
+import type { IncomingMessage, ServerResponse } from "node:http";
+
+async function sseHandler(req: IncomingMessage, res: ServerResponse) {
+  res.writeHead(200, {
+    "content-type": "text/event-stream",
+    "cache-control": "no-cache",
+    connection: "keep-alive",
+  });
+
+  const ac = new AbortController();
+  req.on("close", () => ac.abort());
+
+  const lastEventId = req.headers["last-event-id"] as string | undefined;
+
+  for await (const event of eventStore.subscribe({
+    subject: "Order-",
+    recursive: true,
+    lowerBound: lastEventId
+      ? { id: lastEventId, type: "exclusive" }
+      : undefined,
+    signal: ac.signal,
+  })) {
+    // The SSE `id:` doubles as the resume cursor for automatic client reconnects
+    res.write(`id: ${event.globalPosition}\n`);
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  }
+}
+```
 
 ## Encryption and Schema Evolution
 
-Subscriptions read stored event rows for efficient fan-out delivery. Unlike
-`eventStore.load()`, they do not decrypt encrypted fields or run registered
-upcasters. An encrypted event can therefore expose redacted data, and the
-consumer must account for the stored schema shape. Use normal stream loading
-when replayed, decrypted, and upcasted events are required.
+Subscriptions read stored event rows for high-throughput fan-out delivery. Unlike `eventStore.load()`, they do not decrypt GDPR-encrypted fields or run registered upcasters.
 
-## Subscription vs Outbox
+- An encrypted event payload will contain the ciphertext representation.
+- The consumer receives the payload in its stored schema format.
 
-| Need                                                | Use                             |
-| --------------------------------------------------- | ------------------------------- |
-| Every replica observes every matching event         | `subscribe()`                   |
-| A connected GraphQL/SSE client receives live events | `subscribe()`                   |
-| Exactly one worker in a fleet relays each event     | Transactional outbox            |
-| Events must be replayed after a consumer restart    | `subscribe()` with `lowerBound` |
+When replayed, decrypted, and upcasted domain state is required, use `Order.load()` or `eventStore.load()`.
 
-Both mechanisms preserve at-least-once delivery. Keep handlers idempotent and
-persist progress only after successful processing.
+## Subscription vs. Outbox
+
+| Feature                | Subscriptions (`subscribe()`)               | Transactional Outbox (`processOutbox()`)                      |
+| :--------------------- | :------------------------------------------ | :------------------------------------------------------------ |
+| **Pattern**            | In-process Fan-out                          | Competing Consumers (Distributed Fleet)                       |
+| **Delivery Target**    | Connected clients, WebSockets, GraphQL, SSE | Message Brokers (Kafka, NATS, RabbitMQ, SQS)                  |
+| **Scale Behavior**     | Every replica receives every event          | Exactly one worker process across the fleet relays each event |
+| **State Tracking**     | Client in-memory cursor (`lowerBound`)      | PostgreSQL table lock (`FOR UPDATE SKIP LOCKED`)              |
+| **Delivery Guarantee** | At-least-once per subscriber                | At-least-once to external message broker                      |
+
+Use `subscribe()` when you need real-time streaming to all replicas or clients. Use the [Transactional Outbox](/docs/outbox) when publishing fleet-wide messages to external brokers.

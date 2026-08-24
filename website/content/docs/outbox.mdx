@@ -1,0 +1,189 @@
+---
+title: Transactional Outbox
+description: Atomically publish domain events to external message brokers (Kafka, NATS, RabbitMQ) with at-least-once delivery guarantees.
+---
+
+# Transactional Outbox
+
+The **Transactional Outbox** pattern guarantees **at-least-once delivery** of events to external message brokers (e.g. NATS, Apache Kafka, RabbitMQ, AWS SQS) without distributed transactions.
+
+Outbox entries are inserted in the **exact same PostgreSQL transaction** as the event store append. If the transaction commits, both the event and its corresponding outbox rows are guaranteed to exist.
+
+```
+1. Client Appends Event
+   │
+   ▼
+┌────────────────────────────────────────┐
+│ PostgreSQL ACID Transaction            │
+│ ├─ INSERT INTO events (...)            │
+│ └─ INSERT INTO outbox (...)            │
+└────────────────────────────────────────┘
+   │
+   ▼ (committed)
+┌────────────────────────────────────────┐
+│ Relay Worker Fleet                     │
+│ ├─ SELECT ... FOR UPDATE SKIP LOCKED   │
+│ ├─ Dispatch to Message Broker (NATS)   │
+│ └─ UPDATE outbox SET processed_at=now()│
+└────────────────────────────────────────┘
+```
+
+## Solving the Dual-Write Problem
+
+A common architectural pitfall is trying to write to PostgreSQL and publish to a message broker in separate steps:
+
+```typescript
+// ❌ DANGEROUS: Dual-write hazard
+await eventStore.append({ streamId, events: [orderPlaced] });
+await natsBroker.publish("orders", orderPlaced); // If this fails or worker crashes, event is lost to broker!
+```
+
+If your node process crashes or the network blips between those two lines, your message broker will never receive the event.
+
+With Alvyn's Transactional Outbox, publishing is atomic and durable:
+
+```typescript
+// ✅ SAFE: Single ACID transaction
+await eventStore.append({
+  streamId: "Order-123",
+  expectedVersion: 0,
+  events: [{ type: "OrderPlaced", data: { total: 99.99 } }],
+  outboxTopics: ["orders", "analytics.orders"],
+});
+```
+
+## Publishing to the Outbox
+
+### Direct Append
+
+Specify `outboxTopics` array on `eventStore.append()`:
+
+```typescript
+await eventStore.append({
+  streamId: "Order-123",
+  expectedVersion: 0,
+  events: [
+    {
+      type: "OrderPlaced",
+      data: { total: 99.99, customerId: "cust_482" },
+      extensions: { correlationid: "req_8819" },
+    },
+  ],
+  outboxTopics: ["orders", "notifications"],
+});
+```
+
+### With Typed Aggregates
+
+When using `defineAggregate`, pass `outboxTopics` directly to the aggregate append handle:
+
+```typescript
+await Order.append(eventStore, {
+  entityId: "order-123",
+  expectedVersion: order.version,
+  events: [
+    {
+      type: "OrderShipped",
+      data: { trackingNumber: "TRACK-99128" },
+    },
+  ],
+  outboxTopics: ["shipping-events"],
+});
+```
+
+## Outbox Payload Format (CloudEvents v1.0.2)
+
+Every outbox record generates an industry-standard CloudEvents v1.0.2 compliant JSON envelope:
+
+```json
+{
+  "specversion": "1.0",
+  "id": "Order-123/1",
+  "type": "OrderPlaced",
+  "source": "urn:my-app:event-store",
+  "subject": "Order-123",
+  "time": "2026-08-24T10:00:00.000Z",
+  "datacontenttype": "application/json",
+  "correlationid": "req_8819",
+  "actorid": "usr_9921",
+  "schemaversion": 1,
+  "data": {
+    "total": 99.99,
+    "customerId": "cust_482"
+  }
+}
+```
+
+## Worker Relay with `processOutbox()`
+
+Build a relay worker that claims pending outbox entries and dispatches them to your external message broker:
+
+```typescript
+import { EventStore } from "@lox-solutions/alvyn";
+import { connect } from "nats";
+
+const nc = await connect({ servers: process.env.NATS_URL });
+const jsm = await nc.jetstream();
+
+async function runOutboxRelay() {
+  try {
+    // Process up to 100 pending messages per batch
+    const processedCount = await eventStore.processOutbox(
+      async (entries, client) => {
+        for (const entry of entries) {
+          // entry.topic matches the string from outboxTopics
+          // entry.payload contains the CloudEvent JSON object
+          await jsm.publish(entry.topic, JSON.stringify(entry.payload));
+        }
+      },
+      100,
+    );
+
+    if (processedCount > 0) {
+      console.log(`Successfully dispatched ${processedCount} outbox events.`);
+    }
+  } catch (err) {
+    console.error("Outbox relay error:", err);
+  }
+}
+
+// Continuously poll for pending outbox items
+setInterval(runOutboxRelay, 1000);
+```
+
+### Replica Safety (`FOR UPDATE SKIP LOCKED`)
+
+`processOutbox()` uses PostgreSQL's row-level locking with `FOR UPDATE SKIP LOCKED`.
+
+- Multiple background workers or server replicas can execute `runOutboxRelay()` concurrently without collision.
+- Each pending row is locked and claimed by **exactly one worker**.
+- Other workers skip already-locked rows and immediately process the next available records.
+- If a worker crashes before finishing, PostgreSQL releases the row lock, allowing other workers to pick it up on the next cycle.
+
+## Retention and Cleanup
+
+Once an outbox entry is processed, its `processed_at` column is set to the current timestamp. Over time, these processed entries accumulate.
+
+Use `cleanupOutbox()` in a scheduled maintenance cron job to delete old processed records:
+
+```typescript
+// Delete processed entries older than 7 days (default) in batches of 500
+const deletedCount = await eventStore.cleanupOutbox(
+  7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
+  500, // Batch size
+);
+
+console.log(`Cleaned up ${deletedCount} archived outbox records.`);
+```
+
+## Outbox vs. Subscriptions
+
+| Feature         | Transactional Outbox (`processOutbox()`)           | Subscriptions (`subscribe()`)                     |
+| :-------------- | :------------------------------------------------- | :------------------------------------------------ |
+| **Model**       | **Competing Consumers** (Distributed Workers)      | **Fan-Out** (Every Subscriber)                    |
+| **Target**      | External Brokers (Kafka, NATS, RabbitMQ, SQS)      | In-process consumers, GraphQL, WebSockets, SSE    |
+| **Concurrency** | Exactly 1 worker publishes each event              | Every replica/subscriber receives all events      |
+| **Locking**     | PostgreSQL `FOR UPDATE SKIP LOCKED`                | Lock-free streaming via `LISTEN/NOTIFY` + Polling |
+| **Storage**     | Dedicated `outbox` table (cleaned up periodically) | Read directly from `events` table                 |
+
+For building query-optimized read models inside the same PostgreSQL database, see [Projections](/docs/projections).
