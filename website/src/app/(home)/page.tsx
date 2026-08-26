@@ -38,11 +38,9 @@ export default function HomePage() {
             className="mb-8"
           />
 
-          {/* Clean monochromatic pill badge */}
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-fd-zinc-800 bg-fd-zinc-900/40 px-4 py-2 text-[10px] font-mono tracking-widest uppercase text-fd-zinc-400">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
-            Event Sourcing · Domain-Driven
-          </div>
+          <p className="text-xl sm:text-2xl md:text-3xl font-semibold tracking-tight text-fd-foreground mb-6">
+            Event Sourcing. As simple as CRUD.
+          </p>
 
           <NeonHeadline line1="Your data tells" line2="the whole story." />
 
