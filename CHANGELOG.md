@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.7](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.6...alvyn-v0.1.7) (2026-08-31)
+
+
+### Bug Fixes
+
+* **security:** update next from 16.3.0 to 16.3.3 ([#46](https://github.com/lox-solutions/alvyn/issues/46)) ([4238954](https://github.com/lox-solutions/alvyn/commit/42389544c266330124f36c1c602b94ae39df6fb2))
+
 ## [0.1.6](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.5...alvyn-v0.1.6) (2026-08-19)
 
 
