@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.8](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.7...alvyn-v0.1.8) (2026-09-03)
+
+
+### Bug Fixes
+
+* deduplicate concurrent in-flight setup() calls in EventStore ([#48](https://github.com/lox-solutions/alvyn/issues/48)) ([f68e659](https://github.com/lox-solutions/alvyn/commit/f68e659352566a3ac973e2410d6f0a77784f3027))
+
 ## [0.1.7](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.6...alvyn-v0.1.7) (2026-08-31)
 
 
