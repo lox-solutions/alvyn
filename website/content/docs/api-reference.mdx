@@ -71,7 +71,13 @@ entropy to a weak secret.
 
 Runs idempotent schema migrations (`CREATE TABLE IF NOT EXISTS`). Safe on every startup. **Must be called before any other method.**
 
+Concurrent in-flight calls within the same process are automatically deduplicated — returning the active initialization promise and avoiding redundant database connections.
+
 Throws `EventStoreNotInitializedError` if other methods are called before `setup()`.
+
+#### `isInitialized(): boolean`
+
+Returns whether `setup()` has completed successfully. Useful for synchronous health/readiness checks (e.g. `/ready` or `/healthz` endpoints) and defensive guards.
 
 #### `getStreamVersion(streamId): Promise<number>`
 

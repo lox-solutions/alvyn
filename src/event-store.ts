@@ -56,6 +56,7 @@ export class EventStore {
   private readonly reader: EventStoreReader;
   private readonly maintenance: EventStoreMaintenance;
   private initialized = false;
+  private setupPromise?: Promise<void>;
 
   constructor(config: EventStoreConfig) {
     this.pool = config.pool;
@@ -88,9 +89,26 @@ export class EventStore {
     });
   }
 
+  isInitialized(): boolean {
+    return this.initialized;
+  }
+
   async setup(): Promise<void> {
-    await withClient(this.pool, (c) => runMigrations(c, this.schema));
-    this.initialized = true;
+    if (this.initialized) {
+      return;
+    }
+    if (this.setupPromise) {
+      return this.setupPromise;
+    }
+    this.setupPromise = (async () => {
+      try {
+        await withClient(this.pool, (c) => runMigrations(c, this.schema));
+        this.initialized = true;
+      } finally {
+        this.setupPromise = undefined;
+      }
+    })();
+    return this.setupPromise;
   }
 
   async getStreamVersion(streamId: string): Promise<number> {
