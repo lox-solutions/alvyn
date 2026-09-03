@@ -172,7 +172,7 @@ CREATE TABLE IF NOT EXISTS {schema}.projections (
 
 ## Migrations
 
-Migrations are run by calling `eventStore.setup()`. This executes `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS` statements, making it safe to call on every application startup.
+Migrations are run by calling `eventStore.setup()`. This executes `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS` statements, making it safe to call on every application startup. Concurrent in-flight calls within the same process are automatically deduplicated.
 
 ```typescript
 await eventStore.setup(); // Idempotent — run on every startup
