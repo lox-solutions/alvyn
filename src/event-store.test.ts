@@ -93,6 +93,66 @@ describe("EventStore", () => {
       await store.setup();
     });
 
+    it("handles concurrent setup() invocations without running duplicate migrations", async () => {
+      const store = new EventStore({ pool, schema: uniqueSchema() });
+
+      // All concurrent callers should resolve without error
+      await expect(
+        Promise.all([store.setup(), store.setup(), store.setup()]),
+      ).resolves.toBeDefined();
+      expect(store.isInitialized()).toBe(true);
+    });
+
+    it("deduplicates in-flight setup calls to a single migration execution", async () => {
+      const store = new EventStore({ pool, schema: uniqueSchema() });
+      expect(store.isInitialized()).toBe(false);
+
+      const originalConnect = pool.connect.bind(pool);
+      let connectCalls = 0;
+      pool.connect = async () => {
+        connectCalls++;
+        return originalConnect();
+      };
+
+      try {
+        await Promise.all([store.setup(), store.setup(), store.setup()]);
+        expect(connectCalls).toBe(1);
+        expect(store.isInitialized()).toBe(true);
+
+        // Additional setup call when already initialized returns immediately without reconnecting
+        await store.setup();
+        expect(connectCalls).toBe(1);
+      } finally {
+        pool.connect = originalConnect;
+      }
+    });
+
+    it("cleans up setupPromise and allows retry if setup fails", async () => {
+      const store = new EventStore({ pool, schema: uniqueSchema() });
+      const originalConnect = pool.connect.bind(pool);
+      let attempts = 0;
+      pool.connect = async () => {
+        attempts++;
+        if (attempts === 1) {
+          throw new Error("Simulated connection failure during setup");
+        }
+        return originalConnect();
+      };
+
+      try {
+        await expect(store.setup()).rejects.toThrow(
+          "Simulated connection failure during setup",
+        );
+        expect(store.isInitialized()).toBe(false);
+
+        // Retry should now succeed since setupPromise was cleared in finally
+        await expect(store.setup()).resolves.toBeUndefined();
+        expect(store.isInitialized()).toBe(true);
+      } finally {
+        pool.connect = originalConnect;
+      }
+    });
+
     it("throws EventStoreNotInitializedError if methods called before setup", async () => {
       const store = makeStore();
       await expect(store.load("s-1")).rejects.toThrow(
