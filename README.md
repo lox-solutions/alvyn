@@ -275,7 +275,7 @@ Full documentation is available at **[alvyn.opensource.lox-solutions.eu](https:/
 
 ## Requirements
 
-- Node.js >= 18
+- Node.js >= 22.18.0
 - PostgreSQL >= 14
 - `pg` ^8 (peer dependency)
 
