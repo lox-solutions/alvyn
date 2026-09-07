@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.10](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.9...alvyn-v0.1.10) (2026-09-07)
+
+
+### Bug Fixes
+
+* resolve external ESM module resolution and missing file extension errors ([#52](https://github.com/lox-solutions/alvyn/issues/52)) ([0b75068](https://github.com/lox-solutions/alvyn/commit/0b75068a17204d8bd0a68358166c507cbc24183d))
+
 ## [0.1.9](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.8...alvyn-v0.1.9) (2026-09-07)
 
 
