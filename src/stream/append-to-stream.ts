@@ -10,6 +10,7 @@ import { buildOutboxRows, insertOutboxChunks } from "./outbox-insert";
 import { notifyChannel } from "./notify-channel";
 import { prepareEventRow } from "./prepare-event-row";
 import type { PreparedRow } from "./prepare-event-row";
+import { checkIdempotencyKey, recordIdempotencyKey } from "./idempotency";
 
 const PG_MAX_PARAMS = 65535;
 const PARAMS_PER_EVENT = 14;
@@ -24,22 +25,29 @@ export interface AppendToStreamOptions {
     events: AppendEventInput[];
     outboxTopics?: string[];
     defaultSource?: string;
+    idempotencyKey?: string;
   };
   cryptoKeyManager: CryptoKeyManager | null;
   allowReservedEventTypes?: boolean;
 }
 
-async function acquireLockAndValidateVersion(options: {
+async function acquireStreamLock(
+  client: PoolClient,
+  streamId: string,
+): Promise<void> {
+  await client.query(
+    `SELECT pg_advisory_xact_lock(hashtextextended($1, 1936024421))`,
+    [streamId],
+  );
+}
+
+async function validateVersion(options: {
   client: PoolClient;
   schema: string;
   streamId: string;
   expectedVersion: number;
 }): Promise<number> {
   const { client, schema, streamId, expectedVersion } = options;
-  await client.query(
-    `SELECT pg_advisory_xact_lock(hashtextextended($1, 1936024421))`,
-    [streamId],
-  );
   const versionResult = await client.query<{ max_version: number | null }>(
     `SELECT MAX(stream_version) as max_version FROM ${schema}.events WHERE stream_id = $1`,
     [streamId],
@@ -196,19 +204,79 @@ async function writeOutbox(options: {
   await insertOutboxChunks({ client, schema, rows });
 }
 
+async function persistAppend(options: {
+  client: PoolClient;
+  schema: string;
+  streamId: string;
+  fromVersion: number;
+  preparedRows: PreparedRow[];
+  outboxTopics?: string[];
+  idempotencyKey?: string;
+}): Promise<AppendResult> {
+  const {
+    client,
+    schema,
+    streamId,
+    fromVersion,
+    preparedRows,
+    outboxTopics,
+    idempotencyKey,
+  } = options;
+  const globalPositions = await insertEventChunks({
+    client,
+    schema,
+    streamId,
+    preparedRows,
+  });
+  await writeOutbox({
+    client,
+    schema,
+    preparedRows,
+    globalPositions,
+    outboxTopics,
+  });
+  const toVersion = fromVersion + preparedRows.length - 1;
+  if (idempotencyKey !== undefined) {
+    await recordIdempotencyKey({
+      client,
+      schema,
+      idempotencyKey,
+      streamId,
+      fromVersion,
+      toVersion,
+      globalPositions,
+    });
+  }
+  await client.query(`SELECT pg_notify($1, '')`, [notifyChannel(schema)]);
+  return { streamId, fromVersion, toVersion, globalPositions };
+}
+
 /** Appends events to a stream. CloudEvents v1.0.2 compliant. */
 export async function appendToStream(
   options: AppendToStreamOptions,
 ): Promise<AppendResult> {
   const { client, schema, input, cryptoKeyManager, allowReservedEventTypes } =
     options;
-  const { streamId, expectedVersion, events, outboxTopics } = input;
+  const { streamId, expectedVersion, events, outboxTopics, idempotencyKey } =
+    input;
   const defaultSource = input.defaultSource ?? "event-store";
   if (events.length === 0) throw new Error("Cannot append zero events");
   if (allowReservedEventTypes) assertOnlyReservedSnapshotEventTypes(events);
   else assertNoReservedSnapshotEventTypes(events);
 
-  const currentVersion = await acquireLockAndValidateVersion({
+  await acquireStreamLock(client, streamId);
+
+  if (idempotencyKey !== undefined) {
+    const existing = await checkIdempotencyKey({
+      client,
+      schema,
+      idempotencyKey,
+      streamId,
+    });
+    if (existing) return existing;
+  }
+
+  const currentVersion = await validateVersion({
     client,
     schema,
     streamId,
@@ -225,29 +293,14 @@ export async function appendToStream(
     client,
     schema,
   });
-  const globalPositions = await insertEventChunks({
+
+  return persistAppend({
     client,
     schema,
-    streamId,
-    preparedRows,
-  });
-
-  await writeOutbox({
-    client,
-    schema,
-    preparedRows,
-    globalPositions,
-    outboxTopics,
-  });
-
-  // Wake live subscribers. Issued on the append client so the notification is
-  // delivered when (and only when) this transaction commits.
-  await client.query(`SELECT pg_notify($1, '')`, [notifyChannel(schema)]);
-
-  return {
     streamId,
     fromVersion,
-    toVersion: fromVersion + events.length - 1,
-    globalPositions,
-  };
+    preparedRows,
+    outboxTopics,
+    idempotencyKey,
+  });
 }

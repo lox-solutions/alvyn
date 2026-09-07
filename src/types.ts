@@ -180,6 +180,8 @@ export interface AppendInput<T = unknown> {
   events: AppendEventInput<T>[];
   /** Optional: outbox topics to publish events to */
   outboxTopics?: string[];
+  /** Optional: idempotency key to prevent duplicate appends on retries */
+  idempotencyKey?: string;
 }
 
 export interface AppendResult {

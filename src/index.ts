@@ -106,6 +106,7 @@ export {
   CryptoKeyRevokedError,
   CryptoSecretVersionNotFoundError,
   EventStoreNotInitializedError,
+  IdempotencyConflictError,
   InvalidArgumentError,
   InvalidSchemaNameError,
   InvalidCryptoSecretsError,

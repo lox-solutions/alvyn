@@ -152,6 +152,7 @@ export function validateAppendInput(input: AppendInput): void {
       );
     }
   }
+  validateOptionalNonEmptyString(input.idempotencyKey, "idempotencyKey");
 }
 
 export function validateListStreamsOptions(options?: ListStreamsOptions): void {

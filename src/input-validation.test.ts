@@ -142,6 +142,35 @@ describe("runtime input validation", () => {
     ).toThrow(InvalidArgumentError);
   });
 
+  it("validates idempotencyKey", () => {
+    expect(() =>
+      validateAppendInput({
+        streamId: "Order-1",
+        expectedVersion: 0,
+        events: [{ type: "Created", data: {} }],
+        idempotencyKey: "",
+      }),
+    ).toThrow(InvalidArgumentError);
+
+    expect(() =>
+      validateAppendInput({
+        streamId: "Order-1",
+        expectedVersion: 0,
+        events: [{ type: "Created", data: {} }],
+        idempotencyKey: 123 as never,
+      }),
+    ).toThrow(InvalidArgumentError);
+
+    expect(() =>
+      validateAppendInput({
+        streamId: "Order-1",
+        expectedVersion: 0,
+        events: [{ type: "Created", data: {} }],
+        idempotencyKey: "valid-key-123",
+      }),
+    ).not.toThrow();
+  });
+
   it("rejects cursors and settings that can busy-loop or break queries", () => {
     expect(() => validateSubscribeOptions({ batchSize: 0 })).toThrow(
       InvalidArgumentError,

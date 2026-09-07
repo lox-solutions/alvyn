@@ -8,6 +8,7 @@ import {
   CryptoSecretsRequiredError,
   EventStoreNotInitializedError,
   InvalidSchemaNameError,
+  IdempotencyConflictError,
 } from "./errors";
 
 describe("errors", () => {
@@ -93,6 +94,20 @@ describe("errors", () => {
     });
   });
 
+  describe("IdempotencyConflictError", () => {
+    it("sets name, idempotencyKey, and message", () => {
+      const err = new IdempotencyConflictError(
+        "key-123",
+        "Key was already used for stream \"other-stream\"",
+      );
+      expect(err).toBeInstanceOf(Error);
+      expect(err.name).toBe("IdempotencyConflictError");
+      expect(err.idempotencyKey).toBe("key-123");
+      expect(err.message).toContain("key-123");
+      expect(err.message).toContain("other-stream");
+    });
+  });
+
   it("all errors can be discriminated by name property", () => {
     const errors: Error[] = [
       new OptimisticConcurrencyError("s", 1, 2),
@@ -103,6 +118,7 @@ describe("errors", () => {
       new CryptoSecretsRequiredError(),
       new EventStoreNotInitializedError(),
       new InvalidSchemaNameError("x"),
+      new IdempotencyConflictError("key", "conflict"),
     ];
 
     const names = errors.map((e) => e.name);

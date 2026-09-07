@@ -103,6 +103,7 @@ async function appendAggregate<TState, TEvents>(options: {
     expectedVersion: number;
     events: unknown[];
     outboxTopics?: string[];
+    idempotencyKey?: string;
   };
   buildStreamId: (id: string) => string;
   encryption: AggregateDefinition<TEvents, TState>["encryption"];
@@ -113,6 +114,7 @@ async function appendAggregate<TState, TEvents>(options: {
     streamId,
     expectedVersion: input.expectedVersion,
     outboxTopics: input.outboxTopics,
+    idempotencyKey: input.idempotencyKey,
     events: mapEventsForAppend({
       events: input.events as never[],
       encryption,
