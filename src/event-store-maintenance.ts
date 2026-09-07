@@ -7,6 +7,7 @@ import {
 } from "./crypto/crypto-key-operations";
 import { CryptoSecretsRequiredError } from "./errors";
 import { cleanupOutbox, processOutbox } from "./outbox/outbox-processor";
+import { cleanupIdempotencyKeys } from "./stream/idempotency";
 import { inTransaction } from "./pg-helpers";
 import { runProjection as runProjectionFn } from "./projection/run-projection";
 import { DEFAULT_PROJECTION_BATCH_SIZE } from "./event-store-constants";
@@ -59,6 +60,18 @@ export class EventStoreMaintenance {
 
   cleanupOutbox(olderThanMs?: number, batchSize?: number): Promise<number> {
     return cleanupOutbox({
+      pool: this.pool,
+      schema: this.schema,
+      olderThanMs,
+      batchSize,
+    });
+  }
+
+  cleanupIdempotencyKeys(
+    olderThanMs?: number,
+    batchSize?: number,
+  ): Promise<number> {
+    return cleanupIdempotencyKeys({
       pool: this.pool,
       schema: this.schema,
       olderThanMs,

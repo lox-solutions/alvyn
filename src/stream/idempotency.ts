@@ -1,12 +1,27 @@
-import type { PoolClient } from "pg";
+import { createHash } from "node:crypto";
+import type { Pool, PoolClient } from "pg";
 import { IdempotencyConflictError } from "../errors";
 import type { AppendResult } from "../types";
 
+const DEFAULT_CLEANUP_BATCH_SIZE = 1000;
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+const MS_PER_SECOND = 1000;
+
 interface IdempotencyKeyRow {
   stream_id: string;
+  request_hash: string;
   from_version: number;
   to_version: number;
   global_positions: (string | number | bigint)[];
+}
+
+/**
+ * Computes a deterministic SHA-256 hash representing the event batch payload.
+ */
+export function computeRequestHash(events: readonly unknown[]): string {
+  return createHash("sha256")
+    .update(JSON.stringify(events))
+    .digest("hex");
 }
 
 export async function checkIdempotencyKey(options: {
@@ -14,10 +29,11 @@ export async function checkIdempotencyKey(options: {
   schema: string;
   idempotencyKey: string;
   streamId: string;
+  requestHash: string;
 }): Promise<AppendResult | null> {
-  const { client, schema, idempotencyKey, streamId } = options;
+  const { client, schema, idempotencyKey, streamId, requestHash } = options;
   const result = await client.query<IdempotencyKeyRow>(
-    `SELECT stream_id, from_version, to_version, global_positions
+    `SELECT stream_id, request_hash, from_version, to_version, global_positions
      FROM ${schema}.idempotency_keys
      WHERE key = $1`,
     [idempotencyKey],
@@ -32,11 +48,18 @@ export async function checkIdempotencyKey(options: {
       `Key was already used for stream "${row.stream_id}"`,
     );
   }
+  if (row.request_hash !== requestHash) {
+    throw new IdempotencyConflictError(
+      idempotencyKey,
+      "Idempotency key was already used with a different event payload",
+    );
+  }
   return {
     streamId: row.stream_id,
     fromVersion: row.from_version,
     toVersion: row.to_version,
     globalPositions: row.global_positions.map((pos) => BigInt(pos)),
+    isDuplicate: true,
   };
 }
 
@@ -45,6 +68,7 @@ export async function recordIdempotencyKey(options: {
   schema: string;
   idempotencyKey: string;
   streamId: string;
+  requestHash: string;
   fromVersion: number;
   toVersion: number;
   globalPositions: bigint[];
@@ -54,6 +78,7 @@ export async function recordIdempotencyKey(options: {
     schema,
     idempotencyKey,
     streamId,
+    requestHash,
     fromVersion,
     toVersion,
     globalPositions,
@@ -61,11 +86,12 @@ export async function recordIdempotencyKey(options: {
   try {
     await client.query(
       `INSERT INTO ${schema}.idempotency_keys
-         (key, stream_id, from_version, to_version, global_positions)
-       VALUES ($1, $2, $3, $4, $5)`,
+         (key, stream_id, request_hash, from_version, to_version, global_positions)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
       [
         idempotencyKey,
         streamId,
+        requestHash,
         fromVersion,
         toVersion,
         globalPositions.map((pos) => pos.toString()),
@@ -85,4 +111,50 @@ export async function recordIdempotencyKey(options: {
     }
     throw error;
   }
+}
+
+/**
+ * Deletes idempotency key records older than the specified age.
+ * Deletes in batches to avoid long lock holds.
+ */
+export async function cleanupIdempotencyKeys(options: {
+  pool: Pool;
+  schema: string;
+  olderThanMs?: number;
+  batchSize?: number;
+}): Promise<number> {
+  const {
+    pool,
+    schema,
+    olderThanMs = SEVEN_DAYS_MS,
+    batchSize = DEFAULT_CLEANUP_BATCH_SIZE,
+  } = options;
+
+  let totalDeleted = 0;
+
+  while (true) {
+    const client = await pool.connect();
+    try {
+      const result = await client.query(
+        `DELETE FROM ${schema}.idempotency_keys
+         WHERE key IN (
+           SELECT key FROM ${schema}.idempotency_keys
+           WHERE created_at < now() - make_interval(secs => $1)
+           LIMIT $2
+         )`,
+        [olderThanMs / MS_PER_SECOND, batchSize],
+      );
+
+      const deleted = result.rowCount ?? 0;
+      totalDeleted += deleted;
+
+      if (deleted < batchSize) {
+        break;
+      }
+    } finally {
+      client.release();
+    }
+  }
+
+  return totalDeleted;
 }

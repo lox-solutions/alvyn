@@ -89,6 +89,28 @@ async function addEventTxidColumn(
   `);
 }
 
+async function createIdempotencyKeysTable(
+  client: PoolClient,
+  schema: string,
+): Promise<void> {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS ${schema}.idempotency_keys (
+      key              TEXT             PRIMARY KEY,
+      stream_id        TEXT             NOT NULL,
+      request_hash     TEXT             NOT NULL,
+      from_version     INTEGER          NOT NULL,
+      to_version       INTEGER          NOT NULL,
+      global_positions BIGINT[]         NOT NULL,
+      created_at       TIMESTAMPTZ      NOT NULL DEFAULT now()
+    )
+  `);
+
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_idempotency_keys_created_at
+      ON ${schema}.idempotency_keys (created_at)
+  `);
+}
+
 async function createSupportTables(
   client: PoolClient,
   schema: string,
@@ -127,21 +149,7 @@ async function createSupportTables(
     )
   `);
 
-  await client.query(`
-    CREATE TABLE IF NOT EXISTS ${schema}.idempotency_keys (
-      key              TEXT             PRIMARY KEY,
-      stream_id        TEXT             NOT NULL,
-      from_version     INTEGER          NOT NULL,
-      to_version       INTEGER          NOT NULL,
-      global_positions BIGINT[]         NOT NULL,
-      created_at       TIMESTAMPTZ      NOT NULL DEFAULT now()
-    )
-  `);
-
-  await client.query(`
-    CREATE INDEX IF NOT EXISTS idx_idempotency_keys_created_at
-      ON ${schema}.idempotency_keys (created_at)
-  `);
+  await createIdempotencyKeysTable(client, schema);
 }
 
 /**

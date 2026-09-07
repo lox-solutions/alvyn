@@ -10,7 +10,11 @@ import { buildOutboxRows, insertOutboxChunks } from "./outbox-insert";
 import { notifyChannel } from "./notify-channel";
 import { prepareEventRow } from "./prepare-event-row";
 import type { PreparedRow } from "./prepare-event-row";
-import { checkIdempotencyKey, recordIdempotencyKey } from "./idempotency";
+import {
+  checkIdempotencyKey,
+  computeRequestHash,
+  recordIdempotencyKey,
+} from "./idempotency";
 
 const PG_MAX_PARAMS = 65535;
 const PARAMS_PER_EVENT = 14;
@@ -212,6 +216,7 @@ async function persistAppend(options: {
   preparedRows: PreparedRow[];
   outboxTopics?: string[];
   idempotencyKey?: string;
+  requestHash?: string;
 }): Promise<AppendResult> {
   const {
     client,
@@ -221,6 +226,7 @@ async function persistAppend(options: {
     preparedRows,
     outboxTopics,
     idempotencyKey,
+    requestHash,
   } = options;
   const globalPositions = await insertEventChunks({
     client,
@@ -236,19 +242,40 @@ async function persistAppend(options: {
     outboxTopics,
   });
   const toVersion = fromVersion + preparedRows.length - 1;
-  if (idempotencyKey !== undefined) {
+  if (idempotencyKey !== undefined && requestHash !== undefined) {
     await recordIdempotencyKey({
       client,
       schema,
       idempotencyKey,
       streamId,
+      requestHash,
       fromVersion,
       toVersion,
       globalPositions,
     });
   }
   await client.query(`SELECT pg_notify($1, '')`, [notifyChannel(schema)]);
-  return { streamId, fromVersion, toVersion, globalPositions };
+  return { streamId, fromVersion, toVersion, globalPositions, isDuplicate: false };
+}
+
+async function checkExistingIdempotency(options: {
+  client: PoolClient;
+  schema: string;
+  idempotencyKey?: string;
+  streamId: string;
+  events: AppendEventInput[];
+}): Promise<{ existing: AppendResult | null; requestHash?: string }> {
+  const { client, schema, idempotencyKey, streamId, events } = options;
+  if (idempotencyKey === undefined) return { existing: null };
+  const requestHash = computeRequestHash(events);
+  const existing = await checkIdempotencyKey({
+    client,
+    schema,
+    idempotencyKey,
+    streamId,
+    requestHash,
+  });
+  return { existing, requestHash };
 }
 
 /** Appends events to a stream. CloudEvents v1.0.2 compliant. */
@@ -266,15 +293,14 @@ export async function appendToStream(
 
   await acquireStreamLock(client, streamId);
 
-  if (idempotencyKey !== undefined) {
-    const existing = await checkIdempotencyKey({
-      client,
-      schema,
-      idempotencyKey,
-      streamId,
-    });
-    if (existing) return existing;
-  }
+  const { existing, requestHash } = await checkExistingIdempotency({
+    client,
+    schema,
+    idempotencyKey,
+    streamId,
+    events,
+  });
+  if (existing) return existing;
 
   const currentVersion = await validateVersion({
     client,
@@ -302,5 +328,6 @@ export async function appendToStream(
     preparedRows,
     outboxTopics,
     idempotencyKey,
+    requestHash,
   });
 }

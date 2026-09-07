@@ -192,6 +192,8 @@ export interface AppendResult {
   toVersion: number;
   /** Global positions assigned to each event */
   globalPositions: bigint[];
+  /** Optional: indicates whether this result was deduplicated from a previous append with the same idempotencyKey */
+  isDuplicate?: boolean;
 }
 
 // ---------------------------------------------------------------------------

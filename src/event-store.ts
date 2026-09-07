@@ -131,11 +131,13 @@ export class EventStore {
     };
     const appendAndMaintain = async (client: PoolClient) => {
       const result = await appendToStream({ client, ...opts });
-      await this.updateRegisteredSnapshots({
-        streamId: input.streamId,
-        events: input.events,
-        client,
-      });
+      if (!result.isDuplicate) {
+        await this.updateRegisteredSnapshots({
+          streamId: input.streamId,
+          events: input.events,
+          client,
+        });
+      }
       return result;
     };
     if (options?.client) return appendAndMaintain(options.client);
@@ -251,6 +253,18 @@ export class EventStore {
     if (batchSize !== undefined)
       assertPositiveSafeInteger(batchSize, "batchSize");
     return this.maintenance.cleanupOutbox(olderThanMs, batchSize);
+  }
+
+  async cleanupIdempotencyKeys(
+    olderThanMs?: number,
+    batchSize?: number,
+  ): Promise<number> {
+    this.ensureInitialized();
+    if (olderThanMs !== undefined)
+      assertNonNegativeSafeInteger(olderThanMs, "olderThanMs");
+    if (batchSize !== undefined)
+      assertPositiveSafeInteger(batchSize, "batchSize");
+    return this.maintenance.cleanupIdempotencyKeys(olderThanMs, batchSize);
   }
 
   async runProjection(
