@@ -145,6 +145,7 @@ await Order.append(eventStore, {
   expectedVersion: order.version, // OCC: must match current version
   events: [{ type: "OrderShipped", data: { trackingNumber: "TRACK-456" } }],
   outboxTopics: ["orders"], // Optional: transactional outbox
+  idempotencyKey: "cmd-ship-order-123", // Optional: deduplication key
 });
 ```
 
@@ -192,6 +193,27 @@ async function shipOrder(orderId: string, trackingNumber: string) {
   }
 }
 ```
+
+## Idempotent Appends
+
+When commands originate from network clients (e.g. HTTP POST requests or message retries), supply an optional `idempotencyKey` to ensure safe, deduplicated writes:
+
+```typescript
+await Order.append(eventStore, {
+  entityId: orderId,
+  expectedVersion: order.version,
+  events: [{ type: "OrderShipped", data: { trackingNumber } }],
+  idempotencyKey: `ship-${orderId}-${trackingNumber}`,
+});
+```
+
+When an append with a known `idempotencyKey` is retried:
+- No duplicate events are written to the database.
+- No duplicate outbox entries or notifications are produced.
+- Snapshot updates are automatically skipped.
+- The original version boundaries are returned transparently.
+
+If a key is reused with a different stream ID or different event payload, Alvyn throws `IdempotencyConflictError`.
 
 ## Handling Tombstoned Events
 

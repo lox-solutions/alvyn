@@ -23,6 +23,7 @@ Most event sourcing libraries for Node.js are either too minimal (just an append
 - **PostgreSQL only** — No abstraction over multiple databases. This lets Alvyn use advisory locks, `FOR UPDATE SKIP LOCKED`, transactional outbox, and schema isolation as first-class features.
 - **TypeScript first** — `defineAggregate` and `defineProjection` use curried generics for full type inference. No casting, no `any`.
 - **Event-backed snapshots** — Define domain-specific performance snapshots that are stored as generated events in the optimized stream.
+- **Idempotency built-in** — Pass an optional `idempotencyKey` on stream appends to safely deduplicate network retries and command replays without duplicate events, outbox messages, or snapshot recalculations.
 - **GDPR built-in** — Per-entity AES-256-GCM envelope encryption with key revocation. Revoking a key makes all PII for that entity cryptographically irrecoverable.
 - **CloudEvents v1.0.2** — Every stored event complies with the CloudEvents specification.
 
@@ -252,6 +253,7 @@ where each event must be published once (use-case 2).
 | Feature                  | Description                                                                  |
 | ------------------------ | ---------------------------------------------------------------------------- |
 | **Aggregates**           | `defineAggregate` with full TypeScript inference and OCC                     |
+| **Idempotency**          | Deduplicate retried appends by key with fingerprint validation & cached bounds |
 | **Subscriptions**        | `subscribe()` fan-out async iterator: catch-up + live tail via LISTEN/NOTIFY |
 | **Projections**          | `defineProjection` for typed read models with checkpoint tracking            |
 | **Crypto-Shredding**     | Per-entity AES-256-GCM envelope encryption for GDPR compliance               |
