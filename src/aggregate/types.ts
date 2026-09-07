@@ -131,6 +131,7 @@ export interface AggregateHandle<TState, TEvents> {
       expectedVersion: number;
       events: AggregateEventInput<TEvents>[];
       outboxTopics?: string[];
+      idempotencyKey?: string;
     },
   ): Promise<{ fromVersion: number; toVersion: number }>;
 

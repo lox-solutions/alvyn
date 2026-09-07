@@ -182,6 +182,9 @@ describe("EventStore", () => {
       await expect(store.cleanupOutbox()).rejects.toThrow(
         EventStoreNotInitializedError,
       );
+      await expect(store.cleanupIdempotencyKeys()).rejects.toThrow(
+        EventStoreNotInitializedError,
+      );
       await expect(
         store.runProjection({
           projectionName: "p",

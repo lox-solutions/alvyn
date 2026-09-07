@@ -154,3 +154,18 @@ export class ReservedSnapshotEventTypeError extends Error {
     );
   }
 }
+
+/**
+ * Thrown when an idempotency key conflicts with an existing operation
+ * (e.g. key was already used for a different stream or conflicting concurrent operation).
+ */
+export class IdempotencyConflictError extends Error {
+  public readonly name = "IdempotencyConflictError" as const;
+
+  constructor(
+    public readonly idempotencyKey: string,
+    message: string,
+  ) {
+    super(`Idempotency conflict for key "${idempotencyKey}": ${message}`);
+  }
+}

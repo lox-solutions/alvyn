@@ -14,6 +14,7 @@ Alvyn is an **event sourcing library for Node.js and PostgreSQL**. It provides e
 - **Event-backed snapshots** — Cache domain-defined derived state as generated events in the same stream
 - **GDPR crypto-shredding** — Per-entity AES-256-GCM envelope encryption with key revocation and tombstoned events
 - **Projections** — Build read models from the global event stream with checkpoint tracking and exactly-once semantics
+- **Idempotency** — Deduplicate retried appends by key, returning cached boundaries without duplicate events or outbox messages
 - **Transactional outbox** — At-least-once delivery to external systems, written atomically with events
 - **Schema evolution** — Read-time upcasters that transform old event shapes without modifying stored data
 - **CloudEvents v1.0.2** — All events comply with the CloudEvents specification

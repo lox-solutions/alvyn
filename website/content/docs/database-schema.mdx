@@ -170,6 +170,37 @@ CREATE TABLE IF NOT EXISTS {schema}.projections (
 | `last_position`   | `BIGINT NOT NULL`      | Last processed `global_position` |
 | `updated_at`      | `TIMESTAMPTZ NOT NULL` | Last checkpoint update time      |
 
+### `idempotency_keys`
+
+Deduplication table for idempotent stream appends. Prevents duplicate event writes and repeated outbox notifications on retries.
+
+```sql
+CREATE TABLE IF NOT EXISTS {schema}.idempotency_keys (
+  key              TEXT             PRIMARY KEY,
+  stream_id        TEXT             NOT NULL,
+  request_hash     TEXT             NOT NULL,
+  from_version     INTEGER          NOT NULL,
+  to_version       INTEGER          NOT NULL,
+  global_positions BIGINT[]         NOT NULL,
+  created_at       TIMESTAMPTZ      NOT NULL DEFAULT now()
+);
+```
+
+| Column             | Type                   | Description                                                |
+| ------------------ | ---------------------- | ---------------------------------------------------------- |
+| `key`              | `TEXT PK`              | Idempotency key supplied by the caller                     |
+| `stream_id`        | `TEXT NOT NULL`        | Target stream identifier                                   |
+| `request_hash`     | `TEXT NOT NULL`        | SHA-256 fingerprint of the appended event payload          |
+| `from_version`     | `INTEGER NOT NULL`     | Stream version of the first event in the original append   |
+| `to_version`       | `INTEGER NOT NULL`     | Stream version of the last event in the original append    |
+| `global_positions` | `BIGINT[] NOT NULL`    | Global positions assigned to events in the original append |
+| `created_at`       | `TIMESTAMPTZ NOT NULL` | Auto-set by database, used for age-based retention cleanup |
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_idempotency_keys_created_at
+  ON {schema}.idempotency_keys (created_at);
+```
+
 ## Migrations
 
 Migrations are run by calling `eventStore.setup()`. This executes `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS` statements, making it safe to call on every application startup. Concurrent in-flight calls within the same process are automatically deduplicated.

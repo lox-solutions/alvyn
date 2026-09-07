@@ -110,12 +110,13 @@ const result = await eventStore.append({
 | `expectedVersion` | `number`             | `-1` = new stream, `0` = no check, `N` = exact version |
 | `events`          | `AppendEventInput[]` | Events to append                                       |
 | `outboxTopics`    | `string[]`           | Optional: topics for transactional outbox              |
+| `idempotencyKey`  | `string`             | Optional: deduplication key for safe retries           |
 
 **Options:** Pass `{ client }` to use an existing transaction (from `withTransaction()`).
 
-**Returns:** `AppendResult` with `streamId`, `fromVersion`, `toVersion`, `globalPositions[]`.
+**Returns:** `AppendResult` with `streamId`, `fromVersion`, `toVersion`, `globalPositions[]`, and `isDuplicate?: boolean`.
 
-**Throws:** `OptimisticConcurrencyError`, `CryptoKeyRevokedError`, `ReservedSnapshotEventTypeError`.
+**Throws:** `OptimisticConcurrencyError`, `IdempotencyConflictError`, `CryptoKeyRevokedError`, `ReservedSnapshotEventTypeError`.
 
 Event types ending in `Snapshot` are reserved for Alvyn-generated snapshot events and cannot be appended through public write APIs.
 
@@ -319,7 +320,7 @@ Revokes a crypto key (GDPR erasure). Encrypted events become tombstones on read.
 
 See [Crypto-Shredding](/docs/crypto-shredding) for details.
 
-### Outbox
+### Outbox & Maintenance
 
 #### `processOutbox(handler, limit?): Promise<number>`
 
@@ -331,6 +332,11 @@ replica-safe concurrent processing.
 #### `cleanupOutbox(olderThanMs?, batchSize?): Promise<number>`
 
 Deletes processed outbox entries older than the supplied age (seven days by
+default) in bounded batches and returns the number deleted.
+
+#### `cleanupIdempotencyKeys(olderThanMs?, batchSize?): Promise<number>`
+
+Deletes recorded idempotency keys older than the supplied age (seven days by
 default) in bounded batches and returns the number deleted.
 
 See [Transactional Outbox](/docs/outbox) for details.
@@ -451,6 +457,7 @@ interface AppendInput<T = unknown> {
   expectedVersion: number;
   events: AppendEventInput<T>[];
   outboxTopics?: string[];
+  idempotencyKey?: string;
 }
 
 interface AppendResult {
@@ -458,6 +465,7 @@ interface AppendResult {
   fromVersion: number;
   toVersion: number;
   globalPositions: bigint[];
+  isDuplicate?: boolean;
 }
 ```
 
@@ -581,6 +589,14 @@ Thrown when `expectedVersion` does not match the stream's current version.
 | `streamId`        | `string` | The conflicting stream      |
 | `expectedVersion` | `number` | What the caller expected    |
 | `actualVersion`   | `number` | The stream's actual version |
+
+### `IdempotencyConflictError`
+
+Thrown when an `idempotencyKey` is reused with a conflicting stream ID or with a different event payload.
+
+| Property         | Type     | Description                     |
+| ---------------- | -------- | ------------------------------- |
+| `idempotencyKey` | `string` | The conflicting idempotency key |
 
 ### `StreamNotFoundError`
 

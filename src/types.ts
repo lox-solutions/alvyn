@@ -180,6 +180,8 @@ export interface AppendInput<T = unknown> {
   events: AppendEventInput<T>[];
   /** Optional: outbox topics to publish events to */
   outboxTopics?: string[];
+  /** Optional: idempotency key to prevent duplicate appends on retries */
+  idempotencyKey?: string;
 }
 
 export interface AppendResult {
@@ -190,6 +192,8 @@ export interface AppendResult {
   toVersion: number;
   /** Global positions assigned to each event */
   globalPositions: bigint[];
+  /** Optional: indicates whether this result was deduplicated from a previous append with the same idempotencyKey */
+  isDuplicate?: boolean;
 }
 
 // ---------------------------------------------------------------------------

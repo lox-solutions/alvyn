@@ -387,4 +387,34 @@ describe("defineAggregate", () => {
       expect(agg.state?.info).toBe("hello");
     });
   });
+
+  describe("idempotencyKey", () => {
+    it("passes idempotencyKey and deduplicates appends transparently", async () => {
+      const store = new EventStore({ pool, schema: uniqueSchema() });
+      await store.setup();
+
+      const res1 = await Order.append(store, {
+        entityId: "idem-agg-1",
+        expectedVersion: -1,
+        events: [{ type: "OrderPlaced", data: { total: 120 } }],
+        idempotencyKey: "order-idem-1",
+      });
+
+      expect(res1).toEqual({ fromVersion: 1, toVersion: 1 });
+
+      // Second append with same idempotencyKey and expectedVersion=-1 should succeed idempotently
+      const res2 = await Order.append(store, {
+        entityId: "idem-agg-1",
+        expectedVersion: -1,
+        events: [{ type: "OrderPlaced", data: { total: 120 } }],
+        idempotencyKey: "order-idem-1",
+      });
+
+      expect(res2).toEqual({ fromVersion: 1, toVersion: 1 });
+
+      const agg = await Order.load(store, "idem-agg-1");
+      expect(agg.version).toBe(1);
+      expect(agg.state).toEqual({ status: "placed", total: 120 });
+    });
+  });
 });
