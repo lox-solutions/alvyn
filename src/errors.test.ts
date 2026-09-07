@@ -98,7 +98,7 @@ describe("errors", () => {
     it("sets name, idempotencyKey, and message", () => {
       const err = new IdempotencyConflictError(
         "key-123",
-        "Key was already used for stream \"other-stream\"",
+        'Key was already used for stream "other-stream"',
       );
       expect(err).toBeInstanceOf(Error);
       expect(err.name).toBe("IdempotencyConflictError");

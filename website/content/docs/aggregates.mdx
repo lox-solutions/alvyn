@@ -208,6 +208,7 @@ await Order.append(eventStore, {
 ```
 
 When an append with a known `idempotencyKey` is retried:
+
 - No duplicate events are written to the database.
 - No duplicate outbox entries or notifications are produced.
 - Snapshot updates are automatically skipped.

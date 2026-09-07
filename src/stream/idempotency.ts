@@ -19,9 +19,7 @@ interface IdempotencyKeyRow {
  * Computes a deterministic SHA-256 hash representing the event batch payload.
  */
 export function computeRequestHash(events: readonly unknown[]): string {
-  return createHash("sha256")
-    .update(JSON.stringify(events))
-    .digest("hex");
+  return createHash("sha256").update(JSON.stringify(events)).digest("hex");
 }
 
 export async function checkIdempotencyKey(options: {

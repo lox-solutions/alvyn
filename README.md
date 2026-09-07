@@ -250,16 +250,16 @@ where each event must be published once (use-case 2).
 
 ## Features
 
-| Feature                  | Description                                                                  |
-| ------------------------ | ---------------------------------------------------------------------------- |
-| **Aggregates**           | `defineAggregate` with full TypeScript inference and OCC                     |
+| Feature                  | Description                                                                    |
+| ------------------------ | ------------------------------------------------------------------------------ |
+| **Aggregates**           | `defineAggregate` with full TypeScript inference and OCC                       |
 | **Idempotency**          | Deduplicate retried appends by key with fingerprint validation & cached bounds |
-| **Subscriptions**        | `subscribe()` fan-out async iterator: catch-up + live tail via LISTEN/NOTIFY |
-| **Projections**          | `defineProjection` for typed read models with checkpoint tracking            |
-| **Crypto-Shredding**     | Per-entity AES-256-GCM envelope encryption for GDPR compliance               |
-| **Transactional Outbox** | At-least-once delivery to external systems, atomic with event writes         |
-| **Schema Evolution**     | Read-time upcasters that transform old event shapes without migrations       |
-| **CloudEvents**          | All events comply with CloudEvents v1.0.2 specification                      |
+| **Subscriptions**        | `subscribe()` fan-out async iterator: catch-up + live tail via LISTEN/NOTIFY   |
+| **Projections**          | `defineProjection` for typed read models with checkpoint tracking              |
+| **Crypto-Shredding**     | Per-entity AES-256-GCM envelope encryption for GDPR compliance                 |
+| **Transactional Outbox** | At-least-once delivery to external systems, atomic with event writes           |
+| **Schema Evolution**     | Read-time upcasters that transform old event shapes without migrations         |
+| **CloudEvents**          | All events comply with CloudEvents v1.0.2 specification                        |
 
 ## Documentation
 
