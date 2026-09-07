@@ -134,6 +134,88 @@ describe("EventStore idempotency", () => {
     );
   });
 
+  it("treats identical payload with different JSON property order as duplicate", async () => {
+    const store = makeStore();
+    await store.setup();
+
+    const firstResult = await store.append({
+      streamId: "Order-Payload-Order",
+      expectedVersion: -1,
+      events: [
+        {
+          type: "OrderPlaced",
+          data: { b: 2, a: 1, nested: { y: 20, x: 10 } },
+        },
+      ],
+      idempotencyKey: "order-canonical-key",
+    });
+    expect(firstResult.isDuplicate).toBe(false);
+
+    // Same data but different property insertion order
+    const secondResult = await store.append({
+      streamId: "Order-Payload-Order",
+      expectedVersion: -1,
+      events: [
+        {
+          type: "OrderPlaced",
+          data: { a: 1, b: 2, nested: { x: 10, y: 20 } },
+        },
+      ],
+      idempotencyKey: "order-canonical-key",
+    });
+    expect(secondResult.isDuplicate).toBe(true);
+    expect(secondResult.globalPositions).toEqual(firstResult.globalPositions);
+  });
+
+  it("throws IdempotencyConflictError when same key is reused with different outboxTopics", async () => {
+    const store = makeStore();
+    await store.setup();
+
+    await store.append({
+      streamId: "Order-Outbox-1",
+      expectedVersion: -1,
+      events: [{ type: "OrderPlaced", data: { total: 100 } }],
+      outboxTopics: ["topic-1"],
+      idempotencyKey: "outbox-conflict-key",
+    });
+
+    await expect(
+      store.append({
+        streamId: "Order-Outbox-1",
+        expectedVersion: -1,
+        events: [{ type: "OrderPlaced", data: { total: 100 } }],
+        outboxTopics: ["topic-2"],
+        idempotencyKey: "outbox-conflict-key",
+      }),
+    ).rejects.toThrow(
+      /Idempotency key was already used with a different event payload/,
+    );
+  });
+
+  it("throws IdempotencyConflictError when same key is reused with outboxTopics vs without", async () => {
+    const store = makeStore();
+    await store.setup();
+
+    await store.append({
+      streamId: "Order-Outbox-2",
+      expectedVersion: -1,
+      events: [{ type: "OrderPlaced", data: { total: 100 } }],
+      idempotencyKey: "outbox-presence-key",
+    });
+
+    await expect(
+      store.append({
+        streamId: "Order-Outbox-2",
+        expectedVersion: -1,
+        events: [{ type: "OrderPlaced", data: { total: 100 } }],
+        outboxTopics: ["topic-1"],
+        idempotencyKey: "outbox-presence-key",
+      }),
+    ).rejects.toThrow(
+      /Idempotency key was already used with a different event payload/,
+    );
+  });
+
   it("skips snapshot update on deduplicated retry", async () => {
     const Snapshot = defineSnapshot<
       { balance: number },

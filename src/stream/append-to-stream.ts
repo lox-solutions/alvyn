@@ -226,7 +226,7 @@ export async function appendToStream(
 
   let requestHash: string | undefined;
   if (idempotencyKey !== undefined) {
-    requestHash = computeRequestHash(events);
+    requestHash = computeRequestHash({ events, outboxTopics });
     const existing = await checkIdempotencyKey({
       client,
       schema,

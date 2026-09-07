@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import { IdempotencyConflictError } from "../errors";
+import { assertValidSchemaName } from "../sql-helpers";
 import type { AppendResult } from "../types";
 
 const DEFAULT_CLEANUP_BATCH_SIZE = 1000;
@@ -15,11 +16,55 @@ interface IdempotencyKeyRow {
   global_positions: (string | number | bigint)[];
 }
 
+export interface RequestHashPayload {
+  events: readonly unknown[];
+  outboxTopics?: readonly string[];
+}
+
 /**
- * Computes a deterministic SHA-256 hash representing the event batch payload.
+ * Deterministically serializes a value by recursively sorting object keys.
  */
-export function computeRequestHash(events: readonly unknown[]): string {
-  return createHash("sha256").update(JSON.stringify(events)).digest("hex");
+export function canonicalJsonStringify(value: unknown): string {
+  return JSON.stringify(value, (_key, val: unknown) => {
+    if (val !== null && typeof val === "object" && !Array.isArray(val)) {
+      return Object.keys(val)
+        .sort((a, b) => a.localeCompare(b))
+        .reduce<Record<string, unknown>>((sorted, k) => {
+          sorted[k] = (val as Record<string, unknown>)[k];
+          return sorted;
+        }, {});
+    }
+    return val;
+  });
+}
+
+/**
+ * Computes a deterministic SHA-256 hash representing the event batch payload
+ * and any associated append configuration (such as outbox topics).
+ */
+export function computeRequestHash(
+  payload: RequestHashPayload | readonly unknown[],
+): string {
+  if ("events" in payload) {
+    const events = payload.events;
+    const outboxTopics = payload.outboxTopics ?? [];
+    return createHash("sha256")
+      .update(
+        canonicalJsonStringify({
+          events,
+          outboxTopics,
+        }),
+      )
+      .digest("hex");
+  }
+  return createHash("sha256")
+    .update(
+      canonicalJsonStringify({
+        events: payload,
+        outboxTopics: [],
+      }),
+    )
+    .digest("hex");
 }
 
 export async function checkIdempotencyKey(options: {
@@ -30,6 +75,7 @@ export async function checkIdempotencyKey(options: {
   requestHash: string;
 }): Promise<AppendResult | null> {
   const { client, schema, idempotencyKey, streamId, requestHash } = options;
+  assertValidSchemaName(schema);
   const result = await client.query<IdempotencyKeyRow>(
     `SELECT stream_id, request_hash, from_version, to_version, global_positions
      FROM ${schema}.idempotency_keys
@@ -81,6 +127,7 @@ export async function recordIdempotencyKey(options: {
     toVersion,
     globalPositions,
   } = options;
+  assertValidSchemaName(schema);
   try {
     await client.query(
       `INSERT INTO ${schema}.idempotency_keys
@@ -127,6 +174,7 @@ export async function cleanupIdempotencyKeys(options: {
     olderThanMs = SEVEN_DAYS_MS,
     batchSize = DEFAULT_CLEANUP_BATCH_SIZE,
   } = options;
+  assertValidSchemaName(schema);
 
   let totalDeleted = 0;
 
