@@ -208,32 +208,62 @@ async function writeOutbox(options: {
   await insertOutboxChunks({ client, schema, rows });
 }
 
-async function persistAppend(options: {
-  client: PoolClient;
-  schema: string;
-  streamId: string;
-  fromVersion: number;
-  preparedRows: PreparedRow[];
-  outboxTopics?: string[];
-  idempotencyKey?: string;
-  requestHash?: string;
-}): Promise<AppendResult> {
-  const {
+/** Appends events to a stream. CloudEvents v1.0.2 compliant. */
+export async function appendToStream(
+  options: AppendToStreamOptions,
+): Promise<AppendResult> {
+  const { client, schema, input, cryptoKeyManager, allowReservedEventTypes } =
+    options;
+  const { streamId, expectedVersion, events, outboxTopics, idempotencyKey } =
+    input;
+  const defaultSource = input.defaultSource ?? "event-store";
+
+  if (events.length === 0) throw new Error("Cannot append zero events");
+  if (allowReservedEventTypes) assertOnlyReservedSnapshotEventTypes(events);
+  else assertNoReservedSnapshotEventTypes(events);
+
+  await acquireStreamLock(client, streamId);
+
+  let requestHash: string | undefined;
+  if (idempotencyKey !== undefined) {
+    requestHash = computeRequestHash(events);
+    const existing = await checkIdempotencyKey({
+      client,
+      schema,
+      idempotencyKey,
+      streamId,
+      requestHash,
+    });
+    if (existing) return existing;
+  }
+
+  const currentVersion = await validateVersion({
     client,
     schema,
     streamId,
+    expectedVersion,
+  });
+  const fromVersion = currentVersion + 1;
+
+  await lockEncryptionKeys({ events, cryptoKeyManager, client, schema });
+
+  const preparedRows = await prepareRows({
+    events,
+    streamId,
     fromVersion,
-    preparedRows,
-    outboxTopics,
-    idempotencyKey,
-    requestHash,
-  } = options;
+    defaultSource,
+    cryptoKeyManager,
+    client,
+    schema,
+  });
+
   const globalPositions = await insertEventChunks({
     client,
     schema,
     streamId,
     preparedRows,
   });
+
   await writeOutbox({
     client,
     schema,
@@ -241,7 +271,9 @@ async function persistAppend(options: {
     globalPositions,
     outboxTopics,
   });
+
   const toVersion = fromVersion + preparedRows.length - 1;
+
   if (idempotencyKey !== undefined && requestHash !== undefined) {
     await recordIdempotencyKey({
       client,
@@ -254,80 +286,14 @@ async function persistAppend(options: {
       globalPositions,
     });
   }
+
   await client.query(`SELECT pg_notify($1, '')`, [notifyChannel(schema)]);
-  return { streamId, fromVersion, toVersion, globalPositions, isDuplicate: false };
-}
 
-async function checkExistingIdempotency(options: {
-  client: PoolClient;
-  schema: string;
-  idempotencyKey?: string;
-  streamId: string;
-  events: AppendEventInput[];
-}): Promise<{ existing: AppendResult | null; requestHash?: string }> {
-  const { client, schema, idempotencyKey, streamId, events } = options;
-  if (idempotencyKey === undefined) return { existing: null };
-  const requestHash = computeRequestHash(events);
-  const existing = await checkIdempotencyKey({
-    client,
-    schema,
-    idempotencyKey,
-    streamId,
-    requestHash,
-  });
-  return { existing, requestHash };
-}
-
-/** Appends events to a stream. CloudEvents v1.0.2 compliant. */
-export async function appendToStream(
-  options: AppendToStreamOptions,
-): Promise<AppendResult> {
-  const { client, schema, input, cryptoKeyManager, allowReservedEventTypes } =
-    options;
-  const { streamId, expectedVersion, events, outboxTopics, idempotencyKey } =
-    input;
-  const defaultSource = input.defaultSource ?? "event-store";
-  if (events.length === 0) throw new Error("Cannot append zero events");
-  if (allowReservedEventTypes) assertOnlyReservedSnapshotEventTypes(events);
-  else assertNoReservedSnapshotEventTypes(events);
-
-  await acquireStreamLock(client, streamId);
-
-  const { existing, requestHash } = await checkExistingIdempotency({
-    client,
-    schema,
-    idempotencyKey,
-    streamId,
-    events,
-  });
-  if (existing) return existing;
-
-  const currentVersion = await validateVersion({
-    client,
-    schema,
-    streamId,
-    expectedVersion,
-  });
-  const fromVersion = currentVersion + 1;
-  await lockEncryptionKeys({ events, cryptoKeyManager, client, schema });
-  const preparedRows = await prepareRows({
-    events,
+  return {
     streamId,
     fromVersion,
-    defaultSource,
-    cryptoKeyManager,
-    client,
-    schema,
-  });
-
-  return persistAppend({
-    client,
-    schema,
-    streamId,
-    fromVersion,
-    preparedRows,
-    outboxTopics,
-    idempotencyKey,
-    requestHash,
-  });
+    toVersion,
+    globalPositions,
+    isDuplicate: false,
+  };
 }

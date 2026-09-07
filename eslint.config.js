@@ -37,6 +37,7 @@ export default defineConfig(
         { allowNumber: true },
       ],
       "llm-core/max-file-length": ["error", { max: 350 }],
+      "llm-core/max-function-length": "off",
       // complementary core rules for AI-generated code
       "no-nested-ternary": "error",
       "no-useless-assignment": "error",
