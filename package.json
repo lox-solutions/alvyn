@@ -9,7 +9,8 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     }
   },
   "files": [
@@ -18,7 +19,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:load": "tsx load-tests/runner.ts",
@@ -75,6 +76,7 @@
     "pg": "^8.20.0",
     "prettier": "^3.8.3",
     "testcontainers": "^11.14.0",
+    "tsdown": "^0.23.0",
     "tsx": "^4.22.5",
     "typescript": "5.9.3",
     "typescript-eslint": "^8.59.0",
