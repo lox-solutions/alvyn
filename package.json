@@ -1,6 +1,6 @@
 {
   "name": "@lox-solutions/alvyn",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Event sourcing and CQRS for PostgreSQL — zero extra infrastructure.",
   "type": "module",
   "license": "MIT",

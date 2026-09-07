@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.9](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.8...alvyn-v0.1.9) (2026-09-07)
+
+
+### Features
+
+* add idempotency key support for stream appends ([#50](https://github.com/lox-solutions/alvyn/issues/50)) ([ef9dc4b](https://github.com/lox-solutions/alvyn/commit/ef9dc4bb35731fae787bd9b12643d34b67ee3b8c))
+
 ## [0.1.8](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.7...alvyn-v0.1.8) (2026-09-03)
 
 
