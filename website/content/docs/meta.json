@@ -13,6 +13,8 @@
     "schema-evolution",
     "---Performance---",
     "load-testing",
+    "---Playbooks---",
+    "playbook-sse-and-consumer-scaling",
     "---Examples---",
     "full-stack-example",
     "---Reference---",

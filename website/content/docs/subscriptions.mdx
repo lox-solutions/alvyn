@@ -181,6 +181,8 @@ async function sseHandler(req: IncomingMessage, res: ServerResponse) {
 }
 ```
 
+For complete production SSE endpoints, worker-pool partitioning, failover leader election, and disaster-recovery runbooks, see the [Event Streaming & Resilient Consumer Playbook](/docs/playbook-sse-and-consumer-scaling).
+
 ## Encryption and Schema Evolution
 
 Subscriptions read stored event rows for high-throughput fan-out delivery. Unlike `eventStore.load()`, they do not decrypt GDPR-encrypted fields or run registered upcasters.

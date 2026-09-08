@@ -268,6 +268,8 @@ Full documentation is available at **[alvyn.opensource.lox-solutions.eu](https:/
 
 - [Getting Started](https://alvyn.opensource.lox-solutions.eu/docs)
 - [Aggregates](https://alvyn.opensource.lox-solutions.eu/docs/aggregates)
+- [Subscriptions](https://alvyn.opensource.lox-solutions.eu/docs/subscriptions)
+- [Event Streaming & Consumer Scaling Playbook](https://alvyn.opensource.lox-solutions.eu/docs/playbook-sse-and-consumer-scaling)
 - [Crypto-Shredding & GDPR](https://alvyn.opensource.lox-solutions.eu/docs/crypto-shredding)
 - [Projections & Outbox](https://alvyn.opensource.lox-solutions.eu/docs/projections)
 - [Schema Evolution](https://alvyn.opensource.lox-solutions.eu/docs/schema-evolution)
