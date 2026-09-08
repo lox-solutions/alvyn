@@ -95,6 +95,7 @@ export class CryptoKeyManager {
       (left, right) => Number(left > right) - Number(left < right),
     );
 
+    assertValidSchemaName(schema);
     for (const keyId of keyIds) {
       const result = await client.query<{ revoked_at: Date | null }>(
         `SELECT revoked_at FROM ${schema}.crypto_keys WHERE key_id = $1 FOR UPDATE`,
