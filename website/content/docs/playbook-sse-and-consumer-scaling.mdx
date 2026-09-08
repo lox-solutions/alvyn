@@ -43,31 +43,34 @@ In an event-sourced architecture powered by **Alvyn**, PostgreSQL is already an 
 
 ### Communication Models: Fan-Out vs. Competing Consumers
 
-| Dimension | Direct HTTP Streaming (Alvyn + SSE) | Message Brokers (Kafka / RabbitMQ / NATS) |
-| :--- | :--- | :--- |
-| **Delivery Model** | **Fan-Out (Broadcast):** Every connected client receives all events matching its filter. | **Competing Consumers:** Broker distributes individual messages across worker pods in a consumer group. |
-| **ReplicaSet Handling** | Requires client-side strategy (In-Process Worker Pool, Active-Passive Leader Lock, or Subject Sharding). | Built into the broker (partition assignment or queue round-robin). |
-| **Protocol** | Standard HTTP/1.1 or HTTP/2 (`text/event-stream`). Accessible by any language, `curl`, or browser. | Proprietary binary protocols (AMQP, Kafka TCP wire protocol, NATS protocol). |
-| **Infrastructure** | **Zero additional infrastructure:** Runs directly on your existing API Gateway and database. | Requires dedicated cluster deployment, monitoring, JVM/storage tuning, and backup routines. |
-| **Historical Replay** | Native: Client reconnects with `Last-Event-ID: <position>` or requests `fromPosition: 0`. | Supported on log-based brokers (Kafka/Pulsar/JetStream); limited on classic queues. |
-| **Dual-Write Risk** | **None:** Read directly from the source PostgreSQL database commit log. | Mitigated via Transactional Outbox pattern (`defineOutbox`). |
+| Dimension               | Direct HTTP Streaming (Alvyn + SSE)                                                                      | Message Brokers (Kafka / RabbitMQ / NATS)                                                               |
+| :---------------------- | :------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------ |
+| **Delivery Model**      | **Fan-Out (Broadcast):** Every connected client receives all events matching its filter.                 | **Competing Consumers:** Broker distributes individual messages across worker pods in a consumer group. |
+| **ReplicaSet Handling** | Requires client-side strategy (In-Process Worker Pool, Active-Passive Leader Lock, or Subject Sharding). | Built into the broker (partition assignment or queue round-robin).                                      |
+| **Protocol**            | Standard HTTP/1.1 or HTTP/2 (`text/event-stream`). Accessible by any language, `curl`, or browser.       | Proprietary binary protocols (AMQP, Kafka TCP wire protocol, NATS protocol).                            |
+| **Infrastructure**      | **Zero additional infrastructure:** Runs directly on your existing API Gateway and database.             | Requires dedicated cluster deployment, monitoring, JVM/storage tuning, and backup routines.             |
+| **Historical Replay**   | Native: Client reconnects with `Last-Event-ID: <position>` or requests `fromPosition: 0`.                | Supported on log-based brokers (Kafka/Pulsar/JetStream); limited on classic queues.                     |
+| **Dual-Write Risk**     | **None:** Read directly from the source PostgreSQL database commit log.                                  | Mitigated via Transactional Outbox pattern (`defineOutbox`).                                            |
 
 ### When to Use Direct HTTP Streaming (Alvyn + SSE)
 
-* **CQRS Read-Model Projections:** Replicating domain events to external databases (e.g., Elasticsearch, Redis, MongoDB).
-* **Downstream Microservices & 3rd-Party APIs:** Allowing external partners or internal microservices to consume events using standard web standards without configuring VPNs or broker client libraries.
-* **Low-to-Medium Fleet Complexity:** When consumers can process events using in-process concurrency or active-passive replica sets.
-* **Operational Simplicity:** When you want to minimize the number of moving parts in your infrastructure stack.
+- **CQRS Read-Model Projections:** Replicating domain events to external databases (e.g., Elasticsearch, Redis, MongoDB).
+- **Downstream Microservices & 3rd-Party APIs:** Allowing external partners or internal microservices to consume events using standard web standards without configuring VPNs or broker client libraries.
+- **Low-to-Medium Fleet Complexity:** When consumers can process events using in-process concurrency or active-passive replica sets.
+- **Operational Simplicity:** When you want to minimize the number of moving parts in your infrastructure stack.
 
 ### When to Introduce a Dedicated Message Broker
 
-* **High-Volume Competing Consumers:** When hundreds of independent worker pods must pull work items from a shared queue in round-robin fashion.
-* **Big Data & Analytics Pipelines:** Ingesting 200,000+ events per second into stream-processing engines like Apache Flink or Apache Spark (ideal for **Apache Kafka**).
-* **Complex Transactional Task Queuing:** Fine-grained per-message TTLs, priority queues, and dead-letter exchanges (ideal for **RabbitMQ**).
-* **Ultra-Low Latency RPC & Edge Computing:** Sub-millisecond synchronous request-reply and edge mesh synchronization via leaf nodes (ideal for **NATS JetStream**).
+- **High-Volume Competing Consumers:** When hundreds of independent worker pods must pull work items from a shared queue in round-robin fashion.
+- **Big Data & Analytics Pipelines:** Ingesting 200,000+ events per second into stream-processing engines like Apache Flink or Apache Spark (ideal for **Apache Kafka**).
+- **Complex Transactional Task Queuing:** Fine-grained per-message TTLs, priority queues, and dead-letter exchanges (ideal for **RabbitMQ**).
+- **Ultra-Low Latency RPC & Edge Computing:** Sub-millisecond synchronous request-reply and edge mesh synchronization via leaf nodes (ideal for **NATS JetStream**).
 
 <Callout type="info">
-**Alvyn supports both models:** You can stream events directly via `eventStore.subscribe()` over SSE, or use Alvyn's transactional outbox (`defineOutbox`) to relay events to Kafka, RabbitMQ, or NATS with guaranteed at-least-once delivery.
+  **Alvyn supports both models:** You can stream events directly via
+  `eventStore.subscribe()` over SSE, or use Alvyn's transactional outbox
+  (`defineOutbox`) to relay events to Kafka, RabbitMQ, or NATS with guaranteed
+  at-least-once delivery.
 </Callout>
 
 ---
@@ -111,7 +114,7 @@ const stream = eventStore.subscribe({
 });
 ```
 
-This tells Alvyn: *"Resume immediately after position 10522 (`global_position > 10522`)."*
+This tells Alvyn: _"Resume immediately after position 10522 (`global_position > 10522`)."_
 
 ### Concept 4: The Zero-Gap Single Query Loop
 
@@ -162,7 +165,8 @@ export async function sseEventsHandler(req: Request, res: Response) {
   res.flushHeaders();
 
   // 2. Extract Last-Event-ID from standard header or query param fallback
-  const lastEventId = (req.headers["last-event-id"] || req.query.lastEventId) as string | undefined;
+  const lastEventId = (req.headers["last-event-id"] ||
+    req.query.lastEventId) as string | undefined;
 
   // 3. AbortController to cleanly release PostgreSQL connections on disconnect
   const abortController = new AbortController();
@@ -180,7 +184,9 @@ export async function sseEventsHandler(req: Request, res: Response) {
   try {
     // 5. Start Alvyn subscription from the client's bookmark
     const eventStream = eventStore.subscribe({
-      lowerBound: lastEventId ? { id: lastEventId, type: "exclusive" } : undefined,
+      lowerBound: lastEventId
+        ? { id: lastEventId, type: "exclusive" }
+        : undefined,
       signal: abortController.signal,
     });
 
@@ -202,7 +208,11 @@ export async function sseEventsHandler(req: Request, res: Response) {
 ```
 
 <Callout type="info">
-**PostgreSQL Connection Pooling (e.g., PgBouncer):** Because SSE clients maintain continuous streaming connections, ensure database proxies or pools operate in **Session Pooling** mode (or connect directly to PostgreSQL). **Transaction Pooling** does not retain session-level notifications (`LISTEN/NOTIFY`) or Advisory Locks.
+  **PostgreSQL Connection Pooling (e.g., PgBouncer):** Because SSE clients
+  maintain continuous streaming connections, ensure database proxies or pools
+  operate in **Session Pooling** mode (or connect directly to PostgreSQL).
+  **Transaction Pooling** does not retain session-level notifications
+  (`LISTEN/NOTIFY`) or Advisory Locks.
 </Callout>
 
 ---
@@ -236,7 +246,9 @@ export async function startResilientConsumer(sseUrl: string) {
 
   while (true) {
     const lastEventId = await loadCheckpoint();
-    console.log(`Connecting to ${sseUrl} (Last-Event-ID: ${lastEventId ?? "HEAD"})...`);
+    console.log(
+      `Connecting to ${sseUrl} (Last-Event-ID: ${lastEventId ?? "HEAD"})...`,
+    );
 
     try {
       const response = await fetch(sseUrl, {
@@ -247,7 +259,9 @@ export async function startResilientConsumer(sseUrl: string) {
       });
 
       if (!response.ok || !response.body) {
-        throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
+        throw new Error(
+          `HTTP error ${response.status}: ${response.statusText}`,
+        );
       }
 
       // Reset backoff upon successful connection
@@ -275,8 +289,10 @@ export async function startResilientConsumer(sseUrl: string) {
 
           for (const line of lines) {
             if (line.startsWith("id: ")) eventId = line.slice(4).trim();
-            else if (line.startsWith("event: ")) eventType = line.slice(7).trim();
-            else if (line.startsWith("data: ")) eventDataRaw = line.slice(6).trim();
+            else if (line.startsWith("event: "))
+              eventType = line.slice(7).trim();
+            else if (line.startsWith("data: "))
+              eventDataRaw = line.slice(6).trim();
           }
 
           if (eventId && eventDataRaw) {
@@ -293,7 +309,10 @@ export async function startResilientConsumer(sseUrl: string) {
     } catch (error) {
       const jitterMs = Math.floor(Math.random() * 300); // 0-300ms random offset to prevent thundering herds
       const sleepMs = backoffMs + jitterMs;
-      console.error(`SSE connection dropped. Retrying in ${sleepMs}ms...`, error);
+      console.error(
+        `SSE connection dropped. Retrying in ${sleepMs}ms...`,
+        error,
+      );
       await new Promise((resolve) => setTimeout(resolve, sleepMs));
       backoffMs = Math.min(backoffMs * 2, 30000); // Exponential backoff capped at 30s
     }
@@ -306,7 +325,9 @@ async function handleDomainEvent(type: string, data: any) {
 ```
 
 <Callout type="info">
-**Production Parser Tip:** For production edge cases involving multi-line formatted JSON strings spanning multiple `data:` lines or custom SSE comments, consider using a lightweight, zero-dependency W3C parser.
+  **Production Parser Tip:** For production edge cases involving multi-line
+  formatted JSON strings spanning multiple `data:` lines or custom SSE comments,
+  consider using a lightweight, zero-dependency W3C parser.
 </Callout>
 
 ---
@@ -323,12 +344,12 @@ Because HTTP Server-Sent Events operates on standard HTTP streams, the server de
 
 ### Architectural Decision Matrix
 
-| Deployment Objective | Recommended Pattern | Key Characteristics |
-| :--- | :--- | :--- |
-| **HA / Hybrid Web API** (e.g. 3 pods serving REST traffic + background event tasks) | **Pattern A: Active-Passive Leader Election** | All pods handle REST traffic; exactly 1 elected pod maintains the SSE stream; standby pods take over on failover. |
-| **High I/O Concurrency** (e.g. 50ms per event for PDF gen or DB writes) | **Pattern B: In-Process Hash Worker Pool** | Single SSE stream with in-memory hash queues; maximizes multi-core CPU usage while guaranteeing per-entity ordering. |
-| **Domain / Regional Partitioning** (e.g. EU vs. US orders, Billing vs. Logistics) | **Pattern C: Database-Level Sharding** | Each pod queries a distinct subset using Alvyn's `subject` prefix or `eventTypes` filter with zero lock contention. |
-| **Elastic Competing Worker Fleet** (e.g. 50 dynamically autoscaled worker pods) | **Pattern D: Message Broker Relay** | Bridge Alvyn to Kafka, RabbitMQ, or NATS via `defineOutbox` for dynamic consumer group rebalancing. |
+| Deployment Objective                                                                | Recommended Pattern                           | Key Characteristics                                                                                                  |
+| :---------------------------------------------------------------------------------- | :-------------------------------------------- | :------------------------------------------------------------------------------------------------------------------- |
+| **HA / Hybrid Web API** (e.g. 3 pods serving REST traffic + background event tasks) | **Pattern A: Active-Passive Leader Election** | All pods handle REST traffic; exactly 1 elected pod maintains the SSE stream; standby pods take over on failover.    |
+| **High I/O Concurrency** (e.g. 50ms per event for PDF gen or DB writes)             | **Pattern B: In-Process Hash Worker Pool**    | Single SSE stream with in-memory hash queues; maximizes multi-core CPU usage while guaranteeing per-entity ordering. |
+| **Domain / Regional Partitioning** (e.g. EU vs. US orders, Billing vs. Logistics)   | **Pattern C: Database-Level Sharding**        | Each pod queries a distinct subset using Alvyn's `subject` prefix or `eventTypes` filter with zero lock contention.  |
+| **Elastic Competing Worker Fleet** (e.g. 50 dynamically autoscaled worker pods)     | **Pattern D: Message Broker Relay**           | Bridge Alvyn to Kafka, RabbitMQ, or NATS via `defineOutbox` for dynamic consumer group rebalancing.                  |
 
 ```mermaid
 graph TD
@@ -385,12 +406,14 @@ export async function runActivePassiveConsumer(pool: Pool, sseUrl: string) {
       // Attempt to acquire an exclusive session-level advisory lock
       const { rows } = await client.query<{ acquired: boolean }>(
         "SELECT pg_try_advisory_lock($1) AS acquired",
-        [LOCK_KEY]
+        [LOCK_KEY],
       );
       acquired = rows[0].acquired;
 
       if (acquired) {
-        console.log("Acquired leader lock! Starting background event stream...");
+        console.log(
+          "Acquired leader lock! Starting background event stream...",
+        );
         // Run consumer until pod termination or network interruption
         await startResilientConsumer(sseUrl);
       } else {
@@ -412,8 +435,8 @@ export async function runActivePassiveConsumer(pool: Pool, sseUrl: string) {
 }
 ```
 
-* **Zero Duplicate Events:** Exactly one pod processes background events at any given moment.
-* **Instant Failover:** If the leader pod is terminated during a Kubernetes rolling update, PostgreSQL automatically releases the session lock. A standby pod acquires leadership within seconds, reads the last checkpoint from the database, and resumes streaming via `Last-Event-ID`.
+- **Zero Duplicate Events:** Exactly one pod processes background events at any given moment.
+- **Instant Failover:** If the leader pod is terminated during a Kubernetes rolling update, PostgreSQL automatically releases the session lock. A standby pod acquires leadership within seconds, reads the last checkpoint from the database, and resumes streaming via `Last-Event-ID`.
 
 ---
 
@@ -431,8 +454,8 @@ graph TD
   Router --> |Hash 2| Q2[Queue 2] --> W2[Worker 2: Order-3, Order-6]
 ```
 
-* **Guaranteed Per-Entity Ordering:** All events for `Order-123` are routed to the same internal queue and executed in exact chronological order.
-* **Maximum Parallelism:** Events for different orders run concurrently across all available CPU cores without race conditions.
+- **Guaranteed Per-Entity Ordering:** All events for `Order-123` are routed to the same internal queue and executed in exact chronological order.
+- **Maximum Parallelism:** Events for different orders run concurrently across all available CPU cores without race conditions.
 
 ```typescript
 import { createHash } from "node:crypto";
@@ -454,7 +477,10 @@ export class HashPartitionedWorkerPool {
 
     // Chain the task onto the specific queue for this streamId
     const chain = this.queues[partition].then(task).catch((err) => {
-      console.error(`Task error in partition ${partition} for ${streamId}:`, err);
+      console.error(
+        `Task error in partition ${partition} for ${streamId}:`,
+        err,
+      );
     });
 
     this.queues[partition] = chain;
@@ -584,8 +610,8 @@ SELECT
 FROM events;
 ```
 
-* **`consumer_lag == 0`:** The consumer is operating in real-time mode.
-* **`consumer_lag > 10,000` (and growing):** The consumer is overloaded. Scale the internal worker pool concurrency (`HashPartitionedWorkerPool`) or shard by subject prefix.
+- **`consumer_lag == 0`:** The consumer is operating in real-time mode.
+- **`consumer_lag > 10,000` (and growing):** The consumer is overloaded. Scale the internal worker pool concurrency (`HashPartitionedWorkerPool`) or shard by subject prefix.
 
 ### Full Event Replays (Disaster Recovery & New Services)
 
@@ -596,6 +622,7 @@ Alvyn will stream every historical event from the beginning of time in 500-event
 ### Idempotency Checklist
 
 Because network retries guarantee **at-least-once delivery**, make your downstream handlers idempotent:
+
 1. **Deduplication Key:** Store the processed `globalPosition` or event `id` in a unique PostgreSQL table (`processed_events`).
 2. **Transactional State Updates:** Commit your local domain state change and the consumer checkpoint in the same database transaction.
 3. **Monotonic Version Checks:** When updating read models, ensure updates are only applied if `event.streamVersion > current_entity_version`.
