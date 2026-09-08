@@ -186,4 +186,4 @@ console.log(`Cleaned up ${deletedCount} archived outbox records.`);
 | **Locking**     | PostgreSQL `FOR UPDATE SKIP LOCKED`                | Lock-free streaming via `LISTEN/NOTIFY` + Polling |
 | **Storage**     | Dedicated `outbox` table (cleaned up periodically) | Read directly from `events` table                 |
 
-For building query-optimized read models inside the same PostgreSQL database, see [Projections](/docs/projections).
+For building query-optimized read models inside the same PostgreSQL database, see [Projections](/docs/projections). For architectural guidance on choosing between direct streaming and broker relays, see the [Event Streaming & Resilient Consumer Playbook](/docs/playbook-sse-and-consumer-scaling).
