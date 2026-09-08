@@ -15,6 +15,7 @@ A production-grade event sourcing library for **Node.js** and **PostgreSQL**. Ty
 [![CI](https://github.com/lox-solutions/alvyn/actions/workflows/ci.yml/badge.svg)](https://github.com/lox-solutions/alvyn/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@lox-solutions/alvyn)](https://www.npmjs.com/package/@lox-solutions/alvyn)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![LFX Active Contributors](https://insights.linuxfoundation.org/api/badge/active-contributors?project=alvyn&repos=https://github.com/lox-solutions/alvyn)](https://insights.linuxfoundation.org/project/alvyn/repository/lox-solutions_alvyn)
 
 ## Why Alvyn?
 
