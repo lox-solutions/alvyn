@@ -84,7 +84,6 @@
   },
   "pnpm": {
     "overrides": {
-      "js-yaml": "4.3.1",
       "nanoid": "3.3.18",
       "postcss": "8.5.25",
       "semver@6": "6.3.0"
