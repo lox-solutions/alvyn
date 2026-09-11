@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import type { EventStore } from "../event-store";
 import type { ReplayedEvent } from "../types";
 import type {
@@ -70,9 +71,10 @@ export async function loadFromReplay<TState>(options: {
   eventStore: EventStore;
   streamId: string;
   evolve: Record<string, (s: TState, e: ReplayedEvent) => TState>;
+  client?: PoolClient;
 }): Promise<AggregateInstance<TState>> {
-  const { eventStore, streamId, evolve } = options;
-  const events = await eventStore.load(streamId);
+  const { eventStore, streamId, evolve, client } = options;
+  const events = await eventStore.load(streamId, { client });
   const state = applyEvents({ state: null, events, evolve });
   const version =
     events.length > 0 ? events[events.length - 1].streamVersion : 0;

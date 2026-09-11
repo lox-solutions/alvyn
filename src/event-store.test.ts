@@ -393,7 +393,7 @@ describe("EventStore", () => {
         ],
       });
 
-      const events = await store.load("LF-2", 2);
+      const events = await store.load("LF-2", { maxEvents: 2 });
       expect(events).toHaveLength(2);
     });
   });
@@ -792,6 +792,34 @@ describe("EventStore", () => {
       const events = await store.load("Nonexistent-xyz");
       expect(events).toEqual([]);
     });
+
+    it("throws TypeError if options is passed as a number (fail-fast against unbounded reads)", async () => {
+      const store = new EventStore({ pool, schema: uniqueSchema() });
+      await store.setup();
+
+      // @ts-expect-error verifying runtime guard for legacy number argument
+      await expect(store.load("stream-1", 10)).rejects.toThrow(
+        /Passing 'maxEvents' as a number to EventStore\.load is no longer supported/,
+      );
+    });
+
+    it("throws TypeError from EventStoreReader if options is passed as a number", async () => {
+      const store = new EventStore({ pool, schema: uniqueSchema() });
+      await store.setup();
+
+      const internalStore = store as unknown as {
+        reader: {
+          load: (
+            streamId: string,
+            options?: { maxEvents?: number },
+          ) => Promise<unknown>;
+        };
+      };
+      // @ts-expect-error accessing reader to verify fail-fast guard
+      await expect(internalStore.reader.load("stream-1", 10)).rejects.toThrow(
+        /Passing 'maxEvents' as a number to EventStoreReader\.load is no longer supported/,
+      );
+    });
   });
 
   describe("readEventsPage", () => {
@@ -1088,6 +1116,110 @@ describe("EventStore", () => {
           limit: MAX_READ_EVENTS_PAGE_LIMIT + 1,
         }),
       ).rejects.toThrow(InvalidArgumentError);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // lockStream & Transaction-scoped operations
+  // ---------------------------------------------------------------------------
+
+  describe("lockStream", () => {
+    it("acquires an advisory lock and returns authoritative database timestamp", async () => {
+      const store = makeStore();
+      await store.setup();
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const before = new Date();
+        const decisionAt = await store.lockStream(client, "Auction-1");
+        const after = new Date();
+        expect(decisionAt).toBeInstanceOf(Date);
+        expect(decisionAt.getTime()).toBeGreaterThanOrEqual(
+          before.getTime() - 1000,
+        );
+        expect(decisionAt.getTime()).toBeLessThanOrEqual(
+          after.getTime() + 1000,
+        );
+        await client.query("COMMIT");
+      } finally {
+        client.release();
+      }
+    });
+
+    it("serializes concurrent transactions attempting to lock the same stream", async () => {
+      const store = makeStore();
+      await store.setup();
+      const client1 = await pool.connect();
+      const client2 = await pool.connect();
+      try {
+        await client1.query("BEGIN");
+        await client2.query("BEGIN");
+
+        await store.lockStream(client1, "Auction-lock-order");
+
+        let client2Acquired = false;
+        const lockPromise = store
+          .lockStream(client2, "Auction-lock-order")
+          .then((ts) => {
+            client2Acquired = true;
+            return ts;
+          });
+
+        await new Promise((r) => setTimeout(r, 100));
+        expect(client2Acquired).toBe(false);
+
+        await client1.query("COMMIT");
+
+        const client2Time = await lockPromise;
+        expect(client2Acquired).toBe(true);
+        expect(client2Time).toBeInstanceOf(Date);
+        await client2.query("COMMIT");
+      } finally {
+        client1.release();
+        client2.release();
+      }
+    });
+
+    it("throws EventStoreNotInitializedError if store is not initialized", async () => {
+      const store = makeStore();
+      const client = await pool.connect();
+      try {
+        await expect(store.lockStream(client, "Auction-1")).rejects.toThrow(
+          EventStoreNotInitializedError,
+        );
+      } finally {
+        client.release();
+      }
+    });
+
+    it("loads stream events using an explicit transaction client", async () => {
+      const store = makeStore();
+      await store.setup();
+      await store.append({
+        streamId: "Stream-Client-Load",
+        expectedVersion: -1,
+        events: [
+          { type: "Event1", data: { v: 1 } },
+          { type: "Event2", data: { v: 2 } },
+        ],
+      });
+
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const events = await store.load("Stream-Client-Load", { client });
+        expect(events).toHaveLength(2);
+        expect(events[0].type).toBe("Event1");
+
+        const limited = await store.load("Stream-Client-Load", {
+          client,
+          maxEvents: 1,
+        });
+        expect(limited).toHaveLength(1);
+        await client.query("COMMIT");
+      } finally {
+        client.release();
+      }
     });
   });
 });

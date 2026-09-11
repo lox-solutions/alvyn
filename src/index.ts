@@ -23,11 +23,14 @@ export type {
 
 // Types — aggregate builder
 export type {
+  AggregateAppendInput,
+  AggregateAppendOptions,
   AggregateDefinition,
   AggregateEventInput,
   AggregateHandle,
   AggregateInstance,
   AggregateLoadEventsOptions,
+  AggregateLoadOptions,
   AggregateReplayedEvent,
   AggregateSubscribeOptions,
   AggregateStoredEvent,
@@ -46,7 +49,10 @@ export type {
 export type {
   AppendEventInput,
   AppendInput,
+  AppendOptions,
   AppendResult,
+  LoadFromOptions,
+  LoadOptions,
   ReplayedEvent,
   StoredEvent,
   TombstonedEvent,
@@ -90,6 +96,7 @@ export type {
   SnapshotDefinition,
   SnapshotEncryptionConfig,
   SnapshotHandle,
+  SnapshotLoadOptions,
   SnapshotLoadResult,
 } from "./snapshot/types";
 

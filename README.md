@@ -82,6 +82,41 @@ await Order.append(eventStore, {
 });
 ```
 
+### Explicit Transactions & Stream Locking
+
+For critical write workflows that require early serialization and authoritative database time (such as time-sensitive auctions, soft-close extensions, or multi-step invariant checks across Kubernetes replicas), use `lockStream` and pass an external `client`:
+
+```typescript
+await eventStore.withTransaction(async (client) => {
+  // 1. Acquire transaction-scoped advisory lock & authoritative PostgreSQL time
+  const decisionAt = await eventStore.lockStream(client, "Auction-123");
+
+  // 2. Load aggregate over the same connection
+  const auction = await Auction.load(eventStore, "123", { client });
+
+  // 3. Evaluate invariants against the database clock
+  if (decisionAt.getTime() >= new Date(auction.state.endsAt).getTime()) {
+    throw new Error("Auction has expired");
+  }
+
+  // 4. Append events atomically within the transaction
+  await Auction.append(
+    eventStore,
+    {
+      entityId: "123",
+      expectedVersion: auction.version,
+      events: [
+        {
+          type: "BidPlaced",
+          data: { amount: 150, bidAt: decisionAt.toISOString() },
+        },
+      ],
+    },
+    { client },
+  );
+});
+```
+
 ## Event-backed snapshots
 
 Use `defineSnapshot` when a calculated state becomes expensive to rebuild from a long event stream. Snapshots are stored as normal generated events in the same stream they optimize, using the reserved event type suffix `Snapshot`.
@@ -122,6 +157,11 @@ const eventStore = new EventStore({
 
 const balance = await BankAccountBalance.load(eventStore, accountId);
 console.log(balance.state.balance);
+
+// Or within an active transaction:
+const balanceInTx = await BankAccountBalance.load(eventStore, accountId, {
+  client,
+});
 ```
 
 When `BankAccountBalance` is registered on the `EventStore`, matching incoming events update the snapshot synchronously during append and write `BankAccountBalanceSnapshot` once the threshold is reached. Loading finds the latest snapshot event in `Transaction-{accountId}` and replays only later source events; user-supplied events ending in `Snapshot` are rejected so generated snapshot event names cannot collide with domain event names.

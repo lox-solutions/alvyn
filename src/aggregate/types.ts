@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import type { EventStore } from "../event-store";
 import type {
   ReplayedEvent,
@@ -11,10 +12,27 @@ import type { SubscribeOptions } from "../subscription/subscribe-options";
 // Utility types for inferring event maps
 // ---------------------------------------------------------------------------
 
+export interface AggregateLoadOptions {
+  client?: PoolClient;
+}
+
+export interface AggregateAppendOptions {
+  client?: PoolClient;
+}
+
+export interface AggregateAppendInput<TEvents> {
+  entityId: string;
+  expectedVersion: number;
+  events: AggregateEventInput<TEvents>[];
+  outboxTopics?: string[];
+  idempotencyKey?: string;
+}
+
 export interface AggregateLoadEventsOptions {
   eventStore: EventStore;
   entityId: string;
   maxEvents?: number;
+  client?: PoolClient;
 }
 
 export interface AggregateSubscribeOptions {
@@ -112,6 +130,7 @@ export interface AggregateHandle<TState, TEvents> {
   load(
     eventStore: EventStore,
     entityId: string,
+    options?: AggregateLoadOptions,
   ): Promise<AggregateInstance<TState>>;
 
   /**
@@ -126,13 +145,8 @@ export interface AggregateHandle<TState, TEvents> {
    */
   append(
     eventStore: EventStore,
-    input: {
-      entityId: string;
-      expectedVersion: number;
-      events: AggregateEventInput<TEvents>[];
-      outboxTopics?: string[];
-      idempotencyKey?: string;
-    },
+    input: AggregateAppendInput<TEvents>,
+    options?: AggregateAppendOptions,
   ): Promise<{ fromVersion: number; toVersion: number }>;
 
   /**

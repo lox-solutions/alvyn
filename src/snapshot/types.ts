@@ -50,6 +50,10 @@ export interface SnapshotUpdateAfterAppendOptions {
   options?: { client?: PoolClient };
 }
 
+export interface SnapshotLoadOptions {
+  client?: PoolClient;
+}
+
 export interface SnapshotHandle<TState> {
   /** The stream prefix */
   readonly streamPrefix: string;
@@ -64,6 +68,7 @@ export interface SnapshotHandle<TState> {
   load(
     eventStore: EventStore,
     entityId: string,
+    options?: SnapshotLoadOptions,
   ): Promise<SnapshotLoadResult<TState>>;
   /** @internal Maintains this snapshot after matching source events are appended. */
   updateAfterAppend(options: SnapshotUpdateAfterAppendOptions): Promise<void>;

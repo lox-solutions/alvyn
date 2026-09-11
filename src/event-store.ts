@@ -16,9 +16,12 @@ import { createNotifyWaker } from "./subscription/create-notify-waker";
 import type { SubscribeOptions } from "./subscription/subscribe-options";
 import type {
   AppendInput,
+  AppendOptions,
   AppendResult,
   EventStoreConfig,
   ListStreamsOptions,
+  LoadFromOptions,
+  LoadOptions,
   ReadEventsPage,
   ReadEventsPageOptions,
   OutboxHandler,
@@ -29,7 +32,10 @@ import type {
 } from "./types";
 import type { SnapshotHandle } from "./snapshot/types";
 import { UpcasterRegistry } from "./upcaster/upcaster-registry";
-import { DEFAULT_SCHEMA } from "./event-store-constants";
+import {
+  DEFAULT_SCHEMA,
+  DEFAULT_STREAM_LOCK_SEED,
+} from "./event-store-constants";
 import { parseCryptoSecretsConfig } from "./crypto/crypto-secrets";
 import { assertValidSchemaName } from "./sql-helpers";
 import {
@@ -120,7 +126,7 @@ export class EventStore {
 
   async append<T = unknown>(
     input: AppendInput<T>,
-    options?: { client?: PoolClient },
+    options?: AppendOptions,
   ): Promise<AppendResult> {
     this.ensureInitialized();
     validateAppendInput(input);
@@ -147,7 +153,7 @@ export class EventStore {
   /** @internal Appends Alvyn-generated snapshot events. */
   async appendSnapshot<T = unknown>(
     input: AppendInput<T>,
-    options?: { client?: PoolClient },
+    options?: AppendOptions,
   ): Promise<AppendResult> {
     this.ensureInitialized();
     validateAppendInput(input);
@@ -164,19 +170,48 @@ export class EventStore {
     );
   }
 
+  /**
+   * Acquires a transaction-scoped advisory lock on the stream and returns the authoritative database timestamp.
+   *
+   * Must be called within an active transaction on the provided `PoolClient`.
+   * The lock is automatically released when the transaction commits or rolls back.
+   *
+   * @param client The active transaction client (`PoolClient`).
+   * @param streamId The stream ID to lock (e.g. `Auction-123`).
+   * @returns The authoritative database timestamp (`clock_timestamp()`).
+   */
+  async lockStream(client: PoolClient, streamId: string): Promise<Date> {
+    this.ensureInitialized();
+    const { rows } = await client.query<{ now: Date }>(
+      `SELECT pg_advisory_xact_lock(hashtextextended($1, ${DEFAULT_STREAM_LOCK_SEED})), clock_timestamp() AS now`,
+      [streamId],
+    );
+    const now = rows[0]?.now;
+    return now instanceof Date ? now : new Date(now);
+  }
+
   async load<T = unknown>(
     streamId: string,
-    maxEvents?: number,
+    options?: LoadOptions,
   ): Promise<ReplayedEvent<T>[]> {
     this.ensureInitialized();
-    if (maxEvents !== undefined)
-      assertPositiveSafeInteger(maxEvents, "maxEvents");
-    return this.reader.load<T>(streamId, maxEvents);
+    // Fail-fast guard against CWE-400 / unbounded read degradation:
+    // Passing `maxEvents` as a raw number is no longer supported after the options object refactoring.
+    // Throwing a TypeError immediately prevents silent unbounded stream loads at runtime.
+    if (typeof options === "number") {
+      throw new TypeError(
+        "Passing 'maxEvents' as a number to EventStore.load is no longer supported. Use an options object instead: { maxEvents: ... }",
+      );
+    }
+    if (options?.maxEvents !== undefined) {
+      assertPositiveSafeInteger(options.maxEvents, "maxEvents");
+    }
+    return this.reader.load<T>(streamId, options);
   }
 
   async loadFrom<T = unknown>(
     streamId: string,
-    options: { fromVersion: number; maxEvents?: number; client?: PoolClient },
+    options: LoadFromOptions,
   ): Promise<ReplayedEvent<T>[]> {
     this.ensureInitialized();
     assertPositiveSafeInteger(options.fromVersion, "fromVersion");

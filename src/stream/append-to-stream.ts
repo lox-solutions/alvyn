@@ -10,6 +10,7 @@ import { buildOutboxRows, insertOutboxChunks } from "./outbox-insert";
 import { notifyChannel } from "./notify-channel";
 import { prepareEventRow } from "./prepare-event-row";
 import type { PreparedRow } from "./prepare-event-row";
+import { DEFAULT_STREAM_LOCK_SEED } from "../event-store-constants";
 import {
   checkIdempotencyKey,
   computeRequestHash,
@@ -40,7 +41,7 @@ async function acquireStreamLock(
   streamId: string,
 ): Promise<void> {
   await client.query(
-    `SELECT pg_advisory_xact_lock(hashtextextended($1, 1936024421))`,
+    `SELECT pg_advisory_xact_lock(hashtextextended($1, ${DEFAULT_STREAM_LOCK_SEED}))`,
     [streamId],
   );
 }
