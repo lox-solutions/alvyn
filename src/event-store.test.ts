@@ -792,6 +792,34 @@ describe("EventStore", () => {
       const events = await store.load("Nonexistent-xyz");
       expect(events).toEqual([]);
     });
+
+    it("throws TypeError if options is passed as a number (fail-fast against unbounded reads)", async () => {
+      const store = new EventStore({ pool, schema: uniqueSchema() });
+      await store.setup();
+
+      // @ts-expect-error verifying runtime guard for legacy number argument
+      await expect(store.load("stream-1", 10)).rejects.toThrow(
+        /Passing 'maxEvents' as a number to EventStore\.load is no longer supported/,
+      );
+    });
+
+    it("throws TypeError from EventStoreReader if options is passed as a number", async () => {
+      const store = new EventStore({ pool, schema: uniqueSchema() });
+      await store.setup();
+
+      const internalStore = store as unknown as {
+        reader: {
+          load: (
+            streamId: string,
+            options?: { maxEvents?: number },
+          ) => Promise<unknown>;
+        };
+      };
+      // @ts-expect-error accessing reader to verify fail-fast guard
+      await expect(internalStore.reader.load("stream-1", 10)).rejects.toThrow(
+        /Passing 'maxEvents' as a number to EventStoreReader\.load is no longer supported/,
+      );
+    });
   });
 
   describe("readEventsPage", () => {

@@ -134,6 +134,11 @@ result.state.balance;
 result.version; // true latest stream version, including snapshot events
 result.snapshotVersion; // stream version of the snapshot event used
 result.replayedEvents; // source events replayed after the snapshot base
+
+// Or within an active transaction:
+const txResult = await BankAccountBalance.load(eventStore, accountId, {
+  client,
+});
 ```
 
 Loading follows this process:

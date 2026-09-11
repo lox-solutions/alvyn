@@ -157,6 +157,11 @@ const eventStore = new EventStore({
 
 const balance = await BankAccountBalance.load(eventStore, accountId);
 console.log(balance.state.balance);
+
+// Or within an active transaction:
+const balanceInTx = await BankAccountBalance.load(eventStore, accountId, {
+  client,
+});
 ```
 
 When `BankAccountBalance` is registered on the `EventStore`, matching incoming events update the snapshot synchronously during append and write `BankAccountBalanceSnapshot` once the threshold is reached. Loading finds the latest snapshot event in `Transaction-{accountId}` and replays only later source events; user-supplied events ending in `Snapshot` are rejected so generated snapshot event names cannot collide with domain event names.

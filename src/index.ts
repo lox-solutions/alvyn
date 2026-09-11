@@ -49,7 +49,10 @@ export type {
 export type {
   AppendEventInput,
   AppendInput,
+  AppendOptions,
   AppendResult,
+  LoadFromOptions,
+  LoadOptions,
   ReplayedEvent,
   StoredEvent,
   TombstonedEvent,

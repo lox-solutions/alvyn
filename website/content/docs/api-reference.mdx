@@ -122,7 +122,7 @@ Event types ending in `Snapshot` are reserved for Alvyn-generated snapshot event
 
 #### `load(streamId, options?): Promise<ReplayedEvent[]>`
 
-Loads all events for a stream from version 1. Handles decryption and upcasting automatically. Accepts an optional `maxEvents` number or an options object `{ maxEvents?: number; client?: PoolClient }` to read over an active transaction client.
+Loads all events for a stream from version 1. Handles decryption and upcasting automatically. Accepts an optional options object `{ maxEvents?: number; client?: PoolClient }` (or `LoadOptions`) to limit the number of events or read over an active transaction client.
 
 #### `loadFrom(streamId, options): Promise<ReplayedEvent[]>`
 
@@ -454,6 +454,21 @@ interface ReadEventsPage<T = unknown> {
 }
 ```
 
+### Stream Read Types
+
+```typescript
+interface LoadOptions {
+  maxEvents?: number;
+  client?: PoolClient;
+}
+
+interface LoadFromOptions {
+  fromVersion: number;
+  maxEvents?: number;
+  client?: PoolClient;
+}
+```
+
 ### Append Types
 
 ```typescript
@@ -473,6 +488,10 @@ interface AppendInput<T = unknown> {
   events: AppendEventInput<T>[];
   outboxTopics?: string[];
   idempotencyKey?: string;
+}
+
+interface AppendOptions {
+  client?: PoolClient;
 }
 
 interface AppendResult {
@@ -542,7 +561,6 @@ interface SnapshotLoadResult<TState> {
 }
 
 interface SnapshotLoadOptions {
-  entityId: string;
   client?: PoolClient;
 }
 ```
@@ -563,7 +581,10 @@ interface OutboxEntry {
 
 ```typescript
 interface AggregateLoadOptions {
-  entityId: string;
+  client?: PoolClient;
+}
+
+interface AggregateAppendOptions {
   client?: PoolClient;
 }
 
@@ -573,7 +594,6 @@ interface AggregateAppendInput<TEvents> {
   events: AggregateEventInput<TEvents>[];
   outboxTopics?: string[];
   idempotencyKey?: string;
-  client?: PoolClient;
 }
 
 interface AggregateLoadEventsOptions {

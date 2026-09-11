@@ -11,6 +11,8 @@ import { readEventsPage } from "./stream/read-events-page";
 import type { UpcasterRegistry } from "./upcaster/upcaster-registry";
 import type {
   ListStreamsOptions,
+  LoadFromOptions,
+  LoadOptions,
   ReadEventsPage,
   ReadEventsPageOptions,
   ReplayedEvent,
@@ -21,17 +23,6 @@ interface EventStoreReaderOptions {
   schema: string;
   cryptoKeyManager: CryptoKeyManager | null;
   upcasterRegistry: UpcasterRegistry;
-}
-
-interface LoadOptions {
-  maxEvents?: number;
-  client?: PoolClient;
-}
-
-interface LoadFromOptions {
-  fromVersion: number;
-  maxEvents?: number;
-  client?: PoolClient;
 }
 
 interface LoadLatestEventByTypeOptions {
@@ -58,6 +49,14 @@ export class EventStoreReader {
     streamId: string,
     options?: LoadOptions,
   ): Promise<ReplayedEvent<T>[]> {
+    // Fail-fast guard against CWE-400 / unbounded read degradation:
+    // Passing `maxEvents` as a raw number is no longer supported after the options object refactoring.
+    // Throwing a TypeError immediately prevents silent unbounded stream loads at runtime.
+    if (typeof options === "number") {
+      throw new TypeError(
+        "Passing 'maxEvents' as a number to EventStoreReader.load is no longer supported. Use an options object instead: { maxEvents: ... }",
+      );
+    }
     const read = (client: PoolClient) =>
       readStream<T>({
         client,

@@ -16,9 +16,12 @@ import { createNotifyWaker } from "./subscription/create-notify-waker";
 import type { SubscribeOptions } from "./subscription/subscribe-options";
 import type {
   AppendInput,
+  AppendOptions,
   AppendResult,
   EventStoreConfig,
   ListStreamsOptions,
+  LoadFromOptions,
+  LoadOptions,
   ReadEventsPage,
   ReadEventsPageOptions,
   OutboxHandler,
@@ -123,7 +126,7 @@ export class EventStore {
 
   async append<T = unknown>(
     input: AppendInput<T>,
-    options?: { client?: PoolClient },
+    options?: AppendOptions,
   ): Promise<AppendResult> {
     this.ensureInitialized();
     validateAppendInput(input);
@@ -150,7 +153,7 @@ export class EventStore {
   /** @internal Appends Alvyn-generated snapshot events. */
   async appendSnapshot<T = unknown>(
     input: AppendInput<T>,
-    options?: { client?: PoolClient },
+    options?: AppendOptions,
   ): Promise<AppendResult> {
     this.ensureInitialized();
     validateAppendInput(input);
@@ -189,17 +192,26 @@ export class EventStore {
 
   async load<T = unknown>(
     streamId: string,
-    options?: { maxEvents?: number; client?: PoolClient },
+    options?: LoadOptions,
   ): Promise<ReplayedEvent<T>[]> {
     this.ensureInitialized();
-    if (options?.maxEvents !== undefined)
+    // Fail-fast guard against CWE-400 / unbounded read degradation:
+    // Passing `maxEvents` as a raw number is no longer supported after the options object refactoring.
+    // Throwing a TypeError immediately prevents silent unbounded stream loads at runtime.
+    if (typeof options === "number") {
+      throw new TypeError(
+        "Passing 'maxEvents' as a number to EventStore.load is no longer supported. Use an options object instead: { maxEvents: ... }",
+      );
+    }
+    if (options?.maxEvents !== undefined) {
       assertPositiveSafeInteger(options.maxEvents, "maxEvents");
+    }
     return this.reader.load<T>(streamId, options);
   }
 
   async loadFrom<T = unknown>(
     streamId: string,
-    options: { fromVersion: number; maxEvents?: number; client?: PoolClient },
+    options: LoadFromOptions,
   ): Promise<ReplayedEvent<T>[]> {
     this.ensureInitialized();
     assertPositiveSafeInteger(options.fromVersion, "fromVersion");

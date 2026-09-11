@@ -111,6 +111,21 @@ export interface TombstonedEvent
 export type ReplayedEvent<T = unknown> = StoredEvent<T> | TombstonedEvent;
 
 // ---------------------------------------------------------------------------
+// Stream Reads
+// ---------------------------------------------------------------------------
+
+export interface LoadOptions {
+  maxEvents?: number;
+  client?: PoolClient;
+}
+
+export interface LoadFromOptions {
+  fromVersion: number;
+  maxEvents?: number;
+  client?: PoolClient;
+}
+
+// ---------------------------------------------------------------------------
 // Bounded multi-stream reads
 // ---------------------------------------------------------------------------
 
@@ -182,6 +197,10 @@ export interface AppendInput<T = unknown> {
   outboxTopics?: string[];
   /** Optional: idempotency key to prevent duplicate appends on retries */
   idempotencyKey?: string;
+}
+
+export interface AppendOptions {
+  client?: PoolClient;
 }
 
 export interface AppendResult {
