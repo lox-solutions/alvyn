@@ -1,0 +1,45 @@
+name: Coverage Comment
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+permissions:
+  pull-requests: write
+  issues: write
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Download PR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pr-data
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Post comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const prNumber = Number(fs.readFileSync('pr-number.txt', 'utf8').trim());
+            const summary = JSON.parse(fs.readFileSync('coverage-summary.json', 'utf8'));
+            const t = summary.total;
+            const pct = (n) => n.pct.toFixed(2);
+            const icon = (n) => n.pct >= 90 ? ':white_check_mark:' : n.pct >= 85 ? ':warning:' : ':x:';
+            const body = [
+              '## Coverage Report',
+              '',
+              '| Metric | Coverage | Status |',
+              '|--------|----------|--------|',
+              `| Statements | ${pct(t.statements)}% | ${icon(t.statements)} |`,
+              `| Branches | ${pct(t.branches)}% | ${icon(t.branches)} |`,
+              `| Functions | ${pct(t.functions)}% | ${icon(t.functions)} |`,
+              `| Lines | ${pct(t.lines)}% | ${icon(t.lines)} |`,
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body,
+            });
