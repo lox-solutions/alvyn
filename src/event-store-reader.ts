@@ -23,6 +23,11 @@ interface EventStoreReaderOptions {
   upcasterRegistry: UpcasterRegistry;
 }
 
+interface LoadOptions {
+  maxEvents?: number;
+  client?: PoolClient;
+}
+
 interface LoadFromOptions {
   fromVersion: number;
   maxEvents?: number;
@@ -51,9 +56,9 @@ export class EventStoreReader {
 
   async load<T = unknown>(
     streamId: string,
-    maxEvents?: number,
+    options?: LoadOptions,
   ): Promise<ReplayedEvent<T>[]> {
-    return this.withClient((client) =>
+    const read = (client: PoolClient) =>
       readStream<T>({
         client,
         schema: this.schema,
@@ -61,9 +66,10 @@ export class EventStoreReader {
         fromVersion: 1,
         cryptoKeyManager: this.cryptoKeyManager,
         upcasterRegistry: this.upcasterRegistry,
-        maxEvents,
-      }),
-    );
+        maxEvents: options?.maxEvents,
+      });
+    if (options?.client) return read(options.client);
+    return this.withClient(read);
   }
 
   async loadFrom<T = unknown>(

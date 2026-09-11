@@ -287,4 +287,33 @@ describe("defineSnapshot", () => {
       replayedEvents: 0,
     });
   });
+
+  it("loads snapshot within an external transaction client", async () => {
+    const store = new EventStore({ pool, schema: uniqueSchema() });
+    await store.setup();
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      await store.append(
+        {
+          streamId: "Transaction-tx-snap",
+          expectedVersion: -1,
+          events: [{ type: "Deposit", data: { amount: 300 } }],
+        },
+        { client },
+      );
+
+      const balance = await BankAccountBalance.load(store, "tx-snap", {
+        client,
+      });
+      expect(balance.state).toEqual({ balance: 300 });
+      expect(balance.version).toBe(1);
+
+      await client.query("COMMIT");
+    } finally {
+      client.release();
+    }
+  });
 });

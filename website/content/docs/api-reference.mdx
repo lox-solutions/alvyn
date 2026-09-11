@@ -120,19 +120,29 @@ const result = await eventStore.append({
 
 Event types ending in `Snapshot` are reserved for Alvyn-generated snapshot events and cannot be appended through public write APIs.
 
-#### `load(streamId): Promise<ReplayedEvent[]>`
+#### `load(streamId, options?): Promise<ReplayedEvent[]>`
 
-Loads all events for a stream from version 1. Handles decryption and upcasting automatically.
+Loads all events for a stream from version 1. Handles decryption and upcasting automatically. Accepts an optional `maxEvents` number or an options object `{ maxEvents?: number; client?: PoolClient }` to read over an active transaction client.
 
 #### `loadFrom(streamId, options): Promise<ReplayedEvent[]>`
 
-Loads events starting from a specific version.
+Loads events starting from a specific version. Accepts an optional `client?: PoolClient` to read within an active transaction.
 
 ```typescript
 const events = await eventStore.loadFrom("Order-123", {
   fromVersion: 4,
   maxEvents: 100,
 });
+```
+
+#### `lockStream(client, streamId): Promise<Date>`
+
+Acquires a transaction-scoped PostgreSQL advisory lock (`pg_advisory_xact_lock`) on the specified stream and returns the authoritative database timestamp (`clock_timestamp()`).
+
+Must be called within an active transaction on the provided `PoolClient`. The lock is released automatically when the transaction commits or rolls back.
+
+```typescript
+const decisionAt = await eventStore.lockStream(client, "Auction-123");
 ```
 
 #### `readEventsPage(options): Promise<ReadEventsPage<T>>`
@@ -263,13 +273,18 @@ const eventStore = new EventStore({
 });
 ```
 
-#### `snapshot.load(eventStore, entityId): Promise<SnapshotLoadResult<TState>>`
+#### `snapshot.load(eventStore, entityId, options?): Promise<SnapshotLoadResult<TState>>`
 
-Finds the latest generated snapshot event and replays only later handled source events. Loading is read-only; registered snapshots are updated synchronously after matching public appends.
+Finds the latest generated snapshot event and replays only later handled source events. Loading is read-only; registered snapshots are updated synchronously after matching public appends. Pass an optional `{ client }` to read within an active transaction.
 
 ```typescript
 const result = await BankAccountBalance.load(eventStore, "account-123");
 result.state.balance;
+
+// Within an active transaction:
+const txResult = await BankAccountBalance.load(eventStore, "account-123", {
+  client,
+});
 ```
 
 ### Aggregate Builder
@@ -525,6 +540,11 @@ interface SnapshotLoadResult<TState> {
   snapshotVersion: number | null;
   replayedEvents: number;
 }
+
+interface SnapshotLoadOptions {
+  entityId: string;
+  client?: PoolClient;
+}
 ```
 
 ### Outbox Type
@@ -542,6 +562,27 @@ interface OutboxEntry {
 ### Aggregate Types
 
 ```typescript
+interface AggregateLoadOptions {
+  entityId: string;
+  client?: PoolClient;
+}
+
+interface AggregateAppendInput<TEvents> {
+  entityId: string;
+  expectedVersion: number;
+  events: AggregateEventInput<TEvents>[];
+  outboxTopics?: string[];
+  idempotencyKey?: string;
+  client?: PoolClient;
+}
+
+interface AggregateLoadEventsOptions {
+  eventStore: EventStore;
+  entityId: string;
+  maxEvents?: number;
+  client?: PoolClient;
+}
+
 type AggregateEventInput<TEvents> = {
   [K in keyof TEvents & string]: {
     type: K;

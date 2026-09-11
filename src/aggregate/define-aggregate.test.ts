@@ -417,4 +417,93 @@ describe("defineAggregate", () => {
       expect(agg.state).toEqual({ status: "placed", total: 120 });
     });
   });
+
+  describe("transaction context with external PoolClient", () => {
+    it("loads and appends within an external transaction and commits atomically", async () => {
+      const store = new EventStore({ pool, schema: uniqueSchema() });
+      await store.setup();
+
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+
+        const decisionAt = await store.lockStream(client, "Order-tx-1");
+        expect(decisionAt).toBeInstanceOf(Date);
+
+        const initial = await Order.load(store, "tx-1", { client });
+        expect(initial.version).toBe(0);
+        expect(initial.state).toBeNull();
+
+        await Order.append(
+          store,
+          {
+            entityId: "tx-1",
+            expectedVersion: initial.version,
+            events: [{ type: "OrderPlaced", data: { total: 250 } }],
+          },
+          { client },
+        );
+
+        const withinTx = await Order.load(store, "tx-1", { client });
+        expect(withinTx.version).toBe(1);
+        expect(withinTx.state?.total).toBe(250);
+
+        await client.query("COMMIT");
+      } finally {
+        client.release();
+      }
+
+      // Verify persisted after commit
+      const persisted = await Order.load(store, "tx-1");
+      expect(persisted.version).toBe(1);
+      expect(persisted.state?.status).toBe("placed");
+      expect(persisted.state?.total).toBe(250);
+    });
+
+    it("rolls back aggregate appends when external transaction rolls back", async () => {
+      const store = new EventStore({ pool, schema: uniqueSchema() });
+      await store.setup();
+
+      // Seed initial state
+      await Order.append(store, {
+        entityId: "tx-rollback",
+        expectedVersion: -1,
+        events: [{ type: "OrderPlaced", data: { total: 100 } }],
+      });
+
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+
+        await store.lockStream(client, "Order-tx-rollback");
+
+        const loaded = await Order.load(store, "tx-rollback", { client });
+        expect(loaded.version).toBe(1);
+
+        await Order.append(
+          store,
+          {
+            entityId: "tx-rollback",
+            expectedVersion: loaded.version,
+            events: [{ type: "OrderShipped", data: { tracking: "TRK-999" } }],
+          },
+          { client },
+        );
+
+        // Within transaction, shipping is visible
+        const withinTx = await Order.load(store, "tx-rollback", { client });
+        expect(withinTx.state?.status).toBe("shipped");
+
+        // Roll back the transaction
+        await client.query("ROLLBACK");
+      } finally {
+        client.release();
+      }
+
+      // After rollback, the append must be completely gone
+      const afterRollback = await Order.load(store, "tx-rollback");
+      expect(afterRollback.version).toBe(1);
+      expect(afterRollback.state?.status).toBe("placed");
+    });
+  });
 });

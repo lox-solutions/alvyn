@@ -110,21 +110,24 @@ upcasters: [userRenamedV1ToV2, userRenamedV2ToV3];
 
 The `defineAggregate` call returns an `AggregateHandle` with the following interface:
 
-| Method / Property                                  | Description                                   |
-| -------------------------------------------------- | --------------------------------------------- |
-| `streamPrefix`                                     | The stream prefix string (readonly)           |
-| `load(eventStore, entityId)`                       | Returns `AggregateInstance<TState>`           |
-| `loadEvents({ eventStore, entityId, maxEvents? })` | Loads typed replayed domain events            |
-| `append(eventStore, input)`                        | Appends typed events to the stream            |
-| `subscribe({ eventStore, entityId, options? })`    | Subscribes to typed live domain events        |
-| `getUpcasters()`                                   | Returns upcasters for registration at startup |
+| Method / Property                                           | Description                                   |
+| ----------------------------------------------------------- | --------------------------------------------- |
+| `streamPrefix`                                              | The stream prefix string (readonly)           |
+| `load(eventStore, entityId, options?)`                      | Returns `AggregateInstance<TState>`           |
+| `loadEvents({ eventStore, entityId, maxEvents?, client? })` | Loads typed replayed domain events            |
+| `append(eventStore, input, options?)`                       | Appends typed events to the stream            |
+| `subscribe({ eventStore, entityId, options? })`             | Subscribes to typed live domain events        |
+| `getUpcasters()`                                            | Returns upcasters for registration at startup |
 
-### `load(eventStore, entityId)`
+### `load(eventStore, entityId, options?)`
 
-Loads the aggregate by replaying all events.
+Loads the aggregate by replaying all events. Pass an optional `{ client }` to read within an existing PostgreSQL transaction:
 
 ```typescript
 const order = await Order.load(eventStore, "order-123");
+
+// Or within an active transaction:
+const orderInTx = await Order.load(eventStore, "order-123", { client });
 
 order.state; // { status: "shipped", total: 99.99, customerId: "cust-1" }
 order.version; // 5 (current stream version)
@@ -135,9 +138,9 @@ For an empty stream, `state` is `null` and `version` is `0`. The first evolve
 handler receives the runtime `null` state, so handlers should build the state
 from the first event when necessary.
 
-### `append(eventStore, entityId, input)`
+### `append(eventStore, input, options?)`
 
-Appends typed events to the aggregate's stream. Automatically maps encryption config if defined.
+Appends typed events to the aggregate's stream. Automatically maps encryption config if defined. Pass an optional `{ client }` to execute within an active transaction:
 
 ```typescript
 await Order.append(eventStore, {
@@ -147,6 +150,17 @@ await Order.append(eventStore, {
   outboxTopics: ["orders"], // Optional: transactional outbox
   idempotencyKey: "cmd-ship-order-123", // Optional: deduplication key
 });
+
+// Or within an active transaction:
+await Order.append(
+  eventStore,
+  {
+    entityId: "order-123",
+    expectedVersion: order.version,
+    events: [{ type: "OrderShipped", data: { trackingNumber: "TRACK-456" } }],
+  },
+  { client },
+);
 ```
 
 ### `getUpcasters()`
@@ -232,6 +246,46 @@ evolve: {
 
 This ensures the aggregate can still be loaded after key revocation. Evolve
 handlers should preserve the existing state when encrypted fields are missing.
+
+## Explicit Transactions & Stream Locking
+
+In distributed setups (such as Kubernetes replica sets), local clock skew and retry races can compromise strict temporal invariants (e.g. auction closing deadlines, soft-close anti-sniping, or reservation expiry).
+
+To serialize command handling early and anchor business logic to authoritative database time, use `eventStore.lockStream(client, streamId)` inside an explicit transaction:
+
+```typescript
+await eventStore.withTransaction(async (client) => {
+  // 1. Acquire transaction-scoped advisory lock & authoritative PostgreSQL clock_timestamp()
+  const streamId = `Auction-${auctionId}`;
+  const decisionAt = await eventStore.lockStream(client, streamId);
+
+  // 2. Load the aggregate over the same locked connection
+  const auction = await Auction.load(eventStore, auctionId, { client });
+
+  // 3. Evaluate invariants deterministically
+  if (decisionAt.getTime() >= new Date(auction.state.endsAt).getTime()) {
+    throw new Error("Auction already closed");
+  }
+
+  // 4. Append events atomically within the transaction
+  await Auction.append(
+    eventStore,
+    {
+      entityId: auctionId,
+      expectedVersion: auction.version,
+      events: [
+        {
+          type: "BidAccepted",
+          data: { amount: 200, placedAt: decisionAt.toISOString() },
+        },
+      ],
+    },
+    { client },
+  );
+});
+```
+
+Because `lockStream` and `Auction.append` use the exact same transaction-scoped PostgreSQL advisory lock (`pg_advisory_xact_lock`), acquiring the lock early forms an orderly queue at the database level and eliminates optimistic-concurrency retry storms under heavy contention.
 
 ## Full Example with All Options
 

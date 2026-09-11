@@ -5,6 +5,7 @@ import type {
   SnapshotDefinition,
   SnapshotEncryptionConfig,
   SnapshotHandle,
+  SnapshotLoadOptions,
   SnapshotLoadResult,
   SnapshotUpdateAfterAppendOptions,
 } from "./types";
@@ -35,13 +36,18 @@ function createSnapshotHandle<TState, TEvents>(
     snapshotName,
     snapshotEventType,
     sourceEventTypes,
-    load: (eventStore, entityId) =>
+    load: (
+      eventStore: EventStore,
+      entityId: string,
+      options?: SnapshotLoadOptions,
+    ) =>
       loadSnapshot({
         eventStore,
         streamId: buildStreamId(entityId),
         snapshotEventType,
         initialState,
         evolveMap,
+        client: options?.client,
       }),
     updateAfterAppend: (args: SnapshotUpdateAfterAppendOptions) => {
       const { eventStore, streamId, options } = args;
@@ -70,15 +76,23 @@ async function loadSnapshot<TState>(options: {
   snapshotEventType: string;
   initialState: TState;
   evolveMap: Record<string, (state: TState, event: ReplayedEvent) => TState>;
+  client?: PoolClient;
 }): Promise<SnapshotLoadResult<TState>> {
-  const { eventStore, streamId, snapshotEventType, initialState, evolveMap } =
-    options;
+  const {
+    eventStore,
+    streamId,
+    snapshotEventType,
+    initialState,
+    evolveMap,
+    client,
+  } = options;
   return loadSnapshotState({
     eventStore,
     streamId,
     snapshotEventType,
     initialState,
     evolveMap,
+    client,
   });
 }
 

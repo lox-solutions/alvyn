@@ -1,10 +1,14 @@
+import type { PoolClient } from "pg";
 import type { EventStore } from "../event-store";
 import type { ReplayedEvent, Upcaster } from "../types";
 import type {
+  AggregateAppendInput,
+  AggregateAppendOptions,
   AggregateDefinition,
   AggregateHandle,
   AggregateInstance,
   AggregateLoadEventsOptions,
+  AggregateLoadOptions,
   AggregateReplayedEvent,
   AggregateSubscribeOptions,
   AggregateStoredEvent,
@@ -17,9 +21,10 @@ async function loadDomainEvents<TEvents>(options: {
   eventStore: EventStore;
   streamId: string;
   maxEvents?: number;
+  client?: PoolClient;
 }): Promise<AggregateReplayedEvent<TEvents>[]> {
-  const { eventStore, streamId, maxEvents } = options;
-  const events = await eventStore.load(streamId, maxEvents);
+  const { eventStore, streamId, maxEvents, client } = options;
+  const events = await eventStore.load(streamId, { maxEvents, client });
   return events.filter(
     (event) => !isReservedSnapshotEventType(event.type),
   ) as AggregateReplayedEvent<TEvents>[];
@@ -46,27 +51,38 @@ function createAggregateHandle<TState, TEvents>(
 
   return {
     streamPrefix,
-    load: (eventStore: EventStore, entityId: string) =>
+    load: (
+      eventStore: EventStore,
+      entityId: string,
+      options?: AggregateLoadOptions,
+    ) =>
       loadAggregate({
         eventStore,
         entityId,
         buildStreamId,
         evolveMap,
+        client: options?.client,
       }),
     loadEvents: (options: AggregateLoadEventsOptions) => {
-      const { eventStore, entityId, maxEvents } = options;
+      const { eventStore, entityId, maxEvents, client } = options;
       return loadDomainEvents<TEvents>({
         eventStore,
         streamId: buildStreamId(entityId),
         maxEvents,
+        client,
       });
     },
-    append: (eventStore, input) =>
+    append: (
+      eventStore: EventStore,
+      input: AggregateAppendInput<TEvents>,
+      options?: AggregateAppendOptions,
+    ) =>
       appendAggregate({
         eventStore,
         input,
         buildStreamId,
         encryption,
+        client: options?.client,
       }),
     subscribe: (args: AggregateSubscribeOptions) => {
       const { eventStore, entityId, options } = args;
@@ -86,41 +102,41 @@ async function loadAggregate<TState>(options: {
   entityId: string;
   buildStreamId: (id: string) => string;
   evolveMap: Record<string, (s: TState, e: ReplayedEvent) => TState>;
+  client?: PoolClient;
 }): Promise<AggregateInstance<TState>> {
-  const { eventStore, entityId, buildStreamId, evolveMap } = options;
+  const { eventStore, entityId, buildStreamId, evolveMap, client } = options;
   const streamId = buildStreamId(entityId);
   return loadFromReplay({
     eventStore,
     streamId,
     evolve: evolveMap,
+    client,
   });
 }
 
 async function appendAggregate<TState, TEvents>(options: {
   eventStore: EventStore;
-  input: {
-    entityId: string;
-    expectedVersion: number;
-    events: unknown[];
-    outboxTopics?: string[];
-    idempotencyKey?: string;
-  };
+  input: AggregateAppendInput<TEvents>;
   buildStreamId: (id: string) => string;
   encryption: AggregateDefinition<TEvents, TState>["encryption"];
+  client?: PoolClient;
 }): Promise<{ fromVersion: number; toVersion: number }> {
-  const { eventStore, input, buildStreamId, encryption } = options;
+  const { eventStore, input, buildStreamId, encryption, client } = options;
   const streamId = buildStreamId(input.entityId);
-  const result = await eventStore.append({
-    streamId,
-    expectedVersion: input.expectedVersion,
-    outboxTopics: input.outboxTopics,
-    idempotencyKey: input.idempotencyKey,
-    events: mapEventsForAppend({
-      events: input.events as never[],
-      encryption,
-      entityId: input.entityId,
-    }),
-  });
+  const result = await eventStore.append(
+    {
+      streamId,
+      expectedVersion: input.expectedVersion,
+      outboxTopics: input.outboxTopics,
+      idempotencyKey: input.idempotencyKey,
+      events: mapEventsForAppend({
+        events: input.events,
+        encryption,
+        entityId: input.entityId,
+      }),
+    },
+    { client },
+  );
   return { fromVersion: result.fromVersion, toVersion: result.toVersion };
 }
 

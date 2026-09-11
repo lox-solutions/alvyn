@@ -29,7 +29,10 @@ import type {
 } from "./types";
 import type { SnapshotHandle } from "./snapshot/types";
 import { UpcasterRegistry } from "./upcaster/upcaster-registry";
-import { DEFAULT_SCHEMA } from "./event-store-constants";
+import {
+  DEFAULT_SCHEMA,
+  DEFAULT_STREAM_LOCK_SEED,
+} from "./event-store-constants";
 import { parseCryptoSecretsConfig } from "./crypto/crypto-secrets";
 import { assertValidSchemaName } from "./sql-helpers";
 import {
@@ -164,14 +167,34 @@ export class EventStore {
     );
   }
 
+  /**
+   * Acquires a transaction-scoped advisory lock on the stream and returns the authoritative database timestamp.
+   *
+   * Must be called within an active transaction on the provided `PoolClient`.
+   * The lock is automatically released when the transaction commits or rolls back.
+   *
+   * @param client The active transaction client (`PoolClient`).
+   * @param streamId The stream ID to lock (e.g. `Auction-123`).
+   * @returns The authoritative database timestamp (`clock_timestamp()`).
+   */
+  async lockStream(client: PoolClient, streamId: string): Promise<Date> {
+    this.ensureInitialized();
+    const { rows } = await client.query<{ now: Date }>(
+      `SELECT pg_advisory_xact_lock(hashtextextended($1, ${DEFAULT_STREAM_LOCK_SEED})), clock_timestamp() AS now`,
+      [streamId],
+    );
+    const now = rows[0]?.now;
+    return now instanceof Date ? now : new Date(now);
+  }
+
   async load<T = unknown>(
     streamId: string,
-    maxEvents?: number,
+    options?: { maxEvents?: number; client?: PoolClient },
   ): Promise<ReplayedEvent<T>[]> {
     this.ensureInitialized();
-    if (maxEvents !== undefined)
-      assertPositiveSafeInteger(maxEvents, "maxEvents");
-    return this.reader.load<T>(streamId, maxEvents);
+    if (options?.maxEvents !== undefined)
+      assertPositiveSafeInteger(options.maxEvents, "maxEvents");
+    return this.reader.load<T>(streamId, options);
   }
 
   async loadFrom<T = unknown>(
