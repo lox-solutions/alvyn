@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.11](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.10...alvyn-v0.1.11) (2026-09-11)
+
+
+### Features
+
+* add stream locking and transactional client options to aggregate and snapshot ([#60](https://github.com/lox-solutions/alvyn/issues/60)) ([53a1a6b](https://github.com/lox-solutions/alvyn/commit/53a1a6beb8702250428d34590c41e1239245b782))
+
+
+### Bug Fixes
+
+* **security:** autofix Potential SQL injection via string-based query concatenation ([#57](https://github.com/lox-solutions/alvyn/issues/57)) ([a0ece6d](https://github.com/lox-solutions/alvyn/commit/a0ece6d3e9aaf6184bb7b5c8740e7778a1c0ee14))
+
 ## [0.1.10](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.9...alvyn-v0.1.10) (2026-09-07)
 
 
