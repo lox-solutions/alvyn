@@ -18,14 +18,8 @@ export default defineConfig(
   js.configs.recommended,
   tseslint.configs.recommendedTypeChecked,
   tseslint.configs.stylisticTypeChecked,
-  ...llmCore.configs.all.map((config) => ({
-    ...config,
-    ignores: [...(config.ignores ?? []), "eslint.config.js"],
-  })),
+  ...llmCore.configs.all,
   {
-    plugins: {
-      "llm-core": llmCore,
-    },
     languageOptions: {
       parserOptions: {
         projectService: {
@@ -55,6 +49,7 @@ export default defineConfig(
     files: ["eslint.config.js"],
     rules: {
       "llm-core/max-file-length": "off",
+      "llm-core/no-magic-numbers": "off",
     },
   },
   {
