@@ -11,20 +11,11 @@ import {
   type SharedProps,
 } from "fumadocs-ui/components/dialog/search";
 import { useDocsSearch } from "fumadocs-core/search/client";
-import { create } from "@orama/orama";
-
-function initOrama() {
-  return create({
-    schema: { _: "string" },
-    language: "english",
-  });
-}
 
 export default function DefaultSearchDialog(props: SharedProps) {
   const { search, setSearch, query } = useDocsSearch({
     type: "static",
     from: "/api/search",
-    initOrama,
   });
 
   return (
