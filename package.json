@@ -61,7 +61,7 @@
     "node": "^22.18.0 || ^24.11.0 || >=26.0.0",
     "pnpm": ">=10"
   },
-  "homepage": "https://alvyn.opensource.lox-solutions.eu/",
+  "homepage": "https://alvyn.dev/",
   "repository": {
     "type": "git",
     "url": "https://github.com/lox-solutions/alvyn.git"

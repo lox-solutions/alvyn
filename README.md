@@ -97,7 +97,7 @@ try {
 
 The first handler receives `null` at runtime: initialize the entire state and define every EventMap handler. An empty aggregate loads as `state: null`, `version: 0`; explicitly create a stream with `expectedVersion: -1`, then use its loaded version or append `toVersion`. The snippet records known facts; it does not execute a tool.
 
-External effects need their own idempotency keys and reconciliation; event append deduplication does not make tool execution exactly once. See the [Agent History, Replay & Audit playbook](https://alvyn.opensource.lox-solutions.eu/docs/playbooks/ai-agent-deterministic-memory-and-audit) for logging, privacy, and integration boundaries.
+External effects need their own idempotency keys and reconciliation; event append deduplication does not make tool execution exactly once. See the [Agent History, Replay & Audit playbook](https://alvyn.dev/docs/playbooks/ai-agent-deterministic-memory-and-audit) for logging, privacy, and integration boundaries.
 
 ### 2. Classic Domain Aggregate (Order Processing)
 
@@ -407,17 +407,17 @@ where each event must be published once (use-case 2).
 
 ## Documentation
 
-Full documentation is available at **[alvyn.opensource.lox-solutions.eu](https://alvyn.opensource.lox-solutions.eu)**.
+Full documentation is available at **[alvyn.dev](https://alvyn.dev)**.
 
-- [Getting Started](https://alvyn.opensource.lox-solutions.eu/docs)
-- [Playbooks & Architectural Guides](https://alvyn.opensource.lox-solutions.eu/docs/playbooks/ai-agent-deterministic-memory-and-audit)
-- [Aggregates](https://alvyn.opensource.lox-solutions.eu/docs/aggregates)
-- [Subscriptions](https://alvyn.opensource.lox-solutions.eu/docs/subscriptions)
-- [Crypto-Shredding & GDPR](https://alvyn.opensource.lox-solutions.eu/docs/crypto-shredding)
-- [Projections & Outbox](https://alvyn.opensource.lox-solutions.eu/docs/projections)
-- [Schema Evolution](https://alvyn.opensource.lox-solutions.eu/docs/schema-evolution)
-- [API Reference](https://alvyn.opensource.lox-solutions.eu/docs/api-reference)
-- [Database Schema](https://alvyn.opensource.lox-solutions.eu/docs/database-schema)
+- [Getting Started](https://alvyn.dev/docs)
+- [Playbooks & Architectural Guides](https://alvyn.dev/docs/playbooks/ai-agent-deterministic-memory-and-audit)
+- [Aggregates](https://alvyn.dev/docs/aggregates)
+- [Subscriptions](https://alvyn.dev/docs/subscriptions)
+- [Crypto-Shredding & GDPR](https://alvyn.dev/docs/crypto-shredding)
+- [Projections & Outbox](https://alvyn.dev/docs/projections)
+- [Schema Evolution](https://alvyn.dev/docs/schema-evolution)
+- [API Reference](https://alvyn.dev/docs/api-reference)
+- [Database Schema](https://alvyn.dev/docs/database-schema)
 
 ## Requirements
 
@@ -804,14 +804,14 @@ SLO checks, capacity findings, and verification totals.
 
 Explore comprehensive guides, real-world blueprints, and interactive API references:
 
-- **[AI Agent Deterministic Memory & Audit Playbook](https://alvyn.opensource.lox-solutions.eu/docs/playbooks/ai-agent-deterministic-memory-and-audit)** — Complete guide for Vercel AI SDK, LangGraph, causal execution logs, deterministic replay, and EU AI Act (Art. 12) logging.
-- **[Aggregate Design & Stream Boundaries Playbook](https://alvyn.opensource.lox-solutions.eu/docs/playbooks/aggregate-design-and-stream-boundaries)** — Architectural blueprints for aggregate sizing, stream partitioning, and concurrency boundaries.
-- **[SSE & Resilient Consumer Scaling Playbook](https://alvyn.opensource.lox-solutions.eu/docs/playbooks/sse-and-consumer-scaling)** — HTTP streaming with W3C `Last-Event-ID`, hash-ring worker pools, and broker comparisons.
-- **[Aggregates & State Evolution](https://alvyn.opensource.lox-solutions.eu/docs/aggregates)** — Type-safe domain models and pure event evolution.
-- **[Event-backed Snapshots](https://alvyn.opensource.lox-solutions.eu/docs/snapshots)** — Zero-lag acceleration for high-volume event streams.
-- **[GDPR & Data Privacy](https://alvyn.opensource.lox-solutions.eu/docs/crypto-shredding)** — Reference tables and AES-256-GCM crypto-shredding for Article 17 erasure.
-- **[Transactional Outbox](https://alvyn.opensource.lox-solutions.eu/docs/outbox)** — Guaranteed at-least-once message publishing without dual writes.
-- **[Database Schema & Architecture](https://alvyn.opensource.lox-solutions.eu/docs/database-schema)** — Underlying PostgreSQL tables, indices, and locking mechanics.
+- **[AI Agent Deterministic Memory & Audit Playbook](https://alvyn.dev/docs/playbooks/ai-agent-deterministic-memory-and-audit)** — Complete guide for Vercel AI SDK, LangGraph, causal execution logs, deterministic replay, and EU AI Act (Art. 12) logging.
+- **[Aggregate Design & Stream Boundaries Playbook](https://alvyn.dev/docs/playbooks/aggregate-design-and-stream-boundaries)** — Architectural blueprints for aggregate sizing, stream partitioning, and concurrency boundaries.
+- **[SSE & Resilient Consumer Scaling Playbook](https://alvyn.dev/docs/playbooks/sse-and-consumer-scaling)** — HTTP streaming with W3C `Last-Event-ID`, hash-ring worker pools, and broker comparisons.
+- **[Aggregates & State Evolution](https://alvyn.dev/docs/aggregates)** — Type-safe domain models and pure event evolution.
+- **[Event-backed Snapshots](https://alvyn.dev/docs/snapshots)** — Zero-lag acceleration for high-volume event streams.
+- **[GDPR & Data Privacy](https://alvyn.dev/docs/crypto-shredding)** — Reference tables and AES-256-GCM crypto-shredding for Article 17 erasure.
+- **[Transactional Outbox](https://alvyn.dev/docs/outbox)** — Guaranteed at-least-once message publishing without dual writes.
+- **[Database Schema & Architecture](https://alvyn.dev/docs/database-schema)** — Underlying PostgreSQL tables, indices, and locking mechanics.
 
 ## Contributing
 
