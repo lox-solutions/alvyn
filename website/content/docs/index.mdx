@@ -1,105 +1,99 @@
 ---
 title: Introduction
-description: Alvyn is a production-grade event store for PostgreSQL with type-safe aggregates, event-backed snapshots, GDPR crypto-shredding, projections, transactional outbox, and schema evolution.
+description: TypeScript and PostgreSQL event history for agent workflows and domain applications, with typed aggregates, replay, projections, snapshots, and an outbox.
+icon: Compass
 ---
 
-# Alvyn
+Alvyn is a **TypeScript library for event history on PostgreSQL**. Record meaningful facts, rebuild application state, and inspect how a workflow reached its current state. AI agents are an approachable starting point; orders, approvals, billing, and other domain applications use the same primitives. You do not need CQRS knowledge or an all-at-once rewrite.
 
-Alvyn is an **event sourcing library for Node.js and PostgreSQL**. It provides everything you need to build event-sourced systems with strong consistency guarantees, GDPR compliance, and full TypeScript support.
+## Use Alvyn in an application
 
-## Features
-
-- **Type-safe aggregates** — Define event maps and evolve handlers with full TypeScript inference via `defineAggregate`
-- **Fan-out subscriptions** — Catch up and tail matching events live with resumable cursors and PostgreSQL wake-ups
-- **Event-backed snapshots** — Cache domain-defined derived state as generated events in the same stream
-- **GDPR crypto-shredding** — Per-entity AES-256-GCM envelope encryption with key revocation and tombstoned events
-- **Projections** — Build read models from the global event stream with checkpoint tracking and exactly-once semantics
-- **Idempotency** — Deduplicate retried appends by key, returning cached boundaries without duplicate events or outbox messages
-- **Transactional outbox** — At-least-once delivery to external systems, written atomically with events
-- **Schema evolution** — Read-time upcasters that transform old event shapes without modifying stored data
-- **CloudEvents v1.0.2** — All events comply with the CloudEvents specification
-- **PostgreSQL native** — Advisory locks, OCC, `FOR UPDATE SKIP LOCKED`, and schema isolation
-
-## Quick Start
-
-### Installation
-
-```bash
-npm install @lox-solutions/alvyn pg
+```package-install
+@lox-solutions/alvyn pg
 ```
 
-### Setup
+You supply and close the connection pool. This snippet records a goal and a known result; it does not call a model or execute a tool. See the [Agent History, Replay & Audit playbook](/docs/playbooks/ai-agent-deterministic-memory-and-audit) for model integration boundaries.
 
 ```typescript
 import { Pool } from "pg";
 import { EventStore, defineAggregate } from "@lox-solutions/alvyn";
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-
-const eventStore = new EventStore({
-  pool,
-});
-
-await eventStore.setup(); // idempotent — safe on every startup
-```
-
-### Define an Aggregate
-
-```typescript
-type OrderEvents = {
-  OrderPlaced: { customerId: string; total: number };
-  OrderShipped: { trackingNumber: string };
+type AgentEvents = {
+  GoalReceived: { goal: string };
+  RunCompleted: { output: string };
 };
+type AgentState = { goal: string | null; output: string | null };
 
-type OrderState = { status: "pending" | "placed" | "shipped"; total: number };
-
-const Order = defineAggregate<OrderState, OrderEvents>()({
-  streamPrefix: "Order",
+const AgentRun = defineAggregate<AgentState, AgentEvents>()({
+  streamPrefix: "AgentRun",
   evolve: {
-    OrderPlaced: (state, event) => ({
-      ...state,
-      status: "placed",
-      total: event.data?.total ?? 0,
+    GoalReceived: (_state, event) => ({
+      goal: event.data?.goal ?? null,
+      output: null,
     }),
-    OrderShipped: (state) => ({
-      ...state,
-      status: "shipped",
+    RunCompleted: (state, event) => ({
+      goal: state?.goal ?? null,
+      output: event.data?.output ?? null,
     }),
   },
 });
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+try {
+  const store = new EventStore({ pool });
+  await store.setup();
+  const runId = crypto.randomUUID();
+  const created = await AgentRun.append(store, {
+    entityId: runId,
+    expectedVersion: -1,
+    events: [
+      { type: "GoalReceived", data: { goal: "Find the returns policy" } },
+    ],
+  });
+  await AgentRun.append(store, {
+    entityId: runId,
+    expectedVersion: created.toVersion,
+    events: [
+      {
+        type: "RunCompleted",
+        data: { output: "Returns accepted for 30 days." },
+      },
+    ],
+  });
+  console.log((await AgentRun.load(store, runId)).state);
+} finally {
+  await pool.end();
+}
 ```
 
-### Load and Append
+The first evolve handler receives `null` at runtime and must initialize the whole state. An empty aggregate loads with `state: null` and `version: 0`; use `expectedVersion: -1` to explicitly create a new stream. Later appends use the loaded version or the previous append's `toVersion`. Define a handler for every event in the event map.
 
-```typescript
-// Load aggregate state
-const order = await Order.load(eventStore, "order-123");
-// order.state  -> { status: "placed", total: 99.99 }
-// order.version -> 1
+## Building blocks
 
-// Append events with optimistic concurrency
-await Order.append(eventStore, {
-  entityId: "order-123",
-  expectedVersion: order.version,
-  events: [{ type: "OrderShipped", data: { trackingNumber: "TRACK-456" } }],
-});
-```
+- **Typed aggregates** group related facts into streams and rebuild current state.
+- **Historical replay** uses `load` or `loadFrom` plus your reducer over an explicit event prefix; current aggregate load is not a historical query.
+- **Snapshots** cache expensive derived state as separate events.
+- **Subscriptions and projections** support resumable consumers and query-oriented read models.
+- **Transactional outbox** records delivery work atomically with events; delivery is at least once and external effects need idempotency.
+- **Schema evolution** applies read-time upcasters to older event shapes.
+- **Encryption and key revocation** support privacy workflows when explicitly configured.
+
+Replay reproduces reducer state from retained, readable events, not a deterministic model rerun. Only instrumented actions are recorded, not hidden thoughts. Event history is neither automatic regulatory compliance nor tamper-proof evidence. Encryption does not automatically cover snapshots, projections, logs, backups, or provider copies; deletion can make original state unreconstructable.
 
 ## Requirements
 
-- Node.js >= 22.18.0
-- PostgreSQL >= 14
-- `pg` (peer dependency)
+- Node.js matching the package engines: `^22.18.0 || ^24.11.0 || >=26.0.0`.
+- PostgreSQL 14 or later for persistence.
+- `pg` 8 as a peer dependency.
 
-## Next Steps
+## Next steps
 
-- [Aggregates](/docs/aggregates) — Full guide to defining and using aggregates
-- [Snapshots](/docs/snapshots) — Speed up expensive stream-derived calculations
-- [Subscriptions](/docs/subscriptions) — Catch up and tail events for fan-out consumers
-- [Transactional Outbox](/docs/outbox) — Relay events to message brokers with at-least-once delivery
-- [Projections](/docs/projections) — Build read models from the global event stream
-- [Crypto-Shredding](/docs/crypto-shredding) — GDPR-compliant PII encryption
-- [Schema Evolution](/docs/schema-evolution) — Evolve event shapes with upcasters
-- [API Reference](/docs/api-reference) — Complete API documentation
-- [Database Schema](/docs/database-schema) — PostgreSQL table structure
-- [Full-stack Example](/docs/full-stack-example) — Apollo, GraphQL, and live banking updates
+- [Aggregates](/docs/aggregates) — event maps and domain state.
+- [Aggregate design](/docs/playbooks/aggregate-design-and-stream-boundaries) — stream boundaries and concurrency.
+- [Snapshots](/docs/snapshots) — faster derived-state reads.
+- [Subscriptions](/docs/subscriptions) — catch-up and live event delivery.
+- [Transactional outbox](/docs/outbox) — at-least-once downstream delivery.
+- [Projections](/docs/projections) — read models and checkpoints.
+- [Data privacy](/docs/crypto-shredding) — encryption and deletion boundaries.
+- [Schema evolution](/docs/schema-evolution) — handling older payloads.
+- [API reference](/docs/api-reference) — supported methods and types.

@@ -1,9 +1,8 @@
 ---
 title: Snapshots
 description: Define event-backed snapshots for derived state without a separate snapshot table.
+icon: Camera
 ---
-
-# Snapshots
 
 Snapshots are **domain-defined performance helpers**. They cache calculated state that can be derived from events, then use that cached state as the replay base on future loads.
 
@@ -20,6 +19,8 @@ Use `defineSnapshot` when all of these are true:
 - The cached state is only a replay optimization, not a separately queried read model.
 
 Use projections instead when you need cross-stream views, query tables, filtering, search, or asynchronous read models.
+
+Choose `every` from measured replay latency, payload size, and write/storage cost. There is no universal event-count threshold such as 200 events.
 
 ### Snapshots vs Projections
 
@@ -149,6 +150,45 @@ Loading follows this process:
 
 Loading is read-only. Snapshot events are generated during appends when the snapshot is registered on the `EventStore`.
 
+## Encrypt Sensitive Snapshot State
+
+Snapshot encryption is **not inherited** from an aggregate or its source events. Snapshot maintenance replays decrypted data, so an unencrypted snapshot can persist PII in plaintext even when every source event is encrypted. Configure every sensitive path in the snapshot state explicitly:
+
+```typescript
+import { defineSnapshot } from "@lox-solutions/alvyn";
+
+type UserEvents = {
+  UserRegistered: { name: string; email: string };
+  UserRenamed: { name: string };
+};
+
+const UserProfile = defineSnapshot<
+  { name: string; email: string },
+  UserEvents
+>()({
+  streamPrefix: "User",
+  snapshotName: "UserProfile",
+  every: 50,
+  initialState: { name: "", email: "" },
+  evolve: {
+    UserRegistered: (_state, event) => ({
+      name: event.data?.name ?? "",
+      email: event.data?.email ?? "",
+    }),
+    UserRenamed: (state, event) => ({
+      ...state,
+      name: event.data?.name ?? "",
+    }),
+  },
+  encryption: {
+    cryptoKeyId: (entityId) => `user:${entityId}`,
+    encryptedFields: ["name", "email"],
+  },
+});
+```
+
+Register `UserProfile` in `EventStore.snapshots`, configure secrets, and create the same `user:${entityId}` key used for the source events before writing. Revoking that key tombstones the encrypted snapshot as well. When the latest snapshot is tombstoned, loading falls back to `initialState` and replays source history with null-safe handlers. This does not erase earlier plaintext snapshots or downstream copies; address those separately.
+
 ## Reserved Event Names
 
 Event types ending in `Snapshot` are reserved for Alvyn-generated snapshot events. Public `EventStore.append()` and aggregate append helpers reject user-supplied event names such as `OrderSnapshot`.
@@ -158,5 +198,7 @@ This prevents domain events from colliding with generated snapshot events in the
 ## Storage Model
 
 Snapshots are stored in the normal `{schema}.events` table. There is no `snapshots` table and no separate migration.
+
+Each generated snapshot appends a new row; previous snapshots remain in history. Storage grows with snapshot frequency and with the number of snapshot definitions per stream, rather than staying at one row per stream. `Aggregate.load()` still replays domain history; use the snapshot handle's `load()` to benefit from its cached state.
 
 Because snapshot events share the source stream, they also advance `stream_version`. Use `eventStore.getStreamVersion()` or aggregate `load().version` when calculating expected versions after snapshot loads.

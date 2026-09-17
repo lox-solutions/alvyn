@@ -1,13 +1,19 @@
 import { docs } from "collections/server";
-import { loader } from "fumadocs-core/source";
+import { loader, llms } from "fumadocs-core/source";
 import { lucideIconsPlugin } from "fumadocs-core/source/lucide-icons";
-import { docsContentRoute, docsImageRoute, docsRoute } from "./shared";
+import { docsImageRoute, docsRoute, getPageMarkdownUrl } from "./shared";
 
 // See https://fumadocs.dev/docs/headless/source-api for more info
 export const source = loader({
   baseUrl: docsRoute,
   source: docs.toFumadocsSource(),
   plugins: [lucideIconsPlugin()],
+});
+
+export const docsLlms = llms(source, {
+  renderPage: async (page) => `# ${page.data.title} (${page.url})
+
+${await page.data.getText("processed")}`,
 });
 
 export function getPageImage(page: (typeof source)["$inferPage"]) {
@@ -19,19 +25,4 @@ export function getPageImage(page: (typeof source)["$inferPage"]) {
   };
 }
 
-export function getPageMarkdownUrl(page: (typeof source)["$inferPage"]) {
-  const segments = [...page.slugs, "content.md"];
-
-  return {
-    segments,
-    url: `${docsContentRoute}/${segments.join("/")}`,
-  };
-}
-
-export async function getLLMText(page: (typeof source)["$inferPage"]) {
-  const processed = await page.data.getText("processed");
-
-  return `# ${page.data.title} (${page.url})
-
-${processed}`;
-}
+export { getPageMarkdownUrl };

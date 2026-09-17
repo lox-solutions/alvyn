@@ -1,0 +1,592 @@
+---
+title: Aggregate Design & Stream Boundary Playbook
+description: Architectural blueprints and decision frameworks for aggregate sizing, stream partitioning strategies, concurrency boundaries, and read-side optimization in Alvyn and PostgreSQL.
+icon: Layers
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Tab, Tabs } from "fumadocs-ui/components/tabs";
+
+When engineering event-sourced systems with **Alvyn** and **PostgreSQL**, determining where to draw aggregate boundaries is the single most critical architectural choice.
+
+An aggregate is **not** a database table, a document store record, or an arbitrary bucket of JSON. In Domain-Driven Design (DDD) and Event Sourcing, an aggregate is an **invariant boundary** and a **unit of transactional consistency**.
+
+Designing boundaries too small causes unbounded stream replays, connection pool exhaustion, and non-atomic multi-stream updates. Designing them too large leads to optimistic concurrency bottlenecks and bloated state rehydration.
+
+This playbook provides an architectural decision framework, stream partitioning strategies, an anti-pattern catalog derived from real-world production incidents, and concrete TypeScript blueprints for Alvyn.
+
+---
+
+## 1. The Fundamental Laws of Aggregate Design
+
+To design resilient event-sourced systems, adhere to three foundational principles:
+
+### Law 1: The Boundary of Transactional Atomicity
+
+In Alvyn, `store.append({ streamId, events, expectedVersion })` appends a batch to one stream atomically. Several streams can also share one PostgreSQL transaction through `store.withTransaction()` and low-level `append(input, { client })` calls:
+
+```typescript
+await store.withTransaction(async (client) => {
+  await store.append(
+    {
+      streamId: "Account-A",
+      expectedVersion: versionA,
+      events: [{ type: "Debited", data: { amount: 100 } }],
+    },
+    { client },
+  );
+  await store.append(
+    {
+      streamId: "Account-B",
+      expectedVersion: versionB,
+      events: [{ type: "Credited", data: { amount: 100 } }],
+    },
+    { client },
+  );
+});
+```
+
+This is a local database transaction, not distributed two-phase commit. Validate invariants, use OCC on every participating stream, and acquire stream locks in a consistent order. Aggregate append helpers do not accept `{ client }`; use the low-level API for this pattern and explicitly include any encryption settings. A single aggregate remains the simplest boundary for tightly coupled invariants, but it is not an API requirement for atomicity.
+
+### Law 2: Invariants Require In-Memory State
+
+A domain invariant is a rule that must always remain true (e.g., _"Total breaks cannot exceed gross working hours"_, _"An order cannot be cancelled once shipped"_).
+To validate an invariant before appending an event, the **Decider** must inspect the current aggregate state. If checking an invariant requires querying multiple streams across the database, the boundary is misaligned.
+
+### Law 3: Address Aggregate Roots, Never Child Entities
+
+Commands must be directed to the **Aggregate Root**. Unterlying child entities (e.g., an individual time entry inside a monthly timesheet, or an item inside an order) do not have independent stream identity.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Aggregate Root: Timesheet (timesheet-user123:2026-09)        │
+│                                                             │
+│   ┌───────────────────────────┐ ┌─────────────────────────┐ │
+│   │ Child Entity: TimeEntry A │ │ Child Entity: Entry B   │ │
+│   │ - date: 2026-09-02        │ │ - date: 2026-09-15      │ │
+│   │ - breaks: [Break 1]       │ │ - breaks: []            │ │
+│   └───────────────────────────┘ └─────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
+
+Clients address the Aggregate Root using a deterministic routing key (such as `userId` and `date`). Routing selects one stream without discovery; loading still costs a replay of its history.
+
+---
+
+## 2. Stream Partitioning Strategies
+
+Choosing how to partition event streams determines your system's scalability, concurrency limits, and query complexity.
+
+### Comparison Matrix
+
+| Dimension                 | 1. Fine-Grained (Item Stream)                     | 2. Time-Bucketed (Cycle Stream)                       | 3. Infinite Lifetime (Entity Stream)          |
+| :------------------------ | :------------------------------------------------ | :---------------------------------------------------- | :-------------------------------------------- |
+| **Stream Key Format**     | `item-${itemId}`                                  | `parent-${parentId}:${period}`                        | `entity-${entityId}`                          |
+| **Real-World Examples**   | Individual calendar entry, comment, sensor ping   | Monthly timesheet, daily cash register, fiscal ledger | Customer account, subscription, shopping cart |
+| **Stream Event Count**    | Very low (1–5 events)                             | Controlled (30–150 events)                            | Unbounded (thousands over years)              |
+| **Batch Atomicity**       | Requires a shared transaction client              | Single-stream batch append                            | Single-stream batch append                    |
+| **Read Complexity**       | Cross-item queries need discovery or a read model | One targeted stream; replay cost varies               | One targeted stream; replay cost grows        |
+| **Concurrency Conflicts** | Very low (isolated per item)                      | Low (per-user / per-period)                           | High (every action competes for stream)       |
+| **Snapshot Requirement**  | Usually unnecessary for short histories           | Measure replay cost                                   | Consider when measured replay is too costly   |
+
+---
+
+### Strategy A: Fine-Grained Streams (`item-${id}`)
+
+Each entity owns its own stream.
+
+#### When to Use
+
+- Entities with completely independent lifecycles.
+- High concurrent writes from different actors on sibling entities (e.g., comments on a viral post).
+- When entities are rarely or never queried as an aggregated batch in the write model.
+
+#### Trade-Offs & Pitfalls
+
+- **The Scan Trap:** Querying "all items for user X this month" requires either listing all streams (`store.listStreams({ prefix })`) or maintaining a relational read model.
+- **Multi-Item Coordination:** Independent appends are not atomic together. Use a shared PostgreSQL transaction client and OCC on each stream when a command spans items.
+
+---
+
+### Strategy B: Time-Bucketed Streams (`entity-${id}:${yearMonth}`)
+
+Group time-series items into natural domain cycles (e.g., month, week, or fiscal year).
+
+#### When to Use
+
+- Workspaces with cyclical reporting or closing periods (e.g., payroll timesheets, expense reports, billing cycles).
+- When users frequently batch-create, adjust, or override entries for a period.
+- When period totals (e.g., total hours worked, monthly cap) represent hard domain invariants.
+
+#### Trade-Offs & Pitfalls
+
+- **Boundary Transitions:** Operations that span the boundary (e.g., a night shift starting at 22:00 on October 31 and ending at 06:00 on November 1) must follow a clear domain rule (e.g., attribution by start timestamp).
+- **Concurrency Scope:** Concurrent writes to different days within the same month share the same stream version. For single-user domains (like personal timesheets), this contention is negligible.
+
+---
+
+### Strategy C: Infinite Lifetime Streams (`entity-${id}`)
+
+A single stream represents the entire lifetime of an aggregate.
+
+#### When to Use
+
+- Entities with a clear lifecycle end (e.g., an Order: Placed $\rightarrow$ Paid $\rightarrow$ Shipped $\rightarrow$ Delivered).
+- Low-frequency state updates over time (e.g., user profiles, customer master data).
+
+#### Trade-Offs & Pitfalls
+
+- **Rehydration Degradation:** Replaying an aggregate with thousands of events increases request latency and CPU overhead.
+- **Mitigation:** Consider Alvyn snapshots (`defineSnapshot`) when measurements justify caching every $N$ handled events; read through the snapshot handle to use that cache.
+
+---
+
+## 3. Anti-Pattern Catalog from the Trenches
+
+The following failure modes illustrate real-world anti-patterns identified in production event-sourced systems and security reviews.
+
+### Anti-Pattern 1: The "ListStreams on Request" Trap
+
+<Callout type="error">
+  **The Bug:** Listing all streams with `store.listStreams({prefix})` on user
+  read requests and replaying each stream concurrently with `Promise.all()`.
+</Callout>
+
+```typescript
+// ❌ ANTI-PATTERN: Scans entire database history on every HTTP GET
+export async function getTimesheetForWeek(
+  userId: string,
+  start: Date,
+  end: Date,
+) {
+  // Lists EVERY time-entry stream across all users and all years!
+  const streamIds = await store.listStreams({ prefix: "time-entry" });
+
+  // Unbounded Promise.all fan-out: 50,000 streams = 50,000 database queries
+  const allEntries = await Promise.all(
+    streamIds.map((id) =>
+      timeEntryAggregate.load(store, id.slice("time-entry-".length)),
+    ),
+  );
+
+  // In-memory filtering after exhausting the database connection pool
+  return allEntries.filter(
+    (e) =>
+      e.state &&
+      e.state.userId === userId &&
+      e.state.date >= start &&
+      e.state.date <= end,
+  );
+}
+```
+
+#### Why It Fails
+
+- **Complexity:** $O(N)$ where $N$ represents all events ever recorded in company history.
+- **Resource Exhaustion:** Rapidly exhausts the PostgreSQL connection pool, blocks the event loop, and causes cascading timeouts across unrelated services.
+
+#### The Fix
+
+Partition by user and period (`timesheet-${userId}:${yearMonth}`). A week query touches at most **one or two streams**:
+
+```typescript
+// Target one month directly; a week spanning months needs both buckets
+export async function getTimesheetForWeek(userId: string, yearMonth: string) {
+  const { state } = await timesheetAggregate.load(
+    store,
+    `${userId}:${yearMonth}`,
+  );
+  return Object.values(state?.entries ?? {});
+}
+```
+
+---
+
+### Anti-Pattern 2: The Partial Batch Disaster (Dirty Overrides)
+
+<Callout type="error">
+  **The Bug:** Discarding existing entries in a loop before appending
+  replacement entries sequentially across individual streams.
+</Callout>
+
+```typescript
+// ❌ ANTI-PATTERN: Non-atomic multi-stream updates
+export async function overrideWeekEntries(
+  userId: string,
+  newEntries: EntryInput[],
+) {
+  const existingEntries = await getExistingEntries(userId);
+
+  // Phase 1: Discard old entries immediately
+  for (const old of existingEntries) {
+    await store.append({
+      streamId: `time-entry-${old.id}`,
+      expectedVersion: 0,
+      events: [{ type: "TimeEntryDiscarded", data: {} }],
+    });
+  }
+
+  // Phase 2: Insert new entries one by one
+  for (const next of newEntries) {
+    // If this fails (network drop, validation error, process crash):
+    // Old entries are already discarded, replacement entries are half-persisted.
+    // Result: IRREVERSIBLE DATA LOSS.
+    await store.append({
+      streamId: `time-entry-${next.id}`,
+      expectedVersion: -1,
+      events: [{ type: "TimeEntryBooked", data: next }],
+    });
+  }
+}
+```
+
+#### The Fix
+
+Consolidate the batch inside a single Aggregate Root. The Decider computes all discard and book events in memory, and Alvyn appends them in **one atomic database commit**:
+
+```typescript
+// ✅ BEST PRACTICE: 100% atomic batch append
+export async function overrideWeekEntries(
+  userId: string,
+  yearMonth: string,
+  newEntries: TimesheetEntry[],
+) {
+  const entityId = `${userId}:${yearMonth}`;
+  const aggregate = await timesheetAggregate.load(store, entityId);
+
+  // In-memory pure function generates ALL events (discards + bookings)
+  const state = aggregate.state ?? { userId, yearMonth, entries: {} };
+  const events = decideBatchOverride(state, newEntries);
+  if (events.length === 0) return;
+
+  // Single PostgreSQL commit: All succeed or none succeed
+  await timesheetAggregate.append(store, {
+    entityId,
+    expectedVersion: aggregate.version === 0 ? -1 : aggregate.version,
+    events,
+  });
+}
+```
+
+---
+
+### Anti-Pattern 3: "CRUD over Event Sourcing" (Anemic Property Bags)
+
+<Callout type="warn">
+  **The Symptom:** Emitting generic `EntityUpdated` events containing raw
+  dictionaries of modified fields instead of intention-revealing domain events.
+</Callout>
+
+```typescript
+// ❌ ANEMIC: Generic property-bag update
+{
+  type: "TimeEntryUpdated",
+  data: {
+    breaks: [{ startTime: "12:00", durationMinutes: 30 }],
+    durationMinutes: 450
+  }
+}
+```
+
+#### Why It Fails
+
+- **Audit Loss:** Regulators, compliance auditors, and downstream projectors cannot determine _what_ happened. Did the user take a break? Correct a typo? Shorten work hours?
+- **Concurrent Invariant Breaches:** If two clients submit partial property updates, applying them leads to inconsistent states (e.g., negative net duration).
+
+#### The Fix
+
+Emit specific, intention-revealing domain events:
+
+```typescript
+// ✅ INTENTION-REVEALING DOMAIN EVENTS
+// 1. When a break is recorded:
+{
+  type: "TimeEntryBreakRecorded",
+  data: { entryId: "e1", breakId: "b1", startTime: "12:00", durationMinutes: 30 }
+}
+
+// 2. When working hours are corrected:
+{
+  type: "TimeEntryWorkingHoursCorrected",
+  data: { entryId: "e1", startTime: "08:00", endTime: "16:30", durationMinutes: 480 }
+}
+```
+
+---
+
+### Anti-Pattern 4: The False Hope of Snapshots
+
+<Callout type="warn">
+  **The Misconception:** Believing that adding snapshots to fine-grained item
+  streams resolves query performance problems.
+</Callout>
+
+Snapshots cache the materialized state of a **single stream** to prevent replaying long event histories (e.g., replaying event 1 to 1,000).
+
+Snapshots **do not help** when your query needs to aggregate data across hundreds or thousands of different streams. Querying 1,000 streams with snapshots still performs 1,000 database read operations.
+
+- Use **Time-Bucketing** to group related events into a single stream.
+- Use **CQRS Projections** (`defineProjection`) to index cross-stream search queries into relational tables.
+
+---
+
+## 4. Read-Side Strategy: Replay vs. Snapshots vs. Projections
+
+Choose the simplest query strategy that fulfills your performance and consistency requirements:
+
+### Strategy Comparison
+
+| Strategy                             | When to Choose                                                                       | Storage Cost                 | Read Latency                      |
+| :----------------------------------- | :----------------------------------------------------------------------------------- | :--------------------------- | :-------------------------------- |
+| **In-Memory Replay**                 | Reading single aggregates or bounded cycles (e.g. current month timesheet).          | Zero extra storage           | Depends on history and handlers   |
+| **Snapshots (`defineSnapshot`)**     | Streams whose measured replay cost justifies caching.                                | Append-only snapshot history | Latest snapshot plus recent delta |
+| **Projections (`defineProjection`)** | Complex cross-aggregate queries: company-wide dashboards, status filters, SQL joins. | Relational table storage     | Single indexed SQL query          |
+
+---
+
+## 5. End-to-End Blueprint: Time-Bucketed Timesheet Aggregate
+
+Below is a complete implementation blueprint showing a time-bucketed aggregate in Alvyn with deterministic routing and atomic batch mutations.
+
+<Tabs items={["Events & State", "Aggregate Definition", "Decider Logic", "Service Handler"]}>
+
+<Tab value="Events & State">
+```typescript
+// schema.ts
+export interface TimeEntryBreak {
+  id: string;
+  startTime?: string | null;
+  endTime?: string | null;
+  durationMinutes: number;
+}
+
+export interface TimesheetEntry {
+  id: string;
+  userId: string;
+  date: string; // YYYY-MM-DD
+  startTime?: string | null;
+  endTime?: string | null;
+  durationMinutes: number;
+  breaks: TimeEntryBreak[];
+  note?: string | null;
+  billable: boolean;
+}
+
+export interface TimesheetState {
+  userId: string;
+  yearMonth: string; // YYYY-MM
+  entries: Record<string, TimesheetEntry>;
+}
+
+export type TimesheetEvents = {
+  TimeEntryBooked: TimesheetEntry;
+  TimeEntryBreakRecorded: { entryId: string; break: TimeEntryBreak };
+  TimeEntryWorkingHoursCorrected: { entryId: string; startTime?: string | null; endTime?: string | null; durationMinutes: number };
+  TimeEntryDiscarded: { entryId: string };
+};
+
+export type TimesheetEvent = {
+  [K in keyof TimesheetEvents]: { type: K; data: TimesheetEvents[K] };
+}[keyof TimesheetEvents];
+```
+</Tab>
+
+<Tab value="Aggregate Definition">
+```typescript
+// aggregate.ts
+import { defineAggregate } from "@lox-solutions/alvyn";
+import type { TimesheetState, TimesheetEvents } from "./schema";
+
+export const timesheetAggregate = defineAggregate<TimesheetState, TimesheetEvents>()({
+  streamPrefix: "timesheet",
+  evolve: {
+    TimeEntryBooked: (state, event) => {
+      const base = state ?? { userId: "", yearMonth: "", entries: {} };
+      if (!event.data) return base;
+      return {
+        userId: event.data.userId,
+        yearMonth: event.data.date.slice(0, 7),
+        entries: { ...base.entries, [event.data.id]: event.data },
+      };
+    },
+    TimeEntryBreakRecorded: (state, event) => {
+      const data = event.data;
+      if (!data || !state?.entries[data.entryId]) return state;
+      const entry = state.entries[data.entryId];
+      return { ...state, entries: { ...state.entries, [data.entryId]: {
+        ...entry,
+        breaks: [...entry.breaks, data.break],
+        durationMinutes: entry.durationMinutes - data.break.durationMinutes,
+      } } };
+    },
+    TimeEntryWorkingHoursCorrected: (state, event) => {
+      const data = event.data;
+      if (!data || !state?.entries[data.entryId]) return state;
+      return { ...state, entries: { ...state.entries, [data.entryId]: {
+        ...state.entries[data.entryId],
+        startTime: data.startTime,
+        endTime: data.endTime,
+        durationMinutes: data.durationMinutes,
+      } } };
+    },
+    TimeEntryDiscarded: (state, event) => {
+      if (!event.data || !state) return state;
+      const entries = { ...state.entries };
+      delete entries[event.data.entryId];
+      return { ...state, entries };
+    },
+  },
+});
+
+````
+</Tab>
+
+<Tab value="Decider Logic">
+```typescript
+// decider.ts
+import type { TimesheetState, TimesheetEvent, TimesheetEntry } from "./schema";
+
+function calculateDuration(start: string, end: string): number {
+  const minutes = (time: string) => {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new Error("Invalid time");
+    const [hours, mins] = time.split(":").map(Number);
+    return hours * 60 + mins;
+  };
+  const difference = minutes(end) - minutes(start);
+  return difference < 0 ? difference + 24 * 60 : difference;
+}
+
+export function decideBookTime(
+  state: TimesheetState,
+  entry: TimesheetEntry
+): TimesheetEvent[] {
+  // Invariant 1: Ensure entry belongs to this month's bucket
+  if (entry.userId !== state.userId || entry.date.slice(0, 7) !== state.yearMonth) {
+    throw new Error(`Entry date ${entry.date} does not belong to bucket ${state.yearMonth}`);
+  }
+
+  if (!Number.isFinite(entry.durationMinutes) || entry.durationMinutes < 0 ||
+      entry.breaks.some((b) => !Number.isFinite(b.durationMinutes) || b.durationMinutes < 0)) {
+    throw new Error("Durations must be finite and non-negative.");
+  }
+
+  // Invariant 2: Gross - Breaks = Net duration check
+  if (entry.startTime && entry.endTime) {
+    const grossMinutes = calculateDuration(entry.startTime, entry.endTime);
+    const breakMinutes = entry.breaks.reduce((acc, b) => acc + b.durationMinutes, 0);
+    if (grossMinutes - breakMinutes !== entry.durationMinutes) {
+      throw new Error("Duration must equal gross time minus total break time.");
+    }
+  }
+
+  return [{ type: "TimeEntryBooked", data: entry }];
+}
+
+export function decideBatchOverride(
+  state: TimesheetState,
+  newEntries: TimesheetEntry[]
+): TimesheetEvent[] {
+  const events: TimesheetEvent[] = [];
+
+  // 1. Identify distinct days touched by the new batch
+  const touchedDates = new Set(newEntries.map((e) => e.date));
+
+  // 2. Discard existing entries for those specific days
+  for (const [id, existing] of Object.entries(state.entries)) {
+    if (touchedDates.has(existing.date)) {
+      events.push({ type: "TimeEntryDiscarded", data: { entryId: id } });
+    }
+  }
+
+  // 3. Book replacement entries
+  for (const entry of newEntries) {
+    events.push(...decideBookTime(state, entry));
+  }
+
+  return events;
+}
+````
+
+</Tab>
+
+<Tab value="Service Handler">
+```typescript
+// service.ts
+import { timesheetAggregate } from "./aggregate";
+import { decideBatchOverride, decideBookTime } from "./decider";
+import type { EventStore } from "@lox-solutions/alvyn";
+import type { TimesheetEntry } from "./schema";
+
+export class TimesheetService {
+  constructor(private eventStore: EventStore) {}
+
+async trackBatch(
+userId: string,
+yearMonth: string,
+entries: TimesheetEntry[],
+override: boolean,
+) {
+if (entries.length > 31) throw new Error("Batch exceeds 31 entries.");
+if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(yearMonth)) throw new Error("Invalid month");
+if (new Set(entries.map((e) => e.id)).size !== entries.length) {
+throw new Error("Duplicate entry IDs in batch.");
+}
+
+    const entityId = `${userId}:${yearMonth}`;
+    const aggregate = await timesheetAggregate.load(this.eventStore, entityId);
+    const state = aggregate.state ?? { userId, yearMonth, entries: {} };
+    for (const entry of entries) {
+      const existing = state.entries[entry.id];
+      if (existing && (!override || existing.date !== entry.date)) {
+        throw new Error("Entry ID already used.");
+      }
+    }
+    const events = override
+      ? decideBatchOverride(state, entries)
+      : entries.flatMap((e) => decideBookTime(state, e));
+    if (events.length === 0) return;
+
+    await timesheetAggregate.append(this.eventStore, {
+      entityId,
+      expectedVersion: aggregate.version === 0 ? -1 : aggregate.version,
+      events,
+    });
+
+}
+}
+
+```
+</Tab>
+
+</Tabs>
+
+The aggregate derives the `timesheet-` prefix itself: pass only `userId:yearMonth` as `entityId`. Empty streams load as `null`; the service initializes command state and uses `-1` for create-only OCC (`0` disables the check). This blueprint covers batch booking/replacement, not authorization, full calendar validation, or commands for break/hour corrections. Validate those commands before emitting events; the time helper assumes wall-clock minutes and does not model DST or shifts lasting 24 hours or more.
+
+---
+
+## 6. Edge Cases & Boundary Transitions
+
+### Midnight & Month-End Rollovers
+What happens when an entry spans across midnight at the end of a time bucket (e.g., October 31, 22:00 to November 1, 06:00)?
+
+In event sourcing, adopt **Shift-Start Attribution** (the industry standard in ERP and payroll systems):
+1. **Rule:** An unbroken shift belongs to the date and time bucket in which it **started**.
+2. **Stream Allocation:** The shift starting on October 31 at 22:00 is recorded in `timesheet-${userId}:2026-10`.
+3. **Query Coverage:**
+   - A monthly report for October captures all 8 hours of the shift.
+   - For high-precision range queries overlapping bucket boundaries (e.g., November 1–7), the query inspects whether the final day of the preceding bucket contains a shift that extends past midnight.
+
+---
+
+## 7. Architectural Review Checklist
+
+Before approving or deploying an aggregate design in Alvyn, verify every point on this checklist:
+
+- [ ] **Atomicity:** Are coupled events appended in one stream batch, or do all low-level appends share a transaction client with OCC on each stream?
+- [ ] **Deterministic Routing ($O(1)$):** Can the service derive the `streamId` directly from command inputs (e.g. `userId` + `date.slice(0, 7)`) without querying the database?
+- [ ] **No Unbounded Scans:** Have you eliminated calls to `store.listStreams()` inside synchronous request/response HTTP handlers?
+- [ ] **Discrete Domain Events:** Are events named after business facts (`TimeEntryBreakRecorded`) rather than generic CRUD mutations (`EntityUpdated`)?
+- [ ] **Batch Size Constraints:** Does the API enforce hard upper bounds on batch array inputs before touching the event store?
+- [ ] **Optimistic Locking:** Does `store.append()` specify `expectedVersion` to prevent lost updates from concurrent writers?
+- [ ] **Decoupled Search:** Are complex filters, cross-user rollups, and full-text searches delegated to CQRS read models (`defineProjection`) rather than aggregate replays?
+```

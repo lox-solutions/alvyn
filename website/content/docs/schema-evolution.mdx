@@ -1,9 +1,8 @@
 ---
 title: Schema Evolution
 description: Read-time upcasters that transform old event schemas into newer versions without modifying stored data.
+icon: GitBranch
 ---
-
-# Schema Evolution (Upcasters)
 
 Upcasters transform old event schemas into newer versions **at read time**. The stored event in the database is **never modified** — transformations happen in memory during `load()`.
 
@@ -151,7 +150,7 @@ If `schemaVersion` is omitted, it defaults to `1`.
 
 ## Best Practices
 
-1. **Keep upcasters pure** — Simple data transformations with no side effects or async operations.
+1. **Keep upcasters deterministic** — No current date, randomness, external lookups, side effects, or async operations. Derive values from stored data or use a documented fixed default (such as `null` for an unknown historical timestamp).
 2. **Never skip versions** — If you have v1, v2, and v3, you need both v1->v2 and v2->v3. Don't create v1->v3 shortcuts.
 3. **Co-locate with aggregates** — Define upcasters in the aggregate definition.
 4. **Register at startup** — All upcasters must be registered before any read operations.
@@ -171,8 +170,8 @@ const Order = defineAggregate<OrderState, OrderEvents>()({
   evolve: {
     OrderPlaced: (state, event) => ({
       ...state,
-      total: event.data?.total ?? state.total,
-      currency: event.data?.currency ?? state.currency,
+      total: event.data?.total ?? state?.total ?? 0,
+      currency: event.data?.currency ?? state?.currency ?? "EUR",
     }),
   },
 
@@ -222,11 +221,11 @@ await Order.append(eventStore, {
 
 ### Step 5: Deploy
 
-Upcasters are backward-compatible by design. The deployment order does not matter:
+Upcasters let new readers understand old data; they do not make old readers forward-compatible. Optional chaining cannot repair renamed fields, changed types, or changed business meaning.
 
-- New code reads old events -> upcasted transparently
-- Old code reads old events -> works as before
-- Old code reads new v2 events -> use optional chaining in evolve handlers for safety
+1. Deploy readers and upcasters that understand both versions while writers still emit v1. Include projections, subscription consumers, and rollback candidates; raw subscriptions and projections do not run upcasters automatically.
+2. Verify old-history replay and mixed-version fixtures, then enable v2 writes only after every required reader is compatible.
+3. Keep the upcasters for historical data. After v2 writes begin, rollback only to a reader version that understands v2, or use a deliberately designed compatibility bridge.
 
 ## Common Migration Scenarios
 

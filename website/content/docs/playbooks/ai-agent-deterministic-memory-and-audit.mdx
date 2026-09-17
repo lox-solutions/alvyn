@@ -1,0 +1,72 @@
+---
+title: Agent History, Replay & Audit
+description: Record agent workflow events in TypeScript and PostgreSQL, reconstruct earlier state, and understand the limits of replay, privacy, and external effects.
+icon: Bot
+---
+
+An agent run is an approachable way to learn event history: record a goal, a tool request, a tool result, and a final response. The same Alvyn primitives work for orders, approvals, billing, and other domain applications. You do not need to adopt CQRS or replace all your CRUD tables.
+
+**Replay reconstructs application state from recorded events using a reducer. It does not rerun a model deterministically.** Only the inputs, outputs, and actions your application explicitly instruments are recorded; hidden model thoughts are not available to the store.
+
+## Record facts, not inferred thoughts
+
+An application can model its workflow with these event contracts:
+
+```typescript
+type AgentEvents = {
+  GoalReceived: { goal: string };
+  ToolInvoked: { callId: string; tool: string };
+  ToolCompleted: { callId: string; result: string };
+  RunCompleted: { output: string };
+  RunFailed: { code: string };
+};
+```
+
+Define an evolve handler for every event type. The first handler receives `null` at runtime, even though the library's handler parameter is typed as the state type. `GoalReceived` must therefore create the entire state; other handlers need a null-safe baseline. An empty aggregate load has `state: null` and `version: 0`. Explicitly create a new stream with **`expectedVersion: -1`**, not the empty-load version. For an existing stream, use its loaded version or the preceding append's `toVersion`.
+
+See the [introduction](/docs) for a minimal persistence snippet. In your integration, await each append: `GoalReceived`, `ToolInvoked` with a stable call ID, then execute the tool, record `ToolCompleted` with that same ID, and finally `RunCompleted`. Decide how to handle persistence failures before executing external actions.
+
+Evolve handlers are pure state transformations, not command validation or tool executors. Production command handling must additionally validate payloads, allowed transitions, authorization, and call/result correlation before appending. A database transaction cannot atomically execute a remote tool.
+
+## Reconstruct an earlier state
+
+Aggregate `load` returns current state. To inspect an earlier version, load events with `EventStore.load` or `loadFrom` and pass the selected prefix through an application-defined reducer.
+
+Without snapshots, start at `null` and apply ordered events only while `streamVersion <= version`, without calling a model or tool. Handle unknown event types explicitly. For large streams, use bounded `loadFrom(streamId, { fromVersion, maxEvents })` pages, where `fromVersion` is inclusive; advance to the last returned `streamVersion + 1`. Carry reducer state between pages and stop at the target version.
+
+A version is an unambiguous stream boundary. A wall-clock timestamp is not necessarily causal order across streams or a commit-time boundary; if filtering on `createdAt` or CloudEvents `time`, specify those semantics yourself. There are no `toTime` or `toVersion` aggregate-load options in this recipe.
+
+Reconstruction depends on the retained events, reducer version, upcasters, and decryptable data. Changing a reducer can change the result. Re-running a model with recorded inputs is a new experiment, not replay of the original response; store it under a separate run ID.
+
+## Integrating a model or orchestration framework
+
+Alvyn is framework-neutral. This guide does not provide a version-specific AI SDK integration, and Alvyn has **no existing LangGraph adapter**. An application integration must bridge the framework's lifecycle to event appends.
+
+- Pin the model SDK and provider package versions and consult their matching documentation before implementing callbacks, tool schemas, stop conditions, or usage fields. Do not assume API names are interchangeable across AI SDK releases.
+- Instrument the actual request and response boundaries: model/provider identifiers, prompt/template version, allowed input context, tool call IDs, sanitized arguments and outputs, finish reason, errors, and provider-reported usage when available. Do not invent token counts or a rationale the model did not expose.
+- Await asynchronous logging writes, bound the number of steps, and choose whether logging failure stops execution. Background callbacks that are not awaited can lose records.
+- Serialize appends per run or explicitly handle optimistic concurrency conflicts. Parallel tool callbacks must not share a mutable cached version without coordination. Reload and re-evaluate commands after a conflict; do not blindly repeat external effects.
+- Keep operational logs and metrics for persistence failures too: if the database is unavailable, appending `RunFailed` can also fail. Preserve the original exception and report the logging failure separately.
+
+## External effects and retries
+
+For a real tool, first persist intent with a stable operation ID, then call the tool with that ID as its idempotency key when supported, then persist the result. A crash after the remote action but before the result append leaves an uncertain outcome. Reconcile using the remote operation ID or a status lookup before retrying. Never record success merely because a request was sent.
+
+Alvyn append idempotency applies to database writes; it does not deduplicate payments, emails, or model requests. Transactional outbox messages are atomic with event appends, but delivery is **at least once**. Consumers need durable deduplication and external systems need idempotency or reconciliation. Competing-worker locks are not an exactly-once external-execution guarantee.
+
+## Privacy, snapshots, and audit limits
+
+For personal data, minimize collection and configure encrypted fields and key management explicitly. Alvyn supports per-entity envelope encryption and key revocation, not automatic privacy compliance.
+
+After revocation, affected reads may return a tombstone with `data: null`. A historical reducer must handle this explicitly rather than pretending to reproduce the original private state; null-safe aggregate handlers merely avoid crashing and do not restore missing facts. Previously loaded plaintext is not removed from application memory.
+
+Snapshots are separate stored events and can contain copied sensitive state. Configure their encryption separately; source-event encryption does not automatically protect every derived copy. Projections, exports, logs, caches, provider retention, backups, and retained keys need their own deletion and retention policy. Revoking an active key does not erase plaintext copies or make old backups with recoverable keys harmless. Do not promise identical replay after deletion.
+
+An append-oriented application API is not tamper-proof storage against a privileged database operator. Access controls, role separation, backups, retention, monitoring, and any required independent integrity evidence remain deployment responsibilities. Structured event history can support an audit process, including an applicable AI Act logging assessment, but it neither automatically instruments the application nor establishes legal compliance. Determine applicable obligations with qualified reviewers rather than treating this recipe as a regulatory checklist.
+
+## Next steps
+
+- [Aggregates](/docs/aggregates): domain state and typed events.
+- [Transactional outbox](/docs/outbox): reliable delivery with retry-aware consumers.
+- [Snapshots](/docs/snapshots): performance helpers and derived-state lifecycle.
+- [Data privacy](/docs/crypto-shredding): encryption and key management.

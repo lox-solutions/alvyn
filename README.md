@@ -8,9 +8,10 @@
 
 # Alvyn
 
-> **Beta** — Alvyn is under active development. The API may change before v1.0. We encourage contributions and feedback to help make this a battle-tested library.
+> **TypeScript event history for agent workflows and domain applications.**
+> Built on PostgreSQL — no separate event broker required.
 
-A production-grade event sourcing library for **Node.js** and **PostgreSQL**. Type-safe aggregates, event-backed snapshots, GDPR crypto-shredding, projections, transactional outbox, and schema evolution — all in one package.
+Alvyn is a **TypeScript library for event history on PostgreSQL**. Record meaningful facts, rebuild state, and inspect how an application reached its current state. AI agents are an approachable starting point, not the only target: orders, approvals, billing, and other domain applications use the same typed aggregates, replay, snapshots, projections, outbox, and schema evolution. No prerequisite CQRS knowledge or all-at-once rewrite is needed.
 
 [![CI](https://github.com/lox-solutions/alvyn/actions/workflows/ci.yml/badge.svg)](https://github.com/lox-solutions/alvyn/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@lox-solutions/alvyn)](https://www.npmjs.com/package/@lox-solutions/alvyn)
@@ -19,14 +20,13 @@ A production-grade event sourcing library for **Node.js** and **PostgreSQL**. Ty
 
 ## Why Alvyn?
 
-Most event sourcing libraries for Node.js are either too minimal (just an append/read layer) or too opinionated (forcing a specific framework). Alvyn sits in the middle — it gives you the building blocks for production event-sourced systems without dictating your application architecture.
+Keep your current application and add history where it matters:
 
-- **PostgreSQL only** — No abstraction over multiple databases. This lets Alvyn use advisory locks, `FOR UPDATE SKIP LOCKED`, transactional outbox, and schema isolation as first-class features.
-- **TypeScript first** — `defineAggregate` and `defineProjection` use curried generics for full type inference. No casting, no `any`.
-- **Event-backed snapshots** — Define domain-specific performance snapshots that are stored as generated events in the optimized stream.
-- **Idempotency built-in** — Pass an optional `idempotencyKey` on stream appends to safely deduplicate network retries and command replays without duplicate events, outbox messages, or snapshot recalculations.
-- **GDPR built-in** — Per-entity AES-256-GCM envelope encryption with key revocation. Revoking a key makes all PII for that entity cryptographically irrecoverable.
-- **CloudEvents v1.0.2** — Every stored event complies with the CloudEvents specification.
+1. **Explain changes**: record goals, tool requests and results, or business facts rather than only overwriting current state.
+2. **Reconstruct state**: apply a reducer to retained events, including an explicit historical prefix. Replay does not deterministically rerun a model.
+3. **Use PostgreSQL**: typed aggregates, subscriptions, projections, and transactional outbox without a mandatory separate broker.
+4. **Control privacy**: configure per-entity encryption and key revocation. Snapshots, projections, logs, backups, and provider copies need separate protection and retention policies; deletion can prevent original-state reconstruction.
+5. **Support review**: instrument the actions you need to inspect. Alvyn does not capture hidden thoughts, automatically establish regulatory compliance, or provide tamper-proof evidence against privileged database operators.
 
 ## Install
 
@@ -40,16 +40,72 @@ pnpm add @lox-solutions/alvyn pg
 
 ## Quick Start
 
+### 1. Agent history
+
+This minimal application event contract records a goal and a known result in PostgreSQL. It illustrates persistence, not a model or tool integration:
+
 ```typescript
 import { Pool } from "pg";
 import { EventStore, defineAggregate } from "@lox-solutions/alvyn";
 
-// 1. Create the event store
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const eventStore = new EventStore({ pool });
-await eventStore.setup(); // idempotent — safe on every startup
+type AgentEvents = {
+  GoalReceived: { goal: string };
+  RunCompleted: { output: string };
+};
+type AgentState = { goal: string | null; output: string | null };
+const AgentRun = defineAggregate<AgentState, AgentEvents>()({
+  streamPrefix: "AgentRun",
+  evolve: {
+    GoalReceived: (_state, event) => ({
+      goal: event.data?.goal ?? null,
+      output: null,
+    }),
+    RunCompleted: (state, event) => ({
+      goal: state?.goal ?? null,
+      output: event.data?.output ?? null,
+    }),
+  },
+});
 
-// 2. Define an aggregate
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+try {
+  const eventStore = new EventStore({ pool });
+  await eventStore.setup();
+  const runId = crypto.randomUUID();
+  const created = await AgentRun.append(eventStore, {
+    entityId: runId,
+    expectedVersion: -1,
+    events: [
+      { type: "GoalReceived", data: { goal: "Find the returns policy" } },
+    ],
+  });
+  await AgentRun.append(eventStore, {
+    entityId: runId,
+    expectedVersion: created.toVersion,
+    events: [
+      {
+        type: "RunCompleted",
+        data: { output: "Returns accepted for 30 days." },
+      },
+    ],
+  });
+  console.log((await AgentRun.load(eventStore, runId)).state);
+} finally {
+  await pool.end();
+}
+```
+
+The first handler receives `null` at runtime: initialize the entire state and define every EventMap handler. An empty aggregate loads as `state: null`, `version: 0`; explicitly create a stream with `expectedVersion: -1`, then use its loaded version or append `toVersion`. The snippet records known facts; it does not execute a tool.
+
+External effects need their own idempotency keys and reconciliation; event append deduplication does not make tool execution exactly once. See the [Agent History, Replay & Audit playbook](https://alvyn.dev/docs/playbooks/ai-agent-deterministic-memory-and-audit) for logging, privacy, and integration boundaries.
+
+### 2. Classic Domain Aggregate (Order Processing)
+
+```typescript
+import { Pool } from "pg";
+import { EventStore, defineAggregate } from "@lox-solutions/alvyn";
+
+// Define an aggregate
 type OrderEvents = {
   OrderPlaced: { customerId: string; total: number };
   OrderShipped: { trackingNumber: string };
@@ -63,22 +119,69 @@ type OrderState = {
 const Order = defineAggregate<OrderState, OrderEvents>()({
   streamPrefix: "Order",
   evolve: {
-    OrderPlaced: (state, event) => ({
-      ...state,
+    OrderPlaced: (_state, event) => ({
       status: "placed",
       total: event.data?.total ?? 0,
     }),
-    OrderShipped: (state) => ({ ...state, status: "shipped" }),
+    OrderShipped: (state) => ({ total: state?.total ?? 0, status: "shipped" }),
   },
 });
 
-// 3. Use it
-const order = await Order.load(eventStore, "order-123");
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+try {
+  const eventStore = new EventStore({ pool });
+  await eventStore.setup();
+  const orderId = crypto.randomUUID();
+  const placed = await Order.append(eventStore, {
+    entityId: orderId,
+    expectedVersion: -1,
+    events: [
+      { type: "OrderPlaced", data: { customerId: "customer-1", total: 100 } },
+    ],
+  });
+  await Order.append(eventStore, {
+    entityId: orderId,
+    expectedVersion: placed.toVersion,
+    events: [{ type: "OrderShipped", data: { trackingNumber: "TRACK-456" } }],
+  });
+  console.log((await Order.load(eventStore, orderId)).state);
+} finally {
+  await pool.end();
+}
+```
 
-await Order.append(eventStore, {
-  entityId: "order-123",
-  expectedVersion: order.version,
-  events: [{ type: "OrderShipped", data: { trackingNumber: "TRACK-456" } }],
+### Explicit Transactions & Stream Locking
+
+For critical write workflows that require early serialization and authoritative database time (such as time-sensitive auctions, soft-close extensions, or multi-step invariant checks across Kubernetes replicas), use `lockStream` and pass an external `client`:
+
+```typescript
+await eventStore.withTransaction(async (client) => {
+  // 1. Acquire transaction-scoped advisory lock & authoritative PostgreSQL time
+  const decisionAt = await eventStore.lockStream(client, "Auction-123");
+
+  // 2. Load aggregate over the same connection
+  const auction = await Auction.load(eventStore, "123", { client });
+
+  // 3. Evaluate invariants against the database clock
+  if (decisionAt.getTime() >= new Date(auction.state.endsAt).getTime()) {
+    throw new Error("Auction has expired");
+  }
+
+  // 4. Append events atomically within the transaction
+  await Auction.append(
+    eventStore,
+    {
+      entityId: "123",
+      expectedVersion: auction.version,
+      events: [
+        {
+          type: "BidPlaced",
+          data: { amount: 150, bidAt: decisionAt.toISOString() },
+        },
+      ],
+    },
+    { client },
+  );
 });
 ```
 
@@ -272,7 +375,7 @@ processes each entry, with at-least-once delivery atomic to the event write.
 // Producer: opt in by setting outboxTopics on append.
 await eventStore.append({
   streamId: "Order-123",
-  expectedVersion: 0,
+  expectedVersion: -1,
   events: [{ type: "OrderPlaced", data: { total: 100 } }],
   outboxTopics: ["orders"],
 });
@@ -297,24 +400,24 @@ where each event must be published once (use-case 2).
 | **Idempotency**          | Deduplicate retried appends by key with fingerprint validation & cached bounds |
 | **Subscriptions**        | `subscribe()` fan-out async iterator: catch-up + live tail via LISTEN/NOTIFY   |
 | **Projections**          | `defineProjection` for typed read models with checkpoint tracking              |
-| **Crypto-Shredding**     | Per-entity AES-256-GCM envelope encryption for GDPR compliance                 |
+| **Crypto-Shredding**     | Per-entity AES-256-GCM envelope encryption and key revocation                  |
 | **Transactional Outbox** | At-least-once delivery to external systems, atomic with event writes           |
 | **Schema Evolution**     | Read-time upcasters that transform old event shapes without migrations         |
 | **CloudEvents**          | All events comply with CloudEvents v1.0.2 specification                        |
 
 ## Documentation
 
-Full documentation is available at **[alvyn.opensource.lox-solutions.eu](https://alvyn.opensource.lox-solutions.eu)**.
+Full documentation is available at **[alvyn.dev](https://alvyn.dev)**.
 
-- [Getting Started](https://alvyn.opensource.lox-solutions.eu/docs)
-- [Aggregates](https://alvyn.opensource.lox-solutions.eu/docs/aggregates)
-- [Subscriptions](https://alvyn.opensource.lox-solutions.eu/docs/subscriptions)
-- [Event Streaming & Consumer Scaling Playbook](https://alvyn.opensource.lox-solutions.eu/docs/playbook-sse-and-consumer-scaling)
-- [Crypto-Shredding & GDPR](https://alvyn.opensource.lox-solutions.eu/docs/crypto-shredding)
-- [Projections & Outbox](https://alvyn.opensource.lox-solutions.eu/docs/projections)
-- [Schema Evolution](https://alvyn.opensource.lox-solutions.eu/docs/schema-evolution)
-- [API Reference](https://alvyn.opensource.lox-solutions.eu/docs/api-reference)
-- [Database Schema](https://alvyn.opensource.lox-solutions.eu/docs/database-schema)
+- [Getting Started](https://alvyn.dev/docs)
+- [Playbooks & Architectural Guides](https://alvyn.dev/docs/playbooks/ai-agent-deterministic-memory-and-audit)
+- [Aggregates](https://alvyn.dev/docs/aggregates)
+- [Subscriptions](https://alvyn.dev/docs/subscriptions)
+- [Crypto-Shredding & GDPR](https://alvyn.dev/docs/crypto-shredding)
+- [Projections & Outbox](https://alvyn.dev/docs/projections)
+- [Schema Evolution](https://alvyn.dev/docs/schema-evolution)
+- [API Reference](https://alvyn.dev/docs/api-reference)
+- [Database Schema](https://alvyn.dev/docs/database-schema)
 
 ## Requirements
 
@@ -696,6 +799,19 @@ append/load successes and failures, event counts, OCC conflicts and retries,
 throughput, and p50/p95/p99 latency for each operation class and overall. It
 also includes per-replica request attempts, traffic-phase results, configured
 SLO checks, capacity findings, and verification totals.
+
+## Documentation & Playbooks
+
+Explore comprehensive guides, real-world blueprints, and interactive API references:
+
+- **[AI Agent Deterministic Memory & Audit Playbook](https://alvyn.dev/docs/playbooks/ai-agent-deterministic-memory-and-audit)** — Complete guide for Vercel AI SDK, LangGraph, causal execution logs, deterministic replay, and EU AI Act (Art. 12) logging.
+- **[Aggregate Design & Stream Boundaries Playbook](https://alvyn.dev/docs/playbooks/aggregate-design-and-stream-boundaries)** — Architectural blueprints for aggregate sizing, stream partitioning, and concurrency boundaries.
+- **[SSE & Resilient Consumer Scaling Playbook](https://alvyn.dev/docs/playbooks/sse-and-consumer-scaling)** — HTTP streaming with W3C `Last-Event-ID`, hash-ring worker pools, and broker comparisons.
+- **[Aggregates & State Evolution](https://alvyn.dev/docs/aggregates)** — Type-safe domain models and pure event evolution.
+- **[Event-backed Snapshots](https://alvyn.dev/docs/snapshots)** — Zero-lag acceleration for high-volume event streams.
+- **[GDPR & Data Privacy](https://alvyn.dev/docs/crypto-shredding)** — Reference tables and AES-256-GCM crypto-shredding for Article 17 erasure.
+- **[Transactional Outbox](https://alvyn.dev/docs/outbox)** — Guaranteed at-least-once message publishing without dual writes.
+- **[Database Schema & Architecture](https://alvyn.dev/docs/database-schema)** — Underlying PostgreSQL tables, indices, and locking mechanics.
 
 ## Contributing
 

@@ -1,9 +1,8 @@
 ---
 title: Subscriptions
 description: Fan-out event subscriptions with historical catch-up, live tailing, filtering, resumable cursors, GraphQL subscriptions, and SSE endpoints.
+icon: Radio
 ---
-
-# Subscriptions
 
 `EventStore.subscribe()` is Alvyn's **fan-out** primitive for consumers that observe events independently. It returns an `AsyncIterable<StoredEvent>` that first catches up on matching history and then seamlessly transitions to tailing new events as they commit in PostgreSQL.
 
@@ -70,7 +69,7 @@ interface SubscribeOptions {
 To resume processing after a worker restart or server disconnect, pass `lowerBound.id` set to the string representation of the last processed `globalPosition`:
 
 ```typescript
-const lastProcessedPosition = "42";
+let lastProcessedPosition = "42";
 
 for await (const event of eventStore.subscribe({
   subject: "Order-",
@@ -114,7 +113,9 @@ for await (const event of Order.subscribe({
   entityId: "order-123",
   options: { eventTypes: ["OrderShipped"] },
 })) {
-  console.log(event.type, event.data.trackingNumber);
+  if (event.type === "OrderShipped") {
+    console.log(event.type, event.data.trackingNumber);
+  }
 }
 ```
 
@@ -162,7 +163,7 @@ async function sseHandler(req: IncomingMessage, res: ServerResponse) {
   });
 
   const ac = new AbortController();
-  req.on("close", () => ac.abort());
+  res.on("close", () => ac.abort());
 
   const lastEventId = req.headers["last-event-id"] as string | undefined;
 
@@ -176,30 +177,33 @@ async function sseHandler(req: IncomingMessage, res: ServerResponse) {
   })) {
     // The SSE `id:` doubles as the resume cursor for automatic client reconnects
     res.write(`id: ${event.globalPosition}\n`);
-    res.write(`data: ${JSON.stringify(event)}\n\n`);
+    res.write(
+      `data: ${JSON.stringify({ ...event, globalPosition: event.globalPosition.toString() })}\n\n`,
+    );
   }
 }
 ```
 
-For complete production SSE endpoints, worker-pool partitioning, failover leader election, and disaster-recovery runbooks, see the [Event Streaming & Resilient Consumer Playbook](/docs/playbook-sse-and-consumer-scaling).
+This minimal endpoint serializes `globalPosition` as a decimal string because JSON cannot encode `bigint`. Before deployment, add authorization, cursor validation, error cleanup, and bounded backpressure handling. For implementation sketches and their operational limits, see the [Event Streaming & Resilient Consumer Playbook](/docs/playbooks/sse-and-consumer-scaling).
 
 ## Encryption and Schema Evolution
 
 Subscriptions read stored event rows for high-throughput fan-out delivery. Unlike `eventStore.load()`, they do not decrypt GDPR-encrypted fields or run registered upcasters.
 
-- An encrypted event payload will contain the ciphertext representation.
+- The payload is the stored `data` column, with encrypted fields removed. Ciphertext lives separately in `encrypted_data` and is not returned by subscriptions.
 - The consumer receives the payload in its stored schema format.
+- Aggregate event-map types do not validate runtime payloads or restore encrypted fields. `eventTypes` filters also do not narrow the TypeScript union; check `event.type` before accessing event-specific fields.
 
 When replayed, decrypted, and upcasted domain state is required, use `Order.load()` or `eventStore.load()`.
 
 ## Subscription vs. Outbox
 
-| Feature                | Subscriptions (`subscribe()`)               | Transactional Outbox (`processOutbox()`)                      |
-| :--------------------- | :------------------------------------------ | :------------------------------------------------------------ |
-| **Pattern**            | In-process Fan-out                          | Competing Consumers (Distributed Fleet)                       |
-| **Delivery Target**    | Connected clients, WebSockets, GraphQL, SSE | Message Brokers (Kafka, NATS, RabbitMQ, SQS)                  |
-| **Scale Behavior**     | Every replica receives every event          | Exactly one worker process across the fleet relays each event |
-| **State Tracking**     | Client in-memory cursor (`lowerBound`)      | PostgreSQL table lock (`FOR UPDATE SKIP LOCKED`)              |
-| **Delivery Guarantee** | At-least-once per subscriber                | At-least-once to external message broker                      |
+| Feature                | Subscriptions (`subscribe()`)               | Transactional Outbox (`processOutbox()`)                     |
+| :--------------------- | :------------------------------------------ | :----------------------------------------------------------- |
+| **Pattern**            | In-process Fan-out                          | Competing Consumers (Distributed Fleet)                      |
+| **Delivery Target**    | Connected clients, WebSockets, GraphQL, SSE | Message Brokers (Kafka, NATS, RabbitMQ, SQS)                 |
+| **Scale Behavior**     | Every replica receives every event          | One worker holds a row lock at a time; retries can republish |
+| **State Tracking**     | Client in-memory cursor (`lowerBound`)      | PostgreSQL table lock (`FOR UPDATE SKIP LOCKED`)             |
+| **Delivery Guarantee** | At-least-once per subscriber                | At-least-once to external message broker                     |
 
 Use `subscribe()` when you need real-time streaming to all replicas or clients. Use the [Transactional Outbox](/docs/outbox) when publishing fleet-wide messages to external brokers.

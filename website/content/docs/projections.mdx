@@ -1,13 +1,12 @@
 ---
 title: Projections
-description: Build read-optimized query models from the global event stream with atomic checkpoints and exactly-once processing semantics.
+description: Build read-optimized query models from the global event stream with atomic checkpoints and transactional consistency within PostgreSQL.
+icon: Eye
 ---
-
-# Projections
 
 Projections build **read models** from the global event stream. They transform raw, immutable business events into query-optimized PostgreSQL tables, search indexes, or materialized views.
 
-Each projection tracks its own independent checkpoint position in PostgreSQL and processes events in global commit order.
+Each projection tracks its own independent checkpoint position in PostgreSQL and processes events in `globalPosition` order. Sequence allocation order is not transaction commit order; the commit-safe watermark holds back positions until earlier in-flight writes are resolved.
 
 ## Projections vs. Snapshots
 
@@ -160,6 +159,7 @@ startProjectionWorker();
 ## Best Practices
 
 - **Idempotent Handlers:** Use `INSERT ... ON CONFLICT DO UPDATE` or idempotent SQL writes in handlers to remain resilient against rebuilds.
+- **External Effects:** HTTP calls, broker publishes, and writes through another connection are not atomic with the checkpoint and may repeat after failure. Use an outbox and downstream deduplication for these effects.
 - **Non-PII Read Models:** Projections read raw stored event rows and do not decrypt crypto-shredded fields. Avoid building long-lived public read models from PII without crypto consideration.
 - **Dedicated Workers:** Run heavy background projections on dedicated worker instances to prevent projection queries from competing with latency-critical API requests.
 

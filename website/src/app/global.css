@@ -3,19 +3,36 @@
 @import "fumadocs-ui/css/preset.css";
 
 :root {
+  --color-fd-background: hsl(0, 0%, 100%);
+  --color-fd-foreground: hsl(0, 0%, 3.9%);
+  --color-fd-card: hsl(0, 0%, 100%);
+  --color-fd-card-foreground: hsl(0, 0%, 3.9%);
+  --color-fd-popover: hsl(0, 0%, 100%);
+  --color-fd-popover-foreground: hsl(0, 0%, 3.9%);
+  --color-fd-muted: hsl(0, 0%, 96.1%);
+  --color-fd-muted-foreground: hsl(0, 0%, 45.1%);
+  --color-fd-primary: hsl(174, 60%, 35%);
+  --color-fd-primary-foreground: hsl(0, 0%, 100%);
   --color-neon-glow: hsl(174, 80%, 45%);
 }
 
-@theme inline {
-  --color-fd-primary: hsl(174, 60%, 35%);
-  --color-fd-primary-foreground: hsl(0, 0%, 100%);
-  --color-neon-glow: var(--color-neon-glow);
-}
-
 .dark {
+  --color-fd-background: hsl(0, 0%, 4%);
+  --color-fd-foreground: hsl(0, 0%, 98%);
+  --color-fd-card: hsl(0, 0%, 4%);
+  --color-fd-card-foreground: hsl(0, 0%, 98%);
+  --color-fd-popover: hsl(0, 0%, 4%);
+  --color-fd-popover-foreground: hsl(0, 0%, 98%);
+  --color-fd-muted: hsl(0, 0%, 12%);
+  --color-fd-muted-foreground: hsl(0, 0%, 63.9%);
   --color-fd-primary: hsl(174, 60%, 55%);
+  --color-fd-secondary: hsl(0, 0%, 4%);
   --color-fd-primary-foreground: hsl(174, 40%, 10%);
   --color-neon-glow: hsl(174, 60%, 55%);
+}
+
+@theme inline {
+  --color-neon-glow: var(--color-neon-glow);
 }
 
 html {

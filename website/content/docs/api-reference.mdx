@@ -1,9 +1,8 @@
 ---
 title: API Reference
 description: Complete reference for the EventStore class, all exported types, and error classes.
+icon: Terminal
 ---
-
-# API Reference
 
 Complete reference for the `EventStore` class, all exported builders, exported types, and error classes.
 
@@ -120,29 +119,21 @@ const result = await eventStore.append({
 
 Event types ending in `Snapshot` are reserved for Alvyn-generated snapshot events and cannot be appended through public write APIs.
 
-#### `load(streamId, options?): Promise<ReplayedEvent[]>`
+#### `load(streamId, maxEvents?): Promise<ReplayedEvent[]>`
 
-Loads all events for a stream from version 1. Handles decryption and upcasting automatically. Accepts an optional options object `{ maxEvents?: number; client?: PoolClient }` (or `LoadOptions`) to limit the number of events or read over an active transaction client.
+Loads all events for a stream from version 1. Handles decryption and upcasting automatically.
+
+Supply a positive safe integer `maxEvents` to bound the result.
 
 #### `loadFrom(streamId, options): Promise<ReplayedEvent[]>`
 
-Loads events starting from a specific version. Accepts an optional `client?: PoolClient` to read within an active transaction.
+Loads events starting from a specific version.
 
 ```typescript
 const events = await eventStore.loadFrom("Order-123", {
   fromVersion: 4,
   maxEvents: 100,
 });
-```
-
-#### `lockStream(client, streamId): Promise<Date>`
-
-Acquires a transaction-scoped PostgreSQL advisory lock (`pg_advisory_xact_lock`) on the specified stream and returns the authoritative database timestamp (`clock_timestamp()`).
-
-Must be called within an active transaction on the provided `PoolClient`. The lock is released automatically when the transaction commits or rolls back.
-
-```typescript
-const decisionAt = await eventStore.lockStream(client, "Auction-123");
 ```
 
 #### `readEventsPage(options): Promise<ReadEventsPage<T>>`
@@ -273,18 +264,13 @@ const eventStore = new EventStore({
 });
 ```
 
-#### `snapshot.load(eventStore, entityId, options?): Promise<SnapshotLoadResult<TState>>`
+#### `snapshot.load(eventStore, entityId): Promise<SnapshotLoadResult<TState>>`
 
-Finds the latest generated snapshot event and replays only later handled source events. Loading is read-only; registered snapshots are updated synchronously after matching public appends. Pass an optional `{ client }` to read within an active transaction.
+Finds the latest generated snapshot event and replays only later handled source events. Loading is read-only; registered snapshots are updated synchronously after matching public appends.
 
 ```typescript
 const result = await BankAccountBalance.load(eventStore, "account-123");
 result.state.balance;
-
-// Within an active transaction:
-const txResult = await BankAccountBalance.load(eventStore, "account-123", {
-  client,
-});
 ```
 
 ### Aggregate Builder
@@ -344,6 +330,8 @@ The handler receives the entries and the transaction client; entries are marked
 processed only after the handler succeeds. Uses `FOR UPDATE SKIP LOCKED` for
 replica-safe concurrent processing.
 
+External effects are at-least-once: a successful publish can repeat if the database transaction subsequently fails. Only writes using the supplied `client` are atomic with marking entries processed.
+
 #### `cleanupOutbox(olderThanMs?, batchSize?): Promise<number>`
 
 Deletes processed outbox entries older than the supplied age (seven days by
@@ -380,7 +368,7 @@ See [Schema Evolution](/docs/schema-evolution) for details.
 
 #### `withTransaction(fn): Promise<T>`
 
-Executes a function within a PostgreSQL transaction.
+Executes a function within a PostgreSQL transaction. Multiple low-level `append(input, { client })` calls can atomically update different streams when they share this client. Aggregate `append` handles do not expose a transaction-client option; use the low-level API and provide encryption settings explicitly where needed.
 
 ```typescript
 await eventStore.withTransaction(async (client) => {
@@ -401,7 +389,8 @@ await eventStore.withTransaction(async (client) => {
 ### Event Types
 
 ```typescript
-interface StoredEvent<T = unknown> {
+interface StoredEvent<T = unknown>
+  extends CloudEventRequiredAttributes, CloudEventOptionalAttributes {
   globalPosition: bigint;
   streamId: string;
   streamVersion: number;
@@ -411,7 +400,8 @@ interface StoredEvent<T = unknown> {
   createdAt: Date;
 }
 
-interface TombstonedEvent {
+interface TombstonedEvent
+  extends CloudEventRequiredAttributes, CloudEventOptionalAttributes {
   globalPosition: bigint;
   streamId: string;
   streamVersion: number;
@@ -429,11 +419,39 @@ interface CryptoSecret {
 
 interface CryptoSecretsConfig {
   currentVersion: number;
-  secrets: CryptoSecret[];
+  secrets: readonly CryptoSecret[];
 }
 
 type ReplayedEvent<T = unknown> = StoredEvent<T> | TombstonedEvent;
 ```
+
+Both event types inherit these CloudEvents context fields (in addition to the internal stream metadata above):
+
+```typescript
+interface CloudEventRequiredAttributes {
+  id: string;
+  source: string;
+  specversion: string;
+  type: string;
+}
+
+interface CloudEventOptionalAttributes {
+  datacontenttype?: string;
+  dataschema?: string;
+  subject?: string;
+  time?: string;
+}
+
+interface CloudEventExtensions {
+  correlationid?: string;
+  causationid?: string;
+  actorid?: string;
+  schemaversion?: number;
+  [key: string]: unknown;
+}
+```
+
+`time` is an RFC 3339 string, while `createdAt` is a `Date`. Serialize `globalPosition` as a decimal string for JSON. Raw subscriptions and projections return the stored `data` column without encrypted fields, not ciphertext or automatically upcasted data.
 
 ### Bounded Multi-Stream Read Types
 
@@ -451,21 +469,6 @@ interface ReadEventsPage<T = unknown> {
   events: ReplayedEvent<T>[];
   hasNextPage: boolean;
   nextCursor: string | null;
-}
-```
-
-### Stream Read Types
-
-```typescript
-interface LoadOptions {
-  maxEvents?: number;
-  client?: PoolClient;
-}
-
-interface LoadFromOptions {
-  fromVersion: number;
-  maxEvents?: number;
-  client?: PoolClient;
 }
 ```
 
@@ -488,10 +491,6 @@ interface AppendInput<T = unknown> {
   events: AppendEventInput<T>[];
   outboxTopics?: string[];
   idempotencyKey?: string;
-}
-
-interface AppendOptions {
-  client?: PoolClient;
 }
 
 interface AppendResult {
@@ -559,10 +558,6 @@ interface SnapshotLoadResult<TState> {
   snapshotVersion: number | null;
   replayedEvents: number;
 }
-
-interface SnapshotLoadOptions {
-  client?: PoolClient;
-}
 ```
 
 ### Outbox Type
@@ -580,29 +575,6 @@ interface OutboxEntry {
 ### Aggregate Types
 
 ```typescript
-interface AggregateLoadOptions {
-  client?: PoolClient;
-}
-
-interface AggregateAppendOptions {
-  client?: PoolClient;
-}
-
-interface AggregateAppendInput<TEvents> {
-  entityId: string;
-  expectedVersion: number;
-  events: AggregateEventInput<TEvents>[];
-  outboxTopics?: string[];
-  idempotencyKey?: string;
-}
-
-interface AggregateLoadEventsOptions {
-  eventStore: EventStore;
-  entityId: string;
-  maxEvents?: number;
-  client?: PoolClient;
-}
-
 type AggregateEventInput<TEvents> = {
   [K in keyof TEvents & string]: {
     type: K;

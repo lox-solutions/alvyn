@@ -15,15 +15,15 @@ export const metadata: Metadata = {
       : `${baseUrl}/`,
   ),
   title: {
-    default: "Alvyn | Event Sourcing for TypeScript",
+    default: "Alvyn | Event history for TypeScript and AI agents",
     template: "%s | Alvyn",
   },
   description:
-    "A high-fidelity event sourcing framework for TypeScript. Capture every business intent as an immutable, append-only fact to build your Private AI Data Moat.",
+    "Store agent tool calls and business events in PostgreSQL. Rebuild application state with typed events, projections, an outbox, and optional envelope encryption.",
   openGraph: {
-    title: "Alvyn | Event Sourcing for TypeScript",
+    title: "Alvyn | Event history for TypeScript and AI agents",
     description:
-      "Capture every business intent as an immutable, append-only fact. Type-safe event sourcing for TypeScript.",
+      "Keep the steps, not just the result. PostgreSQL-native event history for AI agents, orders, and everyday TypeScript applications.",
     url: "/",
     siteName: "Alvyn",
     locale: "en",
@@ -32,9 +32,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Alvyn | Event Sourcing for TypeScript",
+    title: "Alvyn | Event history for TypeScript and AI agents",
     description:
-      "Capture every business intent as an immutable, append-only fact. Type-safe event sourcing for TypeScript.",
+      "Keep the steps, not just the result. PostgreSQL-native event history for AI agents, orders, and everyday TypeScript applications.",
     images: ["/opengraph-image"],
   },
   icons: {

@@ -1,98 +1,173 @@
 ---
-title: Crypto-Shredding & GDPR
-description: Envelope encryption for GDPR-compliant PII handling with per-entity key revocation and tombstoned events.
+title: GDPR & Data Privacy
+description: Architectural patterns for handling personal data and GDPR Article 17 erasure requests in append-only event stores.
+icon: ShieldCheck
 ---
 
-# Crypto-Shredding & GDPR
+Event sourcing architectures are built on an immutable, append-only log: once written, events record historical facts that should never be modified or deleted. However, **Article 17 of the General Data Protection Regulation (GDPR)** grants individuals the "Right to Erasure" (the right to be forgotten).
 
-The event store implements **envelope encryption** for GDPR-compliant PII handling. Per-entity encryption keys allow surgical data erasure by revoking a single key, making all PII for that entity irrecoverable without touching any other data.
+Naively deleting rows from an event store breaks stream versioning, destroys causal integrity, and invalidates deterministic state replay. To satisfy regulatory erasure requirements without compromising the integrity of your event store, two production-proven patterns are available:
 
-## Alternative: Keep PII Outside the Event Store
+1. **Pattern A: Reference-Based PII (Keep PII Outside the Event Store)** — Store personal data in standard mutable PostgreSQL tables and reference only opaque, non-semantic identifiers inside event payloads.
+2. **Pattern B: In-Stream Envelope Encryption (Crypto-Shredding)** — Encrypt personal fields inside event payloads using per-entity encryption keys. Revoking a key renders the ciphertext permanently unreadable (`tombstoned`).
 
-Crypto-shredding is not the only way to support the GDPR right to erasure. A
-simpler option is to keep personal data in regular application tables and store
-only an opaque reference to the person in each event. For example, an event can
-contain `personId: "person_abc123"`, while the corresponding name, email, and
-address live in a `persons` table.
+## Architectural Decision Matrix
+
+| Dimension                     | Pattern A: Reference Tables                            | Pattern B: Alvyn Crypto-Shredding                            |
+| :---------------------------- | :----------------------------------------------------- | :----------------------------------------------------------- |
+| **Primary Mechanism**         | Store PII in mutable tables, reference via opaque ID   | Store PII encrypted in event payloads (AES-256-GCM)          |
+| **Erasure Method**            | Standard SQL `DELETE FROM user_profiles WHERE id = $1` | Revoke entity key via `eventStore.revokeKey(keyId)`          |
+| **Implementation Complexity** | Minimal (familiar CRUD + foreign keys)                 | Moderate (keyring setup, tombstone-aware evolve handlers)    |
+| **Event Autonomy**            | Partial (requires lookup to resolve current PII)       | Full (events are self-contained while key is active)         |
+| **Point-in-Time History**     | Lost upon deletion (or requires audit versioning)      | Preserved until key revocation, then tombstoned              |
+| **SQL Indexability**          | Full (B-Tree indexes, `ILIKE`, full-text search)       | None on encrypted fields (`encrypted_data` JSONB)            |
+| **Erasure Scope**             | $O(1)$ in local relational table                       | $O(1)$ across all streams and events in the system           |
+| **Legal Classification**      | Definitive physical deletion                           | Cryptographic erasure (ciphertext remains in storage)        |
+| **When to Choose**            | Standard applications with centralized user profiles   | Multi-stream architectures, distributed agents, audit trails |
+
+## Pattern A: Reference-Based PII (Keep PII Outside the Event Store)
+
+The simplest and most resilient way to handle GDPR Article 17 is to **keep personal data entirely out of the event log**.
+
+Instead of embedding names, email addresses, or physical addresses in event payloads, store PII in a standard mutable PostgreSQL table (`user_profiles`). The immutable events contain only an opaque, non-semantic identifier (such as `userId: "usr_123"`).
+
+### 1. PostgreSQL Schema Design
+
+Define a standard relational table for personal data. Because this table is separate from the event log, it supports standard relational features including uniqueness constraints, foreign keys, and indexes:
 
 ```sql
-CREATE TABLE persons (
-  person_id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
+CREATE TABLE user_profiles (
+  user_id TEXT PRIMARY KEY,
   email TEXT NOT NULL,
-  address JSONB NOT NULL
+  full_name TEXT NOT NULL,
+  phone TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- The event payload contains only the reference and non-personal data:
--- { "personId": "person_abc123", "orderId": "order_42" }
+-- Plaintext indexes for fast lookup and uniqueness
+CREATE UNIQUE INDEX idx_user_profiles_email ON user_profiles (lower(email));
 ```
 
-When a person requests erasure, delete their row (and any related PII rows)
-using the application's normal database transaction and retain the events. The
-event history remains available for auditing and replay, but the reference no
-longer resolves to personal data:
+The event payload contains only non-personal business facts alongside the opaque identifier:
+
+```json
+{
+  "userId": "usr_123",
+  "orderId": "ord_987",
+  "totalAmount": 14900,
+  "currency": "EUR"
+}
+```
+
+### 2. Atomic Writes with `eventStore.withTransaction`
+
+To prevent inconsistencies where a profile is updated but the corresponding event fails to append (or vice-versa), execute both operations inside a single PostgreSQL transaction using `eventStore.withTransaction`:
 
 ```typescript
-await db.transaction(async (tx) => {
-  await tx.query("DELETE FROM person_addresses WHERE person_id = $1", [
-    personId,
-  ]);
-  await tx.query("DELETE FROM persons WHERE person_id = $1", [personId]);
+import { eventStore } from "./event-store";
+
+await eventStore.withTransaction(async (client) => {
+  // 1. Upsert mutable profile with PII
+  await client.query(
+    `INSERT INTO user_profiles (user_id, email, full_name, updated_at)
+     VALUES ($1, $2, $3, NOW())
+     ON CONFLICT (user_id) DO UPDATE
+     SET email = EXCLUDED.email, full_name = EXCLUDED.full_name, updated_at = NOW()`,
+    [userId, email, fullName],
+  );
+
+  // 2. Append event referencing only the opaque userId
+  await eventStore.append(
+    {
+      streamId: `User-${userId}`,
+      expectedVersion: 0,
+      events: [
+        {
+          type: "UserRegistered",
+          data: { registeredAt: new Date().toISOString() },
+        },
+      ],
+    },
+    { client }, // Atomic: commits or rolls back together with the profile upsert
+  );
 });
 ```
 
-This approach avoids key management, encrypted-field configuration, and
-tombstoned events. It is a good fit when events need to preserve business facts
-but not a self-contained copy of personal details. For example, an
-`OrderPlaced` event can retain the `personId`, order amount, and product IDs;
-after erasure, those order facts can still be replayed, but the person's name
-and email cannot be resolved. Consumers must handle missing references
-explicitly, and writes to the PII table and the event store should be
-coordinated so an event cannot point to a person that was never persisted.
+Because both writes share the same PostgreSQL client and transaction, your system guarantees atomic consistency with zero distributed transaction overhead.
 
-With this approach, personal details are unavailable whenever the reference
-cannot be resolved. With crypto-shredding, PII embedded in events remains
-readable while the key is active and becomes irrecoverable only after the key is
-revoked.
+### 3. Deletion Flow (Physical Deletion)
 
-An identifier is not automatically anonymous merely because it is called an
-ID. Use an opaque, non-semantic identifier and assess whether it can be linked
-back to a person in your system. Keep personal data out of event extensions,
-logs, projections, snapshots, caches, and other copied representations as
-well. Database backups, replicas, and WAL archives still require their own
-retention and deletion policies.
+When a user exercises their GDPR Article 17 Right to Erasure, delete their row from `user_profiles` using standard SQL:
 
-Use this reference-based design when deleting the PII record is sufficient for
-your retention requirements. Use [crypto-shredding](#gdpr-right-to-erasure)
-when PII must remain embedded in event payloads while becoming irrecoverable on
-erasure.
-
-## Architecture
-
-```mermaid
-graph TD
-  MK[Versioned Secrets\ncurrent plus old keys] -->|wraps/un-wraps| EK[Per-Entity AES Key\nstored in crypto_keys\nwith secret version]
-  EK -->|encrypts/decrypts| PII[Individual PII Fields\neach field encrypted with\nAES-256-GCM, unique IV]
+```typescript
+await pool.query("DELETE FROM user_profiles WHERE user_id = $1", [userId]);
 ```
 
-**Two-layer envelope encryption:**
+The event stream (`User-usr_123` or orders linked to `usr_123`) remains completely untouched in the append-only log. The event history continues to record the business fact that a registration or purchase occurred, but the identifier `usr_123` is now an orphaned pseudonym that can no longer be resolved to an identifiable natural person.
 
-1. The configured `currentVersion` secret encrypts new per-entity AES keys; the
-   remaining configured secrets decrypt existing keys after rotation.
-2. Each entity (e.g., a user) gets its own **AES-256-GCM key** stored encrypted in the `crypto_keys` table.
-3. Individual PII fields within event data are encrypted with the entity's key, each with a unique random IV.
+### 4. Handling Orphaned References During Replay
 
-AES-GCM also authenticates the meaning of each encrypted value. Entity-key
-envelopes are bound to their key ID, magic marker, and secret version. PII
-fields are bound to their event ID, entity-key ID, field path, and stored
-version. Moving a valid ciphertext to another row, event, or field therefore
-causes decryption to fail.
+When read models or downstream projections join events with `user_profiles`, they must handle missing profile records gracefully:
 
-## How It Works
+```typescript
+async function getUserSummary(userId: string) {
+  // Replay immutable business events
+  const events = await eventStore.load(`User-${userId}`);
 
-### Write Path (append)
+  // Resolve current profile (may be null if deleted)
+  const { rows } = await pool.query(
+    "SELECT email, full_name FROM user_profiles WHERE user_id = $1",
+    [userId],
+  );
+  const profile = rows[0] ?? null;
 
-1. For each event with `encryptedFields` + `cryptoKeyId`, the entity's AES key is retrieved and decrypted from the DB using the configured secret version.
+  return {
+    userId,
+    isDeleted: !profile,
+    email: profile?.email ?? "[DELETED]",
+    fullName: profile?.full_name ?? "Anonymized User",
+    registrationEvent: events.find((e) => e.type === "UserRegistered"),
+  };
+}
+```
+
+### 5. Architectural Trade-offs
+
+**Advantages:**
+
+- **Zero Cryptographic Overhead:** No root keys, keyrings, encryption envelopes, or performance penalty for encryption/decryption.
+- **Full SQL Indexability:** Search, filter, and sort profiles by email or name using standard B-Tree or full-text indexes (`pg_trgm`).
+- **Unambiguous Legal Erasure:** Physical deletion via `DELETE` is universally accepted by data protection authorities as true erasure under GDPR Article 17.
+- **Simplicity (KISS):** Regular PostgreSQL CRUD logic without special evolve-handler fallbacks or tombstone types.
+
+**Limitations:**
+
+- **Loss of Historical Snapshot:** The profile table holds only the _current_ state. You cannot see what a user's address was at the exact moment a past order occurred (unless you maintain a separate audited version history).
+- **Reduced Event Autonomy:** Events are not self-contained. Any consumer or projection that requires personal details must query the relational profile table.
+- **Identifier Hygiene:** An ID is not anonymous simply because it is called `id`. It must be an opaque, non-semantic UUID or random token that cannot be reversed or correlated with the person through external systems.
+
+## Pattern B: In-Stream Envelope Encryption (Crypto-Shredding)
+
+When downstream consumers and projections require self-contained event payloads, or when personal data is distributed across multiple distinct streams, **per-entity envelope encryption (crypto-shredding)** enables instant, surgical data revocation.
+
+Events store personal data encrypted under a unique, entity-specific AES-256-GCM key. Revoking that single key renders all historical ciphertext for that entity unreadable in $O(1)$ time, without modifying any append-only event rows.
+
+### Two-Tier Envelope Encryption Architecture
+
+Alvyn implements a two-tier key hierarchy:
+
+1. **Versioned Root Secrets (Key Encryption Key):** A configured server secret (`currentVersion`) wraps and unwraps per-entity keys using `scrypt` and AES-256-GCM. Rotating root secrets requires zero database re-encryption.
+2. **Per-Entity AES Keys (Data Encryption Key):** Each entity (e.g. user, tenant) gets a unique 256-bit AES key stored encrypted in the `crypto_keys` table.
+3. **Field-Level Authenticated Encryption:** Individual PII fields (e.g. `email`, `address.street`) are encrypted with the entity key, each with a unique random IV and GCM authentication tag.
+
+AES-GCM also authenticates the meaning of each encrypted value. Entity-key envelopes are bound to their key ID, magic marker, and secret version. PII fields are bound to their event ID, entity-key ID, field path, and stored version as Additional Authenticated Data (AAD). Moving a valid ciphertext to another row, event, or field causes decryption to fail.
+
+### How It Works (Write & Read Paths)
+
+#### Write Path (append)
+
+1. For each event with `encryptedFields` + `cryptoKeyId`, the entity's AES key is retrieved and decrypted from the database using the configured secret version.
 2. Each PII field (specified as dot-paths, e.g. `"address.street"`) is:
    - Extracted from the event data
    - JSON-stringified and encrypted with AES-256-GCM (random IV per field)
@@ -108,14 +183,14 @@ encrypted_data column:  { "name": { "version": 2, "ciphertext": "...", "iv": "..
 crypto_key_id column:   "user:abc123"
 ```
 
-### Read Path (load)
+#### Read Path (load)
 
 1. If the entity's crypto key is **active**: fields are decrypted and merged back into the event data. The caller sees the complete event as if encryption was transparent.
 2. If the key is **revoked or missing**: the event is returned as a `TombstonedEvent` with `data: null` and `tombstoned: true`.
 
-## Setting Up Encryption
+### Setting Up Encryption
 
-### 1. Configure Versioned Secrets
+#### 1. Configure Versioned Secrets
 
 Generate secret values for the versions you will use:
 
@@ -123,8 +198,7 @@ Generate secret values for the versions you will use:
 openssl rand -base64 32
 ```
 
-Configure the complete keyring and explicitly select the version used for new
-encryption. The order of entries is not significant:
+Configure the complete keyring and explicitly select the version used for new encryption. The order of entries is not significant:
 
 ```typescript
 const eventStore = new EventStore({
@@ -146,20 +220,11 @@ GDPR_CRYPTO_SECRETS=2:new-secret-base64,1:old-secret-base64
 GDPR_CRYPTO_CURRENT_VERSION=2
 ```
 
-Secret values are strings. All values are strengthened with `scrypt` to derive
-the 32-byte key used to protect entity keys. Use a high-entropy generated value;
-`scrypt` makes guessing more expensive but cannot add entropy to a weak secret.
-Keep every old secret needed to read existing versioned envelopes until that
-data has been intentionally retired; removing a configured version makes those
-envelopes unreadable.
+Secret values are strings. All values are strengthened with `scrypt` to derive the 32-byte key used to protect entity keys. Use a high-entropy generated value; `scrypt` makes guessing more expensive but cannot add entropy to a weak secret. Keep every old secret needed to read existing versioned envelopes until that data has been intentionally retired; removing a configured version makes those envelopes unreadable.
 
-Secret versions are unsigned 32-bit integers from `0` to `4294967295`. Gaps are
-allowed, and `currentVersion` must identify one of the configured secrets. Use a
-higher version for each new rotation, but do not encode the active version by
-reordering the keyring. Rotating between secret versions does not require a
-database migration.
+Secret versions are unsigned 32-bit integers from `0` to `4294967295`. Gaps are allowed, and `currentVersion` must identify one of the configured secrets. Use a higher version for each new rotation, but do not encode the active version by reordering the keyring. Rotating between secret versions does not require a database migration.
 
-### 2. Create Entity Keys
+#### 2. Create Entity Keys
 
 Create a per-entity key before appending encrypted events:
 
@@ -167,9 +232,9 @@ Create a per-entity key before appending encrypted events:
 await eventStore.createCryptoKey("user:abc123");
 ```
 
-This is **idempotent** — if the key already exists, it's a no-op.
+This is **idempotent** — if the key already exists, it is a no-op.
 
-### 3. Configure Aggregate Encryption
+#### 3. Configure Aggregate Encryption
 
 In the aggregate definition, specify which fields contain PII per event type:
 
@@ -194,7 +259,7 @@ const User = defineAggregate<UserState, UserEvents>()({
 });
 ```
 
-### 4. Or Use Low-Level API
+#### 4. Or Use Low-Level API
 
 If not using aggregates, specify encryption per-event in the `append` call:
 
@@ -213,7 +278,7 @@ await eventStore.append({
 });
 ```
 
-## Dot-Path Field Notation
+### Dot-Path Field Notation
 
 Encrypted fields are specified using dot-path notation for nested objects:
 
@@ -257,92 +322,9 @@ And `encrypted_data` column contains:
 }
 ```
 
-## Rotating Secrets Without Downtime
+### Deletion Flow (Revoking Keys)
 
-For a single application instance, add the new version to the keyring and set
-it as `currentVersion`. For an HA or rolling deployment, use two phases so every
-replica can read version `2` before any replica writes it.
-
-<Callout type="warn">
-  **Backup recommendation:** A restorable backup of the event-store database
-  before every secret rotation is strongly recommended. Verify that the backup
-  includes both `events` and `crypto_keys`, and keep the old secret securely
-  available until the rollout and recovery procedure have been verified. A
-  database backup without its corresponding secret cannot decrypt encrypted
-  entity keys.
-</Callout>
-
-### Phase 1: distribute the new secret
-
-Deploy this configuration to every replica while version `1` remains current:
-
-```typescript
-secrets: {
-  currentVersion: 1,
-  secrets: [
-    { version: 1, value: "old-secret" },
-    { version: 2, value: "new-secret" },
-  ],
-};
-```
-
-Wait until all replicas have this configuration. They continue writing version
-`1`, but all of them can decrypt version `2`.
-
-### Phase 2: activate the new secret
-
-After phase 1 is complete, keep the same keyring and change only the active
-version:
-
-```typescript
-secrets: {
-  currentVersion: 2,
-  secrets: [
-    { version: 1, value: "old-secret" },
-    { version: 2, value: "new-secret" },
-  ],
-};
-```
-
-New entity-key envelopes and encrypted fields use version `2`. A replica still
-on phase 1 can read a version `2` envelope and will never downgrade it back to
-version `1`. Existing version `1` envelopes are decrypted by direct version
-lookup and are not rewritten during reads. The next append for an entity lazily
-re-wraps only its entity key with version `2`; existing event ciphertext is not
-rewritten. No full database migration or downtime is required.
-
-### Removing the old secret
-
-Do not remove version `1` merely because phase 2 finished. Lazy rotation means
-an inactive entity may keep a version `1` envelope indefinitely. Before removal,
-verify that no active entity-key envelope still uses it:
-
-```sql
-SELECT
-  get_byte(encrypted_key, 4)::bigint * 16777216
-    + get_byte(encrypted_key, 5)::bigint * 65536
-    + get_byte(encrypted_key, 6)::bigint * 256
-    + get_byte(encrypted_key, 7)::bigint AS secret_version,
-  count(*)
-FROM event_store.crypto_keys
-WHERE revoked_at IS NULL
-GROUP BY secret_version
-ORDER BY secret_version;
-```
-
-Use your configured schema instead of `event_store`. Keep the old secret until
-the old version count is zero, retain it indefinitely, or intentionally retire
-the remaining data. An inactive key is not automatically rewrapped by reads.
-
-<Callout type="warn">
-  **Migration warning:** Deploy the new secret configuration before removing the
-  old secret. Removing a secret version makes envelopes using it permanently
-  unreadable.
-</Callout>
-
-## GDPR Right to Erasure
-
-The complete flow for handling a user deletion request:
+The complete flow for handling a user deletion request via crypto-shredding:
 
 ```typescript
 // 1. When user registers — create their crypto key
@@ -372,33 +354,18 @@ const user = await User.load(eventStore, "abc123");
 // user.state contains the result of your null-safe evolve handlers
 ```
 
-### What `revokeKey` Does
+#### What `revokeKey` Does
 
 Within a single transaction:
 
 1. Sets `revoked_at = now()` on the crypto key.
 2. Sets `encrypted_key = NULL`, permanently removing the database copy of the wrapped entity key.
 
-The crypto-key row remains only to retain non-sensitive audit metadata such as
-`key_id`, `revoked_at`, `algorithm`, and `created_at`. Revocation is idempotent:
-repeating it keeps the row tombstoned and the key material absent.
+The crypto-key row remains only to retain non-sensitive audit metadata such as `key_id`, `revoked_at`, `algorithm`, and `created_at`. Revocation is idempotent: repeating it keeps the row tombstoned and the key material absent.
 
-Appends lock the entity-key row until their transaction commits. Revocation
-uses the same PostgreSQL row lock, so the ordering is safe across multiple
-application replicas: an append that acquired the lock first commits before
-revocation, while an append that starts after revocation sees the revoked key
-and fails with `CryptoKeyRevokedError`.
+Appends lock the entity-key row until their transaction commits. Revocation uses the same PostgreSQL row lock, so the ordering is safe across multiple application replicas: an append that acquired the lock first commits before revocation, while an append that starts after revocation sees the revoked key and fails with `CryptoKeyRevokedError`.
 
-## Erasure limitations
-
-This destroys the key material in the live database and prevents recovery with
-any currently configured secret. It cannot erase copies already captured in
-database backups, replicas, WAL archives, caches, logs, memory, or secret
-backups. Retention and deletion policies for those systems must be managed
-separately. Any future encryption or algorithm migration job must exclude rows
-where `revoked_at IS NOT NULL`.
-
-## Tombstoned Events
+### Handling Tombstones in Evolve Handlers
 
 After key revocation, encrypted events are returned as `TombstonedEvent`:
 
@@ -417,12 +384,10 @@ interface TombstonedEvent {
 
 **Important characteristics:**
 
-- `data` is `null` — the PII is cryptographically irrecoverable
-- `extensions` is still available (it's never encrypted)
-- `type` is still available — you know _what_ happened, just not _the PII details_
-- Non-encrypted events in the same stream are **not affected**
-
-### Handling Tombstones in Evolve Handlers
+- `data` is `null` — the PII is cryptographically irrecoverable.
+- `extensions` is still available (extensions are never encrypted).
+- `type` is still available — you know _what_ business event happened, just not the personal details.
+- Non-encrypted events in the same stream are **not affected**.
 
 Evolve handlers **must** use optional chaining with fallbacks:
 
@@ -430,14 +395,88 @@ Evolve handlers **must** use optional chaining with fallbacks:
 evolve: {
   UserRegistered: (state, event) => ({
     ...state,
-    name: event.data?.name ?? state.name,
-    email: event.data?.email ?? state.email,
-    active: event.data?.active ?? state.active,
+    name: event.data?.name ?? state?.name ?? "",
+    email: event.data?.email ?? state?.email ?? "",
+    active: event.data?.active ?? state?.active ?? false,
   }),
 }
 ```
 
-## Error Handling
+The creation event can itself be tombstoned, so the first handler must initialize all required fields from runtime `null` using non-sensitive defaults.
+
+**Snapshot warning:** Aggregate encryption is not inherited by `defineSnapshot`. A snapshot can otherwise persist decrypted PII in plaintext, surviving source-key revocation. Configure snapshot encryption explicitly with the same entity key and all sensitive snapshot-state paths; see the [snapshot encryption example](/docs/snapshots#encrypt-sensitive-snapshot-state). Also erase or invalidate downstream read models, caches, and exported copies.
+
+### Rotating Secrets Without Downtime
+
+For a single application instance, add the new version to the keyring and set it as `currentVersion`. For an HA or rolling deployment, use two phases so every replica can read version `2` before any replica writes it.
+
+<Callout type="warn">
+  **Backup recommendation:** A restorable backup of the event-store database
+  before every secret rotation is strongly recommended. Verify that the backup
+  includes both `events` and `crypto_keys`, and keep the old secret securely
+  available until the rollout and recovery procedure have been verified. A
+  database backup without its corresponding secret cannot decrypt encrypted
+  entity keys.
+</Callout>
+
+#### Phase 1: Distribute the New Secret
+
+Deploy this configuration to every replica while version `1` remains current:
+
+```typescript
+secrets: {
+  currentVersion: 1,
+  secrets: [
+    { version: 1, value: "old-secret" },
+    { version: 2, value: "new-secret" },
+  ],
+};
+```
+
+Wait until all replicas have this configuration. They continue writing version `1`, but all of them can decrypt version `2`.
+
+#### Phase 2: Activate the New Secret
+
+After phase 1 is complete, keep the same keyring and change only the active version:
+
+```typescript
+secrets: {
+  currentVersion: 2,
+  secrets: [
+    { version: 1, value: "old-secret" },
+    { version: 2, value: "new-secret" },
+  ],
+};
+```
+
+New entity-key envelopes and encrypted fields use version `2`. A replica still on phase 1 can read a version `2` envelope and will never downgrade it back to version `1`. Existing version `1` envelopes are decrypted by direct version lookup and are not rewritten during reads. The next append for an entity lazily re-wraps only its entity key with version `2`; existing event ciphertext is not rewritten. No full database migration or downtime is required.
+
+#### Removing the Old Secret
+
+Do not remove version `1` merely because phase 2 finished. Lazy rotation means an inactive entity may keep a version `1` envelope indefinitely. Before removal, verify that no active entity-key envelope still uses it:
+
+```sql
+SELECT
+  get_byte(encrypted_key, 4)::bigint * 16777216
+    + get_byte(encrypted_key, 5)::bigint * 65536
+    + get_byte(encrypted_key, 6)::bigint * 256
+    + get_byte(encrypted_key, 7)::bigint AS secret_version,
+  count(*)
+FROM event_store.crypto_keys
+WHERE revoked_at IS NULL
+GROUP BY secret_version
+ORDER BY secret_version;
+```
+
+Use your configured schema instead of `event_store`. Keep the old secret until the old version count is zero, retain it indefinitely, or intentionally retire the remaining data. An inactive key is not automatically rewrapped by reads.
+
+<Callout type="warn">
+  **Migration warning:** Deploy the new secret configuration before removing the
+  old secret. Removing a secret version makes envelopes using it permanently
+  unreadable.
+</Callout>
+
+### Error Handling
 
 | Error                        | When                                                                 | Recovery                                      |
 | ---------------------------- | -------------------------------------------------------------------- | --------------------------------------------- |
@@ -448,11 +487,33 @@ evolve: {
 
 `CryptoKeyRevokedError` is only thrown on **write** operations. On **read**, revoked keys simply produce tombstoned events without throwing.
 
-## Security Details
+### Cryptographic Security Details
 
-- **Algorithm:** AES-256-GCM (authenticated encryption) for both secret-to-entity and entity-to-field encryption
-- **IV:** 12 bytes, randomly generated per encryption operation
-- **Auth tag:** 16 bytes
-- **Entity key storage format:** versioned envelope `[magic][secret version][iv][authTag][ciphertext]` stored as `BYTEA`; the header and key ID are authenticated as AAD
-- **Field storage format:** `{ version, ciphertext, iv, authTag }` as base64 strings in `JSONB`; event ID, key ID, field path, and version are authenticated as AAD
-- **Key cache:** Decrypted entity keys are cached in a per-read-call `Map` (not across requests) to avoid redundant DB lookups within a single stream load
+- **Algorithm:** AES-256-GCM (authenticated encryption) for both secret-to-entity and entity-to-field encryption.
+- **IV:** 12 bytes, randomly generated per encryption operation.
+- **Auth tag:** 16 bytes.
+- **Entity key storage format:** Versioned envelope `[magic][secret version][iv][authTag][ciphertext]` stored as `BYTEA`; the header and key ID are authenticated as AAD.
+- **Field storage format:** `{ version, ciphertext, iv, authTag }` as base64 strings in `JSONB`; event ID, key ID, field path, and version are authenticated as AAD.
+- **Key cache:** Decrypted entity keys are cached in a per-read-call `Map` (not across requests) to avoid redundant DB lookups within a single stream load.
+
+## Operational & Legal Realities (Backups, WAL, and Retention)
+
+Regardless of whether you choose Pattern A (Reference Tables) or Pattern B (Crypto-Shredding), neither pattern physically alters historical database backups or Write-Ahead Logs (WAL). Understanding these operational boundaries is essential for an airtight compliance posture.
+
+### 1. Database Backups & Point-in-Time Recovery (PITR)
+
+- **Pattern A (Reference Tables):** Executing `DELETE FROM user_profiles WHERE user_id = $1` deletes the row in the active database. However, a database dump or cloud snapshot taken yesterday still contains that row. If that backup is ever restored, deleted profiles will reappear unless your disaster recovery procedures re-apply deletion logs.
+- **Pattern B (Crypto-Shredding):** Calling `eventStore.revokeKey(keyId)` zeroes the `encrypted_key` in the live database. Past backups still contain the encrypted key and root secret. If an old backup is restored, the key becomes active again unless the key revocation is replayed or root secrets have rotated.
+- **Actionable Guidance:** Establish a clearly documented backup retention schedule (e.g., 14 to 30 days). Under GDPR guidance, data in static disaster-recovery archives is generally considered compliant if it is put beyond practical use and naturally purged as backup retention windows expire.
+
+### 2. Write-Ahead Logs (WAL) & Streaming Replicas
+
+PostgreSQL WAL segments record low-level disk page modifications. In Pattern A, WAL contains the pre-image of the deleted row; in Pattern B, WAL contains the pre-image of the revoked key.
+
+- WAL files are transient and automatically recycled based on PostgreSQL configuration (`wal_keep_size`, `max_wal_size`, and archive cleanup scripts).
+- Standby replicas replicate deletion transactions near-instantaneously: a SQL `DELETE` or `revokeKey` query executed on the primary propagates to all streaming replicas within milliseconds.
+
+### 3. Legal Posture & Data Protection Authorities
+
+- **Physical Deletion (Pattern A):** Universally recognized by European Data Protection Authorities (including the CNIL, ICO, and BfDI) as definitive erasure under Article 17.
+- **Crypto-Shredding (Pattern B):** Cryptographic erasure is widely accepted as an effective technical measure when key destruction is permanent, the algorithm is state-of-the-art (AES-256-GCM), and root keys are controlled. Because encrypted ciphertext remains in the immutable log, supervisory authorities classify the residual data as pseudonymized until the ciphertext itself is purged or becomes impossible to decrypt even against future computational advances.
