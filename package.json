@@ -1,5 +1,5 @@
 {
-  "name": "@lox-solutions/alvyn",
+  "name": "alvyn",
   "version": "0.1.11",
   "description": "TypeScript event history on PostgreSQL for agent workflows and domain applications: typed aggregates, replay, projections, and transactional outbox.",
   "type": "module",

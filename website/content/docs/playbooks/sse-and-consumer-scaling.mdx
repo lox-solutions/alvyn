@@ -483,7 +483,7 @@ This pattern eliminates the Dual-Write problem by atomically storing outbox entr
 ### Outbox Publisher Implementation
 
 ```typescript
-import { EventStore } from "@lox-solutions/alvyn";
+import { EventStore } from "alvyn";
 import { kafkaProducer } from "./kafka-client"; // or RabbitMQ / NATS
 
 export async function startOutboxRelay(

@@ -1,4 +1,4 @@
-import { defineAggregate } from "@lox-solutions/alvyn";
+import { defineAggregate } from "alvyn";
 
 export type BankAccountEvents = {
   AccountOpened: { ownerName: string };

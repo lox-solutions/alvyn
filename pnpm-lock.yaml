@@ -68,12 +68,12 @@ importers:
       '@elysia/node':
         specifier: ^1.4.6
         version: 1.4.6(elysia@1.4.28(@sinclair/typebox@0.34.49)(file-type@22.0.1)(openapi-types@12.1.3)(typescript@7.0.2))
-      '@lox-solutions/alvyn':
-        specifier: workspace:*
-        version: link:../..
       '@sinclair/typebox':
         specifier: ^0.34.49
         version: 0.34.49
+      alvyn:
+        specifier: workspace:*
+        version: link:../..
       elysia:
         specifier: ^1.4.28
         version: 1.4.28(@sinclair/typebox@0.34.49)(file-type@22.0.1)(openapi-types@12.1.3)(typescript@7.0.2)

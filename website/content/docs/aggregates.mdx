@@ -28,7 +28,7 @@ type OrderEvents = {
 - `TEvents` is provided explicitly (the event map)
 
 ```typescript
-import { defineAggregate } from "@lox-solutions/alvyn";
+import { defineAggregate } from "alvyn";
 
 type OrderState = {
   status: "pending" | "shipped" | "cancelled";
@@ -161,7 +161,7 @@ eventStore.registerUpcasters(Order.getUpcasters());
 When multiple writers may target the same stream, use a retry loop:
 
 ```typescript
-import { OptimisticConcurrencyError } from "@lox-solutions/alvyn";
+import { OptimisticConcurrencyError } from "alvyn";
 
 async function shipOrder(orderId: string, trackingNumber: string) {
   const maxRetries = 3;
@@ -234,7 +234,7 @@ The first handler receives runtime `null`, including when the creation event is 
 ## Full Example with All Options
 
 ```typescript
-import { defineAggregate, type Upcaster } from "@lox-solutions/alvyn";
+import { defineAggregate, type Upcaster } from "alvyn";
 
 type UserEvents = {
   UserRegistered: {

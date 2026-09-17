@@ -22,7 +22,7 @@
     "@apollo/client": "^4.2.3",
     "@elysia/graphql-yoga": "^1.4.1",
     "@elysia/node": "^1.4.6",
-    "@lox-solutions/alvyn": "workspace:*",
+    "alvyn": "workspace:*",
     "@sinclair/typebox": "^0.34.49",
     "elysia": "^1.4.28",
     "file-type": "^22.0.1",
