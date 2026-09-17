@@ -91,7 +91,7 @@ Use `type: "inclusive"` if the event at the cursor should be delivered again (e.
 An aggregate handle provides a strongly typed subscription for a specific entity stream. Stream subject derivation and snapshot event filtering happen automatically:
 
 ```typescript
-import { defineAggregate } from "@lox-solutions/alvyn";
+import { defineAggregate } from "alvyn";
 
 type OrderState = { status: "placed" | "shipped" };
 type OrderEvents = {

@@ -85,7 +85,7 @@ export const transactionSnapshots = [
 ## Define a Snapshot
 
 ```typescript
-import { EventStore, defineSnapshot } from "@lox-solutions/alvyn";
+import { EventStore, defineSnapshot } from "alvyn";
 
 type TransactionEvents = {
   Deposit: { amount: number };
@@ -155,7 +155,7 @@ Loading is read-only. Snapshot events are generated during appends when the snap
 Snapshot encryption is **not inherited** from an aggregate or its source events. Snapshot maintenance replays decrypted data, so an unencrypted snapshot can persist PII in plaintext even when every source event is encrypted. Configure every sensitive path in the snapshot state explicitly:
 
 ```typescript
-import { defineSnapshot } from "@lox-solutions/alvyn";
+import { defineSnapshot } from "alvyn";
 
 type UserEvents = {
   UserRegistered: { name: string; email: string };

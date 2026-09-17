@@ -1,4 +1,4 @@
-import { defineAggregate, defineSnapshot } from "@lox-solutions/alvyn";
+import { defineAggregate, defineSnapshot } from "alvyn";
 
 export type TransactionEvents = {
   Deposit: { bankAccountId: string; amount: number };

@@ -9,14 +9,14 @@ Alvyn is a **TypeScript library for event history on PostgreSQL**. Record meanin
 ## Use Alvyn in an application
 
 ```package-install
-@lox-solutions/alvyn pg
+alvyn pg
 ```
 
 You supply and close the connection pool. This snippet records a goal and a known result; it does not call a model or execute a tool. See the [Agent History, Replay & Audit playbook](/docs/playbooks/ai-agent-deterministic-memory-and-audit) for model integration boundaries.
 
 ```typescript
 import { Pool } from "pg";
-import { EventStore, defineAggregate } from "@lox-solutions/alvyn";
+import { EventStore, defineAggregate } from "alvyn";
 
 type AgentEvents = {
   GoalReceived: { goal: string };

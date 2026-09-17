@@ -394,7 +394,7 @@ export type TimesheetEvent = {
 <Tab value="Aggregate Definition">
 ```typescript
 // aggregate.ts
-import { defineAggregate } from "@lox-solutions/alvyn";
+import { defineAggregate } from "alvyn";
 import type { TimesheetState, TimesheetEvents } from "./schema";
 
 export const timesheetAggregate = defineAggregate<TimesheetState, TimesheetEvents>()({
@@ -514,7 +514,7 @@ export function decideBatchOverride(
 // service.ts
 import { timesheetAggregate } from "./aggregate";
 import { decideBatchOverride, decideBookTime } from "./decider";
-import type { EventStore } from "@lox-solutions/alvyn";
+import type { EventStore } from "alvyn";
 import type { TimesheetEntry } from "./schema";
 
 export class TimesheetService {

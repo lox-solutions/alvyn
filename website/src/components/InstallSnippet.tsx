@@ -33,7 +33,7 @@ async function copyToClipboard(text: string): Promise<void> {
 }
 
 export function InstallSnippet({
-  command = "npm install @lox-solutions/alvyn pg",
+  command = "npm install alvyn pg",
 }: {
   command?: string;
 }) {

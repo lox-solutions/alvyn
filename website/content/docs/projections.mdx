@@ -25,7 +25,7 @@ Each projection tracks its own independent checkpoint position in PostgreSQL and
 For typed projections tied to event-sourced aggregates, use `defineProjection`. It mirrors the `defineAggregate` pattern with type inference, automatic stream prefix filtering, entity ID extraction, and typed handlers:
 
 ```typescript
-import { defineProjection } from "@lox-solutions/alvyn";
+import { defineProjection } from "alvyn";
 
 type OrderEvents = {
   OrderPlaced: { customerId: string; total: number };
@@ -83,7 +83,7 @@ interface ProjectionHandlerContext {
 For cross-stream projections that listen to multiple aggregate prefixes or custom event shapes, implement the `Projection` interface directly:
 
 ```typescript
-import type { Projection, StoredEvent } from "@lox-solutions/alvyn";
+import type { Projection, StoredEvent } from "alvyn";
 import type { PoolClient } from "pg";
 
 const multiStreamProjection: Projection = {

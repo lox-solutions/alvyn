@@ -6,7 +6,7 @@ import {
   EventStore,
   type AggregateReplayedEvent,
   type AggregateStoredEvent,
-} from "@lox-solutions/alvyn";
+} from "alvyn";
 import { BankAccount } from "./server/aggregates/bank-account";
 import {
   BankAccountBalance,

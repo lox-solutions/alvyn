@@ -11,10 +11,11 @@
 > **TypeScript event history for agent workflows and domain applications.**
 > Built on PostgreSQL — no separate event broker required.
 
-Alvyn is a **TypeScript library for event history on PostgreSQL**. Record meaningful facts, rebuild state, and inspect how an application reached its current state. AI agents are an approachable starting point, not the only target: orders, approvals, billing, and other domain applications use the same typed aggregates, replay, snapshots, projections, outbox, and schema evolution. No prerequisite CQRS knowledge or all-at-once rewrite is needed.
+Alvyn is a **TypeScript library for event history on PostgreSQL**. Record meaningful facts, rebuild state, and inspect how an application reached its current state. AI agents are an approachable starting point, not the only target: orders, approvals, billing, and other domain applications use the same typed aggregates, replay, snapshots, projections, outbox, and schema evolution. No prerequisite CQRS knowledge or all-at-once rewrite is needed. Alvyn is currently in public beta (v0.x) — the API may evolve before v1.0.
 
 [![CI](https://github.com/lox-solutions/alvyn/actions/workflows/ci.yml/badge.svg)](https://github.com/lox-solutions/alvyn/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/@lox-solutions/alvyn)](https://www.npmjs.com/package/@lox-solutions/alvyn)
+[![npm](https://img.shields.io/npm/v/alvyn)](https://www.npmjs.com/package/alvyn)
+[![Status: Public Beta](https://img.shields.io/badge/status-public_beta-orange.svg)](https://github.com/lox-solutions/alvyn)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![LFX Active Contributors](https://insights.linuxfoundation.org/api/badge/active-contributors?project=alvyn&repos=https://github.com/lox-solutions/alvyn)](https://insights.linuxfoundation.org/project/alvyn/repository/lox-solutions_alvyn)
 
@@ -31,9 +32,9 @@ Keep your current application and add history where it matters:
 ## Install
 
 ```bash
-npm install @lox-solutions/alvyn pg
+npm install alvyn pg
 # or
-pnpm add @lox-solutions/alvyn pg
+pnpm add alvyn pg
 ```
 
 `pg` is a peer dependency — you provide the connection pool.
@@ -46,7 +47,7 @@ This minimal application event contract records a goal and a known result in Pos
 
 ```typescript
 import { Pool } from "pg";
-import { EventStore, defineAggregate } from "@lox-solutions/alvyn";
+import { EventStore, defineAggregate } from "alvyn";
 
 type AgentEvents = {
   GoalReceived: { goal: string };
@@ -103,7 +104,7 @@ External effects need their own idempotency keys and reconciliation; event appen
 
 ```typescript
 import { Pool } from "pg";
-import { EventStore, defineAggregate } from "@lox-solutions/alvyn";
+import { EventStore, defineAggregate } from "alvyn";
 
 // Define an aggregate
 type OrderEvents = {
@@ -233,7 +234,7 @@ Snapshots are not necessarily aggregate snapshots. They are independent, domain-
 Use a projection instead when the result is a query/read model, needs its own table, combines multiple streams, powers search/filtering, or should be processed asynchronously.
 
 ```typescript
-import { EventStore, defineSnapshot } from "@lox-solutions/alvyn";
+import { EventStore, defineSnapshot } from "alvyn";
 
 const BankAccountBalance = defineSnapshot<
   { balance: number },
@@ -815,7 +816,7 @@ Explore comprehensive guides, real-world blueprints, and interactive API referen
 
 ## Contributing
 
-Alvyn is in beta and we actively welcome contributions. Whether it's bug reports, feature requests, documentation improvements, or code — all contributions help make this library more robust.
+We actively welcome contributions. Whether it's bug reports, feature requests, documentation improvements, or code — all contributions help make this library more robust.
 
 ```bash
 # Clone and install

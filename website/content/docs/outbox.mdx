@@ -122,7 +122,7 @@ Every outbox record generates an industry-standard CloudEvents v1.0.2 compliant 
 Build a relay worker that claims pending outbox entries and dispatches them to your external message broker:
 
 ```typescript
-import { EventStore } from "@lox-solutions/alvyn";
+import { EventStore } from "alvyn";
 import { connect } from "nats";
 
 const nc = await connect({ servers: process.env.NATS_URL });
