@@ -1,9 +1,8 @@
 ---
 title: Database Schema
 description: PostgreSQL table structure for the event store — events, event-backed snapshots, outbox, crypto keys, and projections.
+icon: Database
 ---
-
-# Database Schema
 
 All event store tables live in a dedicated PostgreSQL schema (default: `event_store`), isolated from application tables. Migrations are idempotent — safe to call on every application startup.
 
@@ -57,7 +56,7 @@ CREATE TABLE IF NOT EXISTS {schema}.events (
 
 | Column            | Type                   | Description                                                                                                                         |
 | ----------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `global_position` | `BIGSERIAL PK`         | Monotonically increasing global ordering                                                                                            |
+| `global_position` | `BIGSERIAL PK`         | Unique sequence position; may have gaps and is not commit order                                                                     |
 | `stream_id`       | `TEXT NOT NULL`        | Stream identifier (e.g. `"Order-123"`)                                                                                              |
 | `stream_version`  | `INTEGER NOT NULL`     | Sequential version within the stream (1, 2, 3, ...)                                                                                 |
 | `id`              | `TEXT NOT NULL`        | CloudEvents `id` — `"{streamId}/{streamVersion}"`                                                                                   |
@@ -86,12 +85,20 @@ CREATE TABLE IF NOT EXISTS {schema}.events (
 CREATE INDEX IF NOT EXISTS idx_events_stream_id
   ON {schema}.events (stream_id, stream_version);
 
+CREATE INDEX IF NOT EXISTS idx_events_stream_global_position
+  ON {schema}.events (stream_id, global_position, id);
+
 CREATE INDEX IF NOT EXISTS idx_events_event_type
   ON {schema}.events (event_type);
 
 CREATE INDEX IF NOT EXISTS idx_events_created_at
   ON {schema}.events (created_at);
+
+CREATE INDEX IF NOT EXISTS idx_events_source_id
+  ON {schema}.events (source, id);
 ```
+
+`{schema}` is a documentation placeholder, not executable SQL. The table above shows the final shape; setup adds `txid` via `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` for existing installations. The `crypto_key_id` and `event_global_pos` references are logical references, not declared foreign-key constraints.
 
 ### Event-backed snapshots
 

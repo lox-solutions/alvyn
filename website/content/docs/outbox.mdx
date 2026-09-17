@@ -1,9 +1,8 @@
 ---
 title: Transactional Outbox
 description: Atomically publish domain events to external message brokers (Kafka, NATS, RabbitMQ) with at-least-once delivery guarantees.
+icon: Send
 ---
-
-# Transactional Outbox
 
 The **Transactional Outbox** pattern guarantees **at-least-once delivery** of events to external message brokers (e.g. NATS, Apache Kafka, RabbitMQ, AWS SQS) without distributed transactions.
 
@@ -34,13 +33,17 @@ A common architectural pitfall is trying to write to PostgreSQL and publish to a
 
 ```typescript
 // ❌ DANGEROUS: Dual-write hazard
-await eventStore.append({ streamId, events: [orderPlaced] });
+await eventStore.append({
+  streamId,
+  expectedVersion: 0,
+  events: [orderPlaced],
+});
 await natsBroker.publish("orders", orderPlaced); // If this fails or worker crashes, event is lost to broker!
 ```
 
 If your node process crashes or the network blips between those two lines, your message broker will never receive the event.
 
-With Alvyn's Transactional Outbox, publishing is atomic and durable:
+With Alvyn's Transactional Outbox, recording the intent to publish is atomic and durable; external delivery happens later:
 
 ```typescript
 // ✅ SAFE: Single ACID transaction
@@ -133,7 +136,10 @@ async function runOutboxRelay() {
         for (const entry of entries) {
           // entry.topic matches the string from outboxTopics
           // entry.payload contains the CloudEvent JSON object
-          await jsm.publish(entry.topic, JSON.stringify(entry.payload));
+          await jsm.publish(
+            entry.topic,
+            new TextEncoder().encode(JSON.stringify(entry.payload)),
+          );
         }
       },
       100,
@@ -156,9 +162,11 @@ setInterval(runOutboxRelay, 1000);
 `processOutbox()` uses PostgreSQL's row-level locking with `FOR UPDATE SKIP LOCKED`.
 
 - Multiple background workers or server replicas can execute `runOutboxRelay()` concurrently without collision.
-- Each pending row is locked and claimed by **exactly one worker**.
+- Each pending row is locked by **one worker at a time**, not necessarily processed only once over its lifetime.
 - Other workers skip already-locked rows and immediately process the next available records.
 - If a worker crashes before finishing, PostgreSQL releases the row lock, allowing other workers to pick it up on the next cycle.
+
+An external publish may succeed before the worker crashes or the database commit fails. The next attempt can publish the same entry again. Wait for durable broker acknowledgement, retry failed batches, and deduplicate downstream using the outbox ID or CloudEvents `source` + `id` (scoped by destination). SQL writes using the supplied `client` can commit atomically with `processed_at`; external effects cannot.
 
 ## Retention and Cleanup
 
@@ -178,12 +186,12 @@ console.log(`Cleaned up ${deletedCount} archived outbox records.`);
 
 ## Outbox vs. Subscriptions
 
-| Feature         | Transactional Outbox (`processOutbox()`)           | Subscriptions (`subscribe()`)                     |
-| :-------------- | :------------------------------------------------- | :------------------------------------------------ |
-| **Model**       | **Competing Consumers** (Distributed Workers)      | **Fan-Out** (Every Subscriber)                    |
-| **Target**      | External Brokers (Kafka, NATS, RabbitMQ, SQS)      | In-process consumers, GraphQL, WebSockets, SSE    |
-| **Concurrency** | Exactly 1 worker publishes each event              | Every replica/subscriber receives all events      |
-| **Locking**     | PostgreSQL `FOR UPDATE SKIP LOCKED`                | Lock-free streaming via `LISTEN/NOTIFY` + Polling |
-| **Storage**     | Dedicated `outbox` table (cleaned up periodically) | Read directly from `events` table                 |
+| Feature         | Transactional Outbox (`processOutbox()`)               | Subscriptions (`subscribe()`)                     |
+| :-------------- | :----------------------------------------------------- | :------------------------------------------------ |
+| **Model**       | **Competing Consumers** (Distributed Workers)          | **Fan-Out** (Every Subscriber)                    |
+| **Target**      | External Brokers (Kafka, NATS, RabbitMQ, SQS)          | In-process consumers, GraphQL, WebSockets, SSE    |
+| **Concurrency** | One worker locks a row at a time; publishes may repeat | Every replica/subscriber receives all events      |
+| **Locking**     | PostgreSQL `FOR UPDATE SKIP LOCKED`                    | Lock-free streaming via `LISTEN/NOTIFY` + Polling |
+| **Storage**     | Dedicated `outbox` table (cleaned up periodically)     | Read directly from `events` table                 |
 
-For building query-optimized read models inside the same PostgreSQL database, see [Projections](/docs/projections). For architectural guidance on choosing between direct streaming and broker relays, see the [Event Streaming & Resilient Consumer Playbook](/docs/playbook-sse-and-consumer-scaling).
+For building query-optimized read models inside the same PostgreSQL database, see [Projections](/docs/projections). For architectural guidance on choosing between direct streaming and broker relays, see the [Event Streaming & Resilient Consumer Playbook](/docs/playbooks/sse-and-consumer-scaling).

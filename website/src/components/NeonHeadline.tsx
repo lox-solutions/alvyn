@@ -90,14 +90,15 @@ export function NeonHeadline({
       `}</style>
       <h1
         ref={containerRef}
+        aria-label={`${line1} ${line2}`}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
         className="text-5xl sm:text-6xl md:text-8xl font-black tracking-[-0.04em] leading-[0.95] mb-8 max-w-5xl cursor-default select-none text-fd-foreground"
         style={{ fontVariantNumeric: "tabular-nums" }}
       >
-        <span>{renderLine(line1, "l1")}</span>
+        <span aria-hidden="true">{renderLine(line1, "l1")}</span>
         <br />
-        <span style={{ color: "var(--color-fd-primary)" }}>
+        <span aria-hidden="true" style={{ color: "var(--color-fd-primary)" }}>
           {renderLine(line2, "l2")}
         </span>
       </h1>

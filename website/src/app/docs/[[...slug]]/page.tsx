@@ -11,7 +11,7 @@ import { notFound } from "next/navigation";
 import { getMDXComponents } from "@/components/mdx";
 import type { Metadata } from "next";
 import { createRelativeLink } from "fumadocs-ui/mdx";
-import { gitConfig } from "@/lib/shared";
+import { baseUrl, gitConfig } from "@/lib/shared";
 
 export default async function Page(props: PageProps<"/docs/[[...slug]]">) {
   const params = await props.params;
@@ -62,11 +62,12 @@ export async function generateMetadata(
   if (!page) notFound();
 
   const slugPath = (params.slug || []).join("/");
-  const pageUrl = `/docs/${slugPath}`;
+  const pageUrl = slugPath ? `/docs/${slugPath}` : "/docs";
 
   return {
     title: page.data.title,
     description: page.data.description,
+    alternates: { canonical: `${baseUrl}${pageUrl}` },
     openGraph: {
       title: `${page.data.title} | Alvyn`,
       description: page.data.description,

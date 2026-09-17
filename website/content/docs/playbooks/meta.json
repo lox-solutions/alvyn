@@ -1,0 +1,10 @@
+{
+  "title": "Playbooks",
+  "defaultOpen": false,
+  "icon": "BookOpen",
+  "pages": [
+    "ai-agent-deterministic-memory-and-audit",
+    "aggregate-design-and-stream-boundaries",
+    "sse-and-consumer-scaling"
+  ]
+}

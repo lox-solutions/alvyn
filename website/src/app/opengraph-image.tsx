@@ -58,8 +58,8 @@ export default function Image() {
           width: "40%",
         }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
+          alt="Alvyn"
           src={logoBase64}
           width={140}
           height={140}
@@ -142,8 +142,8 @@ export default function Image() {
             fontWeight: "normal",
           }}
         >
-          Capture every business intent as an immutable, append-only fact. Build
-          an irreplaceable data moat for the agentic AI era.
+          Store agent steps and business events. Rebuild application state.
+          TypeScript + PostgreSQL.
         </div>
       </div>
     </div>,

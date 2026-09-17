@@ -20,7 +20,8 @@ export function JourneySimulator() {
 
   const reset = () => setStep(0);
 
-  const getCrudData = () => {
+  // ── LIBRARY SCENARIO DATA ────────────────────────────────────────────
+  const getLibraryCrudData = () => {
     switch (step) {
       case 0:
         return null;
@@ -83,7 +84,7 @@ export function JourneySimulator() {
     }
   };
 
-  const getEvents = () => {
+  const getLibraryEvents = () => {
     const list = [];
     if (step >= 1) {
       list.push({
@@ -126,31 +127,29 @@ export function JourneySimulator() {
           title: "Intro to Prompt Engineering",
           fineAssessed: 15.0,
         },
-        desc: "Member reported Prompt Engineering misplaced; $15 replacement fine registered.",
+        desc: "Member reported Prompt Engineering book lost; replacement fee assessed.",
       });
       list.push({
         id: "evt_04",
         time: "15:24:32",
-        type: "FineWaived",
-        data: {
-          memberId: "usr_9921",
-          bookId: "book_prompt",
-          amount: 15.0,
-          reason: "Book found in backpack and returned in excellent condition",
-        },
-        desc: "Misplaced book found and returned; $15 replacement fine waived.",
-      });
-      list.push({
-        id: "evt_05",
-        time: "15:24:33",
-        type: "BookReturned",
+        type: "BookFoundAndReturned",
         data: {
           memberId: "usr_9921",
           bookId: "book_prompt",
           title: "Intro to Prompt Engineering",
-          returnedCondition: "excellent",
         },
-        desc: "Prompt Engineering returned to library in excellent condition.",
+        desc: "Book found in library study carrel 2 minutes later.",
+      });
+      list.push({
+        id: "evt_05",
+        time: "15:24:33",
+        type: "FineWaived",
+        data: {
+          memberId: "usr_9921",
+          amount: 15.0,
+          reason: "Returned immediately upon discovery",
+        },
+        desc: "Replacement fine automatically reversed.",
       });
       list.push({
         id: "evt_06",
@@ -182,21 +181,21 @@ export function JourneySimulator() {
     return list;
   };
 
-  const getAiInsight = () => {
+  const getLibraryAiInsight = () => {
     switch (step) {
       case 0:
         return {
-          title: "Waiting for intent signals...",
+          title: "Start with a book loan",
           text: "Click an action above to begin simulating real member library activity.",
           crudNote:
-            "CRUD system will perform overwrite (UPDATE) queries in-place.",
+            "This current-state-only example updates one row in place, without an audit table.",
           eventNote:
-            "Alvyn will stream immutable state facts directly into PostgreSQL.",
+            "The event-history example retains each recorded transition. This is a browser illustration, not a live database connection.",
         };
       case 1:
         return {
-          title: "Initial Intent Decoded",
-          text: "The library member is researching AI and prompt engineering. They are exploring commodity-level AI software builders.",
+          title: "One recorded checkout",
+          text: "We know which book was borrowed and when. That does not tell us the member's motivation.",
           crudNote:
             "CRUD stores one static row in member_current_loans with status 'borrowed'.",
           eventNote:
@@ -204,8 +203,8 @@ export function JourneySimulator() {
         };
       case 2:
         return {
-          title: "Reading Habits Analyzed",
-          text: "Member extended the loan. This signals higher engagement or more thorough analysis than a casual reader.",
+          title: "The original due date still matters",
+          text: "The member extended the loan. The event history preserves both the original and the new due date.",
           crudNote:
             "CRUD overwrites fields: due_date is now extended. Previous checkout due date is permanently lost.",
           eventNote:
@@ -213,45 +212,46 @@ export function JourneySimulator() {
         };
       case 3:
         return {
-          title: "CRITICAL PIVOT: The Architecture Realization",
-          text: "The member misplaced the prompt book, resolved the fine, and immediately upgraded to 'Designing Data-Intensive Applications'. They realized that coding simple prompts is a commodity and building a robust data platform/moat is where the durable value lies.",
+          title: "Explain the zero balance",
+          text: "The member reported a lost book, returned it, had the fine waived, and borrowed another book. A zero balance alone cannot explain those steps.",
           crudNote:
             "CRUD overwrites the entire active loan row. No record remains that they ever borrowed the prompt engineering book, extended it, or reported it lost.",
           eventNote:
-            "Alvyn records BookReportedLost, FineWaived, BookReturned, and BookBorrowed. This is a massive business signal of the member's shifting profile.",
+            "The recorded loss, return, waiver, and new checkout remain available for support and review.",
         };
       case 4:
         return {
-          title: "Deep Member Persona Unlocked",
-          text: "Borrowing cycle complete. We have built an invaluable, high-fidelity member intelligence record.",
+          title: "Same final state. More context.",
+          text: "The loan is closed in both views. Only the history view explains how it got there — just as recorded tool steps can explain an agent run.",
           crudNote:
-            "CRUD insight: 'Returned book' (Generic member, send standard library announcements).",
+            "This row shows the final return, not the earlier extension and waived fine.",
           eventNote:
-            "Alvyn insight: 'High-value developer who abandoned commodity prompt guides to study core database & data platform architectures. Trigger targeted invite to the upcoming Alvyn PostgreSQL-native streams workshop.' This is your data moat in action.",
+            "The event stream preserves the recorded transitions. Interpretation, retention, and permissions remain application responsibilities.",
         };
     }
   };
 
-  const crud = getCrudData();
-  const events = getEvents();
-  const ai = getAiInsight();
+  const crud = getLibraryCrudData();
+  const events = getLibraryEvents();
+  const ai = getLibraryAiInsight();
 
   return (
     <div className="w-full max-w-5xl bg-fd-secondary/30 border border-fd-border rounded-3xl overflow-hidden shadow-2xl relative">
-      {/* Simulation Controller */}
+      {/* Controller Header */}
       <div className="p-6 border-b border-fd-border bg-fd-secondary/30 flex flex-col md:flex-row justify-between items-center gap-4">
         <div className="text-left">
-          <h3 className="text-sm font-semibold tracking-wide text-fd-foreground flex items-center gap-2">
+          <h3 className="text-sm font-semibold tracking-wide text-fd-foreground flex items-center gap-2 mb-1">
             <span className="relative flex h-2 w-2">
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]"></span>
             </span>
-            Live Domain Simulator
+            Live Domain &amp; State Simulator
           </h3>
-          <p className="text-xs text-fd-muted-foreground mt-1">
-            Simulate a member book-borrowing journey. Compare Traditional CRUD
-            against Alvyn Event Sourcing.
+          <p className="text-xs text-fd-muted-foreground">
+            Compare a current-state-only table with recorded events.
           </p>
         </div>
+
+        {/* Action Buttons */}
         <div className="flex flex-wrap gap-2 items-center">
           <button
             onClick={() => setStep(1)}
@@ -293,7 +293,7 @@ export function JourneySimulator() {
             }`}
           >
             <ArrowLeftRight size={13} />
-            3. Lost & Swap
+            3. Lost &amp; Swap
           </button>
           <button
             onClick={() => setStep(4)}
@@ -305,8 +305,9 @@ export function JourneySimulator() {
             }`}
           >
             <CheckCircle2 size={13} />
-            4. Return & Close
+            4. Return &amp; Close
           </button>
+
           {step > 0 && (
             <button
               onClick={reset}
@@ -320,16 +321,16 @@ export function JourneySimulator() {
       </div>
 
       {/* Main Panel grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-fd-border h-[460px] overflow-hidden">
+      <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-fd-border overflow-hidden">
         {/* CRUD Database */}
-        <div className="flex flex-col h-full bg-fd-background text-left">
+        <div className="flex flex-col h-[380px] lg:h-[460px] min-w-0 bg-fd-background text-left">
           <div className="px-5 py-3 border-b border-fd-border bg-fd-secondary/10 flex items-center justify-between">
             <span className="text-xs font-semibold tracking-wide text-fd-muted-foreground flex items-center gap-2">
               <Database size={14} className="text-red-500/80" />
-              Traditional CRUD PostgreSQL
+              Current-state-only table
             </span>
             <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/10">
-              State-Destructive
+              Latest values
             </span>
           </div>
 
@@ -358,173 +359,81 @@ export function JourneySimulator() {
                   </div>
                   <div className="text-fd-muted-foreground pt-3 space-y-1">
                     <div>{`{`}</div>
-                    <div className="pl-4">
-                      id:{" "}
-                      <span className="text-fd-secondary-foreground">
-                        &apos;{crud.row.id}&apos;
-                      </span>
-                      ,
-                    </div>
-                    <div className="pl-4">
-                      member_id:{" "}
-                      <span className="text-fd-secondary-foreground">
-                        &apos;{crud.row.member_id}&apos;
-                      </span>
-                      ,
-                    </div>
-                    <div className="pl-4">
-                      book_id:{" "}
-                      <span className="text-fd-foreground font-medium">
-                        &apos;{crud.row.book_id}&apos;
-                      </span>
-                      ,{" "}
-                      {step >= 3 && (
-                        <span className="text-red-500/60 text-[10px] font-medium">
-                          (overwrote book_prompt)
+                    {Object.entries(crud.row).map(([key, value]) => (
+                      <div key={key} className="pl-4">
+                        {key}:{" "}
+                        <span className="text-fd-foreground font-medium">
+                          {typeof value === "string"
+                            ? `'${value}'`
+                            : String(value)}
                         </span>
-                      )}
-                    </div>
-                    <div className="pl-4">
-                      book_title:{" "}
-                      <span className="text-fd-foreground font-medium">
-                        &apos;{crud.row.book_title}&apos;
-                      </span>
-                      ,{" "}
-                      {step >= 3 && (
-                        <span className="text-red-500/60 text-[10px] font-medium">
-                          (overwrote prompt book)
-                        </span>
-                      )}
-                    </div>
-                    <div className="pl-4">
-                      due_date:{" "}
-                      <span className="text-fd-secondary-foreground">
-                        &apos;{crud.row.due_date}&apos;
-                      </span>
-                      ,{" "}
-                      {step >= 2 && (
-                        <span className="text-red-500/60 text-[10px] font-medium">
-                          (overwrote original date)
-                        </span>
-                      )}
-                    </div>
-                    <div className="pl-4">
-                      status:{" "}
-                      <span className="text-fd-foreground font-medium">
-                        &apos;{crud.row.status}&apos;
-                      </span>
-                      ,{" "}
-                      {step === 4 && (
-                        <span className="text-red-500/60 text-[10px] font-medium">
-                          (overwrote active/borrowed)
-                        </span>
-                      )}
-                    </div>
-                    <div className="pl-4">
-                      fine_assessed:{" "}
-                      <span className="text-fd-secondary-foreground">
-                        {crud.row.fine_assessed}.00
-                      </span>
-                      ,{" "}
-                      {step >= 3 && (
-                        <span className="text-red-500/60 text-[10px] font-medium">
-                          (lost fine history)
-                        </span>
-                      )}
-                    </div>
-                    <div className="pl-4">
-                      updated_at:{" "}
-                      <span className="text-fd-secondary-foreground">
-                        &apos;{crud.row.updated_at}&apos;
-                      </span>
-                    </div>
+                        ,
+                      </div>
+                    ))}
                     <div>{`}`}</div>
                   </div>
                 </div>
-                <div className="text-[11px] text-red-400/80 bg-red-950/10 rounded-xl p-3 border border-red-950/20 flex gap-2 leading-relaxed">
-                  <AlertTriangle
-                    size={14}
-                    className="shrink-0 mt-0.5 text-red-400"
-                  />
-                  <span>
-                    No historical trajectory remains in the database. The system
-                    completely forgets the prompt engineering book, the
-                    extension, and the lost-then-returned saga.
-                  </span>
+
+                <div className="p-3 bg-red-950/10 border border-red-900/20 rounded-xl text-[11px] text-red-400/90 leading-relaxed font-sans">
+                  <strong>Without a separate history:</strong>{" "}
+                  {step >= 3
+                    ? "Prior loan dates, fine assessments, and member book preferences have been overwritten. The history is reduced to 1 row."
+                    : "This example keeps only the latest values. An audit table or another history mechanism would need to be added separately."}
                 </div>
               </div>
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-center text-fd-muted-foreground p-6">
-                <Database
-                  size={24}
-                  className="mb-3 text-fd-muted-foreground/40"
-                />
-                <p>Database is empty.</p>
-                <p className="text-[11px] mt-1">
-                  Start the simulation by clicking "Borrow Book".
+                <Database size={32} className="mb-3 opacity-20" />
+                <p className="text-xs">No transactions executed yet.</p>
+                <p className="text-[10px] text-fd-muted-foreground mt-1">
+                  Click step 1 above to trigger the database state.
                 </p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Alvyn Event Sourcing */}
-        <div className="flex flex-col h-full bg-fd-secondary/10 text-left">
+        {/* Alvyn Event Store */}
+        <div className="flex flex-col h-[380px] lg:h-[460px] min-w-0 bg-fd-background text-left">
           <div className="px-5 py-3 border-b border-fd-border bg-fd-secondary/10 flex items-center justify-between">
             <span className="text-xs font-semibold tracking-wide text-fd-foreground flex items-center gap-2">
-              <Sparkles size={14} className="text-emerald-500" />
-              Alvyn Immutable Event Log
+              <Sparkles size={14} className="text-emerald-400" />
+              Alvyn Event Store (Append-Only)
             </span>
-            <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/10">
-              Append-Only (No Overwrites)
+            <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              Recorded events
             </span>
           </div>
 
-          <div className="flex-1 p-5 overflow-auto font-mono text-xs space-y-3">
+          <div className="flex-1 p-5 overflow-auto space-y-3 font-mono text-xs select-none">
             {events.length > 0 ? (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between text-[11px] text-fd-muted-foreground pb-2 border-b border-fd-border">
-                  <span>Stream: member-usr_9921</span>
-                  <span className="text-emerald-400 font-semibold">
-                    {events.length} events recorded
-                  </span>
+              events.map((evt, idx) => (
+                <div
+                  key={evt.id}
+                  className="bg-fd-secondary/20 border border-fd-border rounded-2xl p-4 transition-all duration-300 hover:border-emerald-500/40 relative overflow-hidden"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">
+                      #{idx + 1} — {evt.type}
+                    </span>
+                    <span className="text-[10px] text-fd-muted-foreground">
+                      {evt.time}
+                    </span>
+                  </div>
+                  <p className="text-[11px] font-sans text-fd-foreground mb-2 leading-relaxed">
+                    {evt.desc}
+                  </p>
+                  <pre className="text-[10px] text-fd-muted-foreground bg-fd-background/80 p-2.5 rounded-xl overflow-x-auto border border-fd-border">
+                    {JSON.stringify(evt.data, null, 2)}
+                  </pre>
                 </div>
-                <div className="space-y-2 max-h-[340px] overflow-auto pr-1">
-                  {[...events].reverse().map((evt, i) => (
-                    <div
-                      key={evt.id}
-                      className="border border-fd-border bg-fd-secondary/30 rounded-2xl p-4 space-y-1 relative animate-in fade-in slide-in-from-top-2 duration-300"
-                    >
-                      <div className="flex items-center justify-between text-[10px] text-fd-muted-foreground">
-                        <div className="flex items-center gap-2">
-                          <span className="text-emerald-400 font-bold">
-                            {evt.type}
-                          </span>
-                          <span className="text-[9px] bg-background/40 text-fd-foreground border border-background/30 px-1.5 py-0.5 rounded">
-                            Event #{events.length - i}
-                          </span>
-                        </div>
-                        <span>{evt.time}</span>
-                      </div>
-                      <div className="text-fd-secondary-foreground font-medium text-[11px] mt-1">
-                        {evt.desc}
-                      </div>
-                      <pre className="text-[10px] text-fd-muted-foreground bg-fd-background border border-fd-border p-2 rounded-xl mt-2 overflow-x-auto">
-                        {JSON.stringify(evt.data, null, 2)}
-                      </pre>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              ))
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-center text-fd-muted-foreground p-6">
-                <Sparkles
-                  size={24}
-                  className="mb-3 text-fd-muted-foreground/40"
-                />
-                <p>Event stream is empty.</p>
-                <p className="text-[11px] mt-1">
-                  Click "Borrow Book" to emit the first domain event.
+                <Sparkles size={32} className="mb-3 opacity-20" />
+                <p className="text-xs">Event stream is empty.</p>
+                <p className="text-[10px] text-fd-muted-foreground mt-1">
+                  Click step 1 above to append your first CloudEvent.
                 </p>
               </div>
             )}
@@ -532,35 +441,26 @@ export function JourneySimulator() {
         </div>
       </div>
 
-      {/* Intelligence & Business Insight Panel */}
-      <div className="p-6 bg-fd-secondary/40 border-t border-fd-border text-left">
-        <div className="flex items-center gap-2 mb-3">
-          <Brain size={16} className="text-primary" />
-          <h4 className="text-xs font-semibold tracking-wide text-fd-foreground">
-            {ai.title}
-          </h4>
+      {/* Intelligence & Audit Insight Footer */}
+      <div className="p-6 border-t border-fd-border bg-fd-secondary/10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-left">
+        <div className="flex items-start gap-3">
+          <div className="p-2.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mt-0.5">
+            <Brain size={18} />
+          </div>
+          <div>
+            <h4 className="text-xs font-semibold text-fd-foreground flex items-center gap-2">
+              {ai.title}
+            </h4>
+            <p className="text-xs text-fd-muted-foreground mt-1 max-w-2xl leading-relaxed">
+              {ai.text}
+            </p>
+          </div>
         </div>
-        <p className="text-xs text-fd-muted-foreground leading-relaxed mb-4">
-          {ai.text}
-        </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
-          <div className="bg-red-950/20 border border-red-900/30 rounded-2xl p-3 flex flex-col justify-between">
-            <div className="text-[10px] font-semibold text-red-400 mb-1 flex items-center gap-1.5">
-              <Database size={12} /> CRUD Database Perspective
-            </div>
-            <p className="text-[11px] text-red-300/80 leading-normal">
-              {ai.crudNote}
-            </p>
-          </div>
-          <div className="bg-emerald-950/20 border border-emerald-900/30 rounded-2xl p-3 flex flex-col justify-between">
-            <div className="text-[10px] font-semibold text-emerald-400 mb-1 flex items-center gap-1.5">
-              <Sparkles size={12} /> Alvyn Stream Perspective
-            </div>
-            <p className="text-[11px] text-emerald-300/80 leading-normal">
-              {ai.eventNote}
-            </p>
-          </div>
+        <div className="text-right shrink-0">
+          <span className="text-[10px] font-mono px-3 py-1 rounded-full bg-fd-secondary border border-fd-border text-fd-secondary-foreground">
+            {events.length} illustrative events
+          </span>
         </div>
       </div>
     </div>

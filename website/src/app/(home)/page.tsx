@@ -2,21 +2,29 @@ import Link from "next/link";
 import { NeonHeadline } from "@/components/NeonHeadline";
 import { JourneySimulator } from "@/components/JourneySimulator";
 import { CodeShowcase } from "@/components/CodeShowcase";
+import { InstallSnippet } from "@/components/InstallSnippet";
+import type { Metadata } from "next";
+import { baseUrl } from "@/lib/shared";
 import {
   Sparkles,
   Database,
   Lock,
   GitFork,
   FileJson,
-  Activity,
   ArrowRight,
+  Bot,
+  ShieldCheck,
 } from "lucide-react";
+
+export const metadata: Metadata = {
+  alternates: { canonical: baseUrl },
+};
 
 export default function HomePage() {
   return (
     <div className="flex flex-col items-center flex-1 overflow-hidden bg-fd-background text-fd-foreground selection:bg-zinc-800">
       {/* ── HERO SECTION ─────────────────────────────────────────────────── */}
-      <section className="relative w-full min-h-[92vh] flex flex-col items-center justify-center px-6 text-center py-24 overflow-hidden">
+      <section className="relative w-full flex flex-col items-center justify-center px-6 text-center py-12 md:py-16 overflow-hidden">
         {/* Soft, premium radial glow targeting the headline */}
         <div
           aria-hidden
@@ -33,36 +41,41 @@ export default function HomePage() {
           <img
             src="/logo.png"
             alt="Alvyn"
-            width={200}
-            height={200}
-            className="mb-8"
+            width={112}
+            height={112}
+            className="mb-6"
           />
 
-          <p className="text-xl sm:text-2xl md:text-3xl font-semibold tracking-tight text-fd-foreground mb-6">
-            Event Sourcing. As simple as CRUD.
-          </p>
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-fd-border bg-fd-secondary/60 text-xs font-mono font-medium text-fd-foreground mb-6 backdrop-blur-sm shadow-sm">
+            <Sparkles size={13} className="text-emerald-400" />
+            Event history for AI agents &amp; everyday applications
+          </div>
 
           <NeonHeadline line1="Your data tells" line2="the whole story." />
 
-          <p className="text-base md:text-lg text-zinc-400 max-w-2xl mb-12 leading-relaxed tracking-normal font-normal text-center px-4">
-            CRUD applications capture what happened, but they often lose the
-            reason why. Alvyn records the{" "}
-            <span className="font-semibold text-fd-foreground border-b border-fd-foreground/20 pb-0.5">
-              full narrative
-            </span>{" "}
-            of your business logic as an immutable stream of events. Stop
-            settling for static records; start building on the truth of your
-            history.
+          <p className="text-base md:text-lg text-zinc-600 dark:text-zinc-300 max-w-2xl mb-6 leading-relaxed tracking-normal font-normal text-center px-4">
+            Store agent tool calls, order updates, and business events. Rebuild
+            application state from that history — in your own PostgreSQL
+            database. Alvyn brings type-safe event sourcing to TypeScript,
+            without requiring a new agent framework or a separate message
+            broker.
           </p>
 
           {/* Action CTAs in Apple Style */}
-          <div className="flex flex-wrap justify-center gap-4 mb-24">
+          <div className="flex flex-wrap justify-center gap-4 mb-6">
             <Link
               href="/docs"
               className="inline-flex items-center gap-2 rounded-full px-8 py-3.5 text-sm font-semibold bg-fd-primary text-fd-primary-foreground hover:opacity-90 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer shadow-[0_8px_30px_rgba(var(--color-fd-primary),0.15)]"
             >
               Get Started
               <ArrowRight size={15} />
+            </Link>
+            <Link
+              href="/docs/playbooks/ai-agent-deterministic-memory-and-audit"
+              className="inline-flex items-center gap-2 rounded-full border border-fd-border bg-fd-secondary/60 backdrop-blur-sm px-8 py-3.5 text-sm font-semibold text-fd-foreground hover:bg-fd-secondary/80 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer shadow-sm"
+            >
+              <Bot size={16} />
+              AI Agent Playbook
             </Link>
             <Link
               href="https://github.com/lox-solutions/alvyn"
@@ -79,21 +92,47 @@ export default function HomePage() {
               GitHub Repository
             </Link>
           </div>
+          <InstallSnippet />
+          <p className="text-sm text-fd-muted-foreground mt-4">
+            Start with one stream. No prior event sourcing or CQRS knowledge
+            needed.
+          </p>
+        </div>
+      </section>
 
-          {/* Live Domain Simulator Showcase */}
-          <div className="w-full flex flex-col items-center mt-6 z-20">
-            <div className="text-center mb-12 max-w-xl">
-              <h2 className="text-3xl font-semibold tracking-tight text-fd-foreground mb-3">
-                Experience the Paradigm Shift
-              </h2>
-              <p className="text-sm text-fd-muted-foreground leading-relaxed max-w-md mx-auto">
-                Click the library actions below to see why Traditional CRUD
-                loses data and how Alvyn builds an AI-ready domain journey
-                narrative.
-              </p>
-            </div>
-            <JourneySimulator />
+      <section className="w-full border-t border-fd-border py-16">
+        <div className="max-w-6xl mx-auto px-6">
+          <h2 className="text-3xl font-semibold tracking-tight text-center mb-4">
+            Keep the steps, not just the latest result.
+          </h2>
+          <p className="text-fd-muted-foreground text-center max-w-2xl mx-auto mb-8">
+            Try a familiar library checkout. The same principle applies to an
+            agent run or an order: save what happened, then derive the current
+            state. This interactive illustration runs locally in your browser,
+            not against a database.
+          </p>
+          <JourneySimulator />
+        </div>
+      </section>
+
+      {/* ── CODE SHOWCASE SECTION ───────────────────────────────────────── */}
+      <section className="w-full bg-fd-background relative py-32">
+        <div className="max-w-5xl mx-auto px-6 flex flex-col items-center">
+          <div className="text-center mb-16 max-w-xl">
+            <span className="text-xs font-mono font-medium uppercase tracking-[0.2em] text-fd-muted-foreground mb-3 block">
+              Type-Safe, PostgreSQL-Native
+            </span>
+            <h2 className="text-3xl md:text-4xl font-semibold tracking-tight text-fd-foreground mb-4">
+              A few events. A state you can explain.
+            </h2>
+            <p className="text-sm text-fd-muted-foreground leading-relaxed max-w-md mx-auto">
+              No complex external message brokers or distributed consensus
+              clusters. Alvyn runs directly inside your existing PostgreSQL
+              database. Typed events and reducers keep your application
+              contracts explicit.
+            </p>
           </div>
+          <CodeShowcase />
         </div>
       </section>
 
@@ -103,37 +142,35 @@ export default function HomePage() {
           {/* Pillar 1 */}
           <div className="flex flex-col text-left">
             <span className="text-xs font-mono font-medium uppercase tracking-[0.2em] text-fd-muted-foreground mb-4 flex items-center gap-2">
-              <span className="w-6 h-px bg-fd-border" /> 01 — Beyond the Four
-              Verbs
+              <span className="w-6 h-px bg-fd-border" /> 01 — Start with a
+              useful history
             </span>
             <h2 className="text-4xl md:text-5xl font-semibold tracking-tight leading-tight mb-6 text-fd-foreground">
-              The database shouldn&apos;t
+              Deterministic replay &amp; audit trails
               <br />
               <span className="text-fd-muted-foreground font-normal">
-                dictate your domain.
+                for AI &amp; distributed systems.
               </span>
             </h2>
             <div className="space-y-6 text-fd-muted-foreground leading-relaxed text-base font-normal">
               <p>
-                Traditional CRUD architectures collapse complex business logic
-                into generic operations. A single &ldquo;Update&rdquo; might
-                represent upgrading a subscription, correcting a billing error,
-                or adjusting a delivery window. When these are flattened into a
-                table row, the context is lost forever.
+                A final status cannot tell you which tool timed out, why an
+                order changed, or which approval preceded a payment. If your
+                application only stores the latest state, those transitions are
+                missing.
               </p>
               <p>
-                In an era where data is the ultimate competitive advantage,
-                discarding meaning is a strategic risk. You can always derive
-                state from events, but you can never reconstruct the{" "}
-                <strong className="font-semibold text-fd-foreground">
-                  original intent
-                </strong>{" "}
-                from a modified row.
+                With Alvyn, your application explicitly records meaningful
+                events. Pure reducers turn them into current state. That is
+                event sourcing: start small, without splitting your whole
+                application into separate read and write services. Add
+                projections when your queries need them.
               </p>
               <p>
-                Alvyn ensures that every business action is preserved with its
-                full context, creating a high-fidelity record that serves your
-                users today and your AI models tomorrow.
+                Replay reconstructs state from recorded events. It does not
+                rerun models deterministically, reveal their internal reasoning,
+                or automatically resume external tool calls. Keep your existing
+                AI SDK, web framework, and observability tools.
               </p>
             </div>
           </div>
@@ -141,69 +178,38 @@ export default function HomePage() {
           {/* Pillar 2 */}
           <div className="flex flex-col text-left">
             <span className="text-xs font-mono font-medium uppercase tracking-[0.2em] text-fd-muted-foreground mb-4 flex items-center gap-2">
-              <span className="w-6 h-px bg-fd-border" /> 02 — Semantic Precision
+              <span className="w-6 h-px bg-fd-border" /> 02 — Know the
+              guarantees
             </span>
             <h2 className="text-4xl md:text-5xl font-semibold tracking-tight leading-tight mb-6 text-fd-foreground">
-              Code that speaks
+              Useful records.
               <br />
               <span className="text-fd-muted-foreground font-normal">
-                your business language.
+                Explicit boundaries.
               </span>
             </h2>
             <div className="space-y-6 text-fd-muted-foreground leading-relaxed text-base font-normal">
               <p>
-                When your codebase uses the same vocabulary as your domain
-                experts, complexity disappears. Instead of generic functions,
-                Alvyn encourages verbs that mean something:{" "}
-                <code className="text-fd-secondary-foreground">
-                  onboardCustomer
-                </code>
-                ,{" "}
-                <code className="text-fd-secondary-foreground">
-                  approveClaim
-                </code>
-                , or{" "}
-                <code className="text-fd-secondary-foreground">
-                  suspendAccess
-                </code>
-                .
+                Append-oriented APIs and CloudEvents provide a structured
+                history. They do not make PostgreSQL tamper-proof: database
+                permissions, retention, backups, and monitoring remain part of
+                your deployment.
               </p>
               <p>
-                Naming isn&apos;t just about style; it&apos;s about{" "}
-                <strong className="font-semibold text-fd-foreground">
-                  system integrity
-                </strong>
-                . By capturing the language of the business directly in your
-                events, you eliminate the translation layer that causes most
-                software failures.
+                Optional AES-256-GCM envelope encryption supports
+                crypto-shredding. Protect snapshots separately and account for
+                exported data, keys, and backups. Reducers must explicitly
+                handle redacted events.
               </p>
               <p>
-                Event Sourcing with Alvyn turns your audit log into a living
-                document that any stakeholder can understand, ensuring your
-                architecture stays aligned with reality as you scale.
+                These primitives can support audit and privacy requirements;
+                using Alvyn alone does not establish GDPR or EU AI Act
+                compliance. Article 12 addresses logging for high-risk AI
+                systems, not a universal requirement to record every model
+                token.
               </p>
             </div>
           </div>
-        </div>
-      </section>
-
-      {/* ── CODE SHOWCASE SECTION ───────────────────────────────────────── */}
-      <section className="w-full border-t border-fd-border bg-fd-background relative py-32">
-        <div className="max-w-5xl mx-auto px-6 flex flex-col items-center">
-          <div className="text-center mb-16 max-w-xl">
-            <span className="text-xs font-mono font-medium uppercase tracking-[0.2em] text-fd-muted-foreground mb-3 block">
-              Type-Safe, PostgreSQL-Native
-            </span>
-            <h2 className="text-3xl md:text-4xl font-semibold tracking-tight text-fd-foreground mb-4">
-              Event streams as simple as standard DB queries.
-            </h2>
-            <p className="text-sm text-fd-muted-foreground leading-relaxed max-w-md mx-auto">
-              No complex external message brokers or distributed consensus
-              clusters. Alvyn runs directly inside your existing PostgreSQL
-              database with total compile-time safety.
-            </p>
-          </div>
-          <CodeShowcase />
         </div>
       </section>
 
@@ -214,7 +220,7 @@ export default function HomePage() {
             The Engine
           </span>
           <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mb-20 text-fd-foreground max-w-xl">
-            Everything you need for enterprise-grade streams.
+            Start small. Add the primitives you need.
           </h2>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -222,38 +228,38 @@ export default function HomePage() {
               {
                 icon: Sparkles,
                 n: "01",
-                title: "Preserve Business Intent",
-                body: "Every state transition is stored as an immutable, append-only historical fact. Never lose the 'why' behind a change again.",
+                title: "Rebuild application state",
+                body: "Replay recorded events through your reducers. Inspect agent steps or business transitions without calling the model or external tools again.",
               },
               {
-                icon: Database,
+                icon: ShieldCheck,
                 n: "02",
-                title: "Native PostgreSQL",
-                body: "No heavy Kafka or EventStoreDB setups. Uses native Postgres advisory locks, optimistic concurrency, and Outbox patterns in your current DB.",
+                title: "Structured event history",
+                body: "Record the inputs, outputs, and decisions your application chooses to persist as CloudEvents. Complement traces with durable business history.",
               },
               {
                 icon: Lock,
                 n: "03",
-                title: "GDPR Crypto-Shredding",
-                body: "Built-in AES-256-GCM event encryption. Instantly shred a cryptographic tenant key to make PII irrecoverable—even in historical logs.",
+                title: "Optional envelope encryption",
+                body: "Built-in envelope encryption. Revoking a cryptographic tenant or user key renders PII unreadable (tombstoned), helping teams honor erasure requests while keeping the event stream intact.",
               },
               {
-                icon: GitFork,
+                icon: Database,
                 n: "04",
-                title: "Schema Evolution",
-                body: "Real-world business logic shifts. Out-of-the-box support for Event Upcasting and version mappings ensures history evolves gracefully.",
+                title: "PostgreSQL-native outbox",
+                body: "Commit events and outbox records together. Relay with at-least-once delivery; external side effects still need idempotency. No separate broker required to get started.",
               },
               {
                 icon: FileJson,
                 n: "05",
-                title: "Type-Safe Aggregates",
-                body: "Strict TypeScript compilation guarantees. Event mapping inference and strict aggregate state definitions.",
+                title: "Type-Safe Aggregates & Invariants",
+                body: "Typed payloads and handler inference help keep events and reducers consistent. Your application validates inputs and enforces business rules before appending.",
               },
               {
-                icon: Activity,
+                icon: GitFork,
                 n: "06",
-                title: "High-Fidelity History",
-                body: "An absolute record of every business decision and user action. The foundational core for auditable systems and AI-ready datasets.",
+                title: "Read-time schema evolution",
+                body: "Upcasters transform older event payloads when reading, without rewriting history. Plan compatible reader and writer rollouts as your application changes.",
               },
             ].map(({ icon: Icon, n, title, body }) => (
               <div
@@ -281,6 +287,34 @@ export default function HomePage() {
       </section>
 
       {/* ── MANIFESTO & CLOSING CTA ─────────────────────────────────────── */}
+      <section className="w-full border-t border-fd-border py-16">
+        <div className="max-w-4xl mx-auto px-6 space-y-5">
+          <h2 className="text-3xl font-semibold">
+            Is Alvyn right for your application?
+          </h2>
+          <p className="text-fd-muted-foreground">
+            Choose it when transitions matter: tool execution records,
+            approvals, orders, subscriptions, or other state with a history
+            worth keeping. Ordinary CRUD is still a good choice when you only
+            need current values.
+          </p>
+          <p className="text-fd-muted-foreground">
+            Alvyn is not a workflow runtime, vector memory service, or
+            observability platform. Keep those tools where you need scheduling,
+            semantic retrieval, or tracing. Event history is the complementary
+            persistence layer.
+          </p>
+          <div className="flex flex-wrap gap-6 underline underline-offset-4">
+            <Link href="/docs/load-testing">Benchmarks and their limits</Link>
+            <Link href="/docs/api-reference">
+              API and concurrency guarantees
+            </Link>
+            <Link href="https://github.com/lox-solutions/alvyn/releases">
+              Releases and compatibility changes
+            </Link>
+          </div>
+        </div>
+      </section>
       <section className="relative w-full border-t border-fd-border overflow-hidden bg-gradient-to-b from-transparent to-fd-background">
         {/* Soft, premium highlight mask */}
         <div
@@ -301,10 +335,9 @@ export default function HomePage() {
             </span>
           </p>
           <p className="text-fd-muted-foreground text-base max-w-xl mx-auto mb-14 leading-relaxed font-normal">
-            Stop treating your data like a draft. Every action in your system is
-            a permanent piece of your business history. By recording the truth
-            of how your application evolves, you build a foundation that
-            empowers your logic, your auditors, and your AI future.
+            You do not need to redesign your whole application. Pick one agent
+            run or business process, record its events, and rebuild its state.
+            Learn event sourcing by solving a problem you already have.
           </p>
           <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
             <Link
@@ -313,6 +346,13 @@ export default function HomePage() {
             >
               Start Building Now
               <ArrowRight size={16} />
+            </Link>
+            <Link
+              href="/docs/playbooks/ai-agent-deterministic-memory-and-audit"
+              className="inline-flex items-center gap-2 rounded-full border border-fd-border bg-fd-secondary/60 backdrop-blur-sm px-10 py-4 text-sm font-semibold text-fd-foreground hover:bg-fd-secondary/80 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer shadow-sm"
+            >
+              <Bot size={16} />
+              Explore AI Agent Playbook
             </Link>
           </div>
         </div>

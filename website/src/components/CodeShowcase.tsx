@@ -44,7 +44,7 @@ const eventStore = new EventStore({
 // Run idempotent schema migrations on startup
 await eventStore.setup();`,
     explanation:
-      "Zero deployment overhead. Runs directly on PostgreSQL. The .setup() method creates all required tables and indexes natively and safely.",
+      "Use a PostgreSQL pool. The .setup() method runs idempotent migrations; production deployments still need appropriate permissions and migration planning.",
   },
   {
     id: "evolve",
@@ -64,13 +64,15 @@ export const Cart = defineAggregate<CartState, CartEvents>()({
   streamPrefix: 'Cart',
   evolve: {
     CartCreated: () => ({ items: [], discount: 0, isCompleted: false }),
-    ItemAdded: (state, event) => ({ ...state, items: [...state.items, event.data] }),
-    CouponApplied: (state, event) => ({ ...state, discount: event.data.discount }),
+    ItemAdded: (state, event) => event.data
+      ? ({ ...state, items: [...state.items, event.data] }) : state,
+    CouponApplied: (state, event) => event.data
+      ? ({ ...state, discount: event.data.discount }) : state,
     CheckoutCompleted: (state) => ({ ...state, isCompleted: true }),
   },
 });`,
     explanation:
-      "State evolution is purely mathematical and deterministic. Zero side effects, easy to test, and perfectly typed.",
+      "State evolution is pure and deterministic. Zero side effects, easy to test, and perfectly typed.",
   },
   {
     id: "append",
@@ -82,8 +84,9 @@ export const Cart = defineAggregate<CartState, CartEvents>()({
 // 1. Append type-safe event facts with optimistic concurrency
 await Cart.append(eventStore, {
   entityId,
-  expectedVersion: 0, // Ensure concurrency guarantees
+  expectedVersion: -1, // Require a new stream; 0 disables version checking
   events: [
+    { type: 'CartCreated', data: { cartId: entityId, userId: 'user-1' } },
     {
       type: 'ItemAdded',
       data: { sku: 'INFRA-DATA-BUNDLE', price: 240.0, name: 'Data Platform Bundle' }
@@ -92,7 +95,10 @@ await Cart.append(eventStore, {
 });
 
 // 2. Load aggregate state from event history
-const { state, version } = await Cart.load(eventStore, entityId);`,
+const { state, version } = await Cart.load(eventStore, entityId);
+if (!state) throw new Error('Cart was not initialized');
+console.log(state.items.length, version); // 1, 2
+// For subsequent appends, pass the loaded version.`,
     explanation:
       "Appended facts are saved to Postgres. State queries replay history with type-safe aggregate logic and crypto-shredding hooks under the hood.",
   },

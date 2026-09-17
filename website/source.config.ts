@@ -1,5 +1,5 @@
 import { defineConfig, defineDocs } from "fumadocs-mdx/config";
-import { remarkMdxMermaid } from "fumadocs-core/mdx-plugins";
+import { remarkMdxMermaid, remarkNpm } from "fumadocs-core/mdx-plugins";
 import { metaSchema, pageSchema } from "fumadocs-core/source/schema";
 
 // You can customize Zod schemas for frontmatter and `meta.json` here
@@ -19,6 +19,14 @@ export const docs = defineDocs({
 
 export default defineConfig({
   mdxOptions: {
-    remarkPlugins: [remarkMdxMermaid],
+    remarkPlugins: [
+      remarkMdxMermaid,
+      [
+        remarkNpm,
+        {
+          persist: { id: "package-manager" },
+        },
+      ],
+    ],
   },
 });

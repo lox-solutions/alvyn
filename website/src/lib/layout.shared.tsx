@@ -23,6 +23,7 @@ export function baseOptions(): BaseLayoutProps {
       {
         text: "Docs",
         url: "/docs",
+        on: "nav",
         secondary: true,
       },
     ],

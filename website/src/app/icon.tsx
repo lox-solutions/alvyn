@@ -30,8 +30,8 @@ export default function Icon() {
         justifyContent: "center",
       }}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
+        alt="Alvyn"
         src={logoBase64}
         width="32"
         height="32"
