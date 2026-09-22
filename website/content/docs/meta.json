@@ -18,6 +18,9 @@
     "full-stack-example",
     "---Reference---",
     "api-reference",
-    "database-schema"
+    "database-schema",
+    "---AI Docs---",
+    "external:[llms.txt](/llms.txt)",
+    "external:[llms-full.txt](/llms-full.txt)"
   ]
 }
