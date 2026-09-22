@@ -13,18 +13,6 @@ export default function Layout({ children }: LayoutProps<"/">) {
           url: "/docs",
           secondary: true,
         },
-        {
-          text: "llms.txt",
-          url: "/llms.txt",
-          secondary: true,
-          external: true,
-        },
-        {
-          text: "llms-full.txt",
-          url: "/llms-full.txt",
-          secondary: true,
-          external: true,
-        },
       ]}
     >
       {children}
