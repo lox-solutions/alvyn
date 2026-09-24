@@ -8,7 +8,8 @@ import {
 } from "./pg-helpers";
 import { EventStoreReader } from "./event-store-reader";
 import { EventStoreMaintenance } from "./event-store-maintenance";
-import { runMigrations } from "./schema/run-migrations";
+import { migrateEventStore } from "./schema/migrate-event-store";
+import { verifyMigrations } from "./schema/run-migrations";
 import { appendToStream } from "./stream/append-to-stream";
 import { getStreamVersion as getStreamVersionFn } from "./stream/get-stream-version";
 import { subscribe as subscribeFn } from "./subscription/subscribe";
@@ -55,6 +56,7 @@ interface LoadLatestEventByTypeOptions {
 export class EventStore {
   private readonly pool: Pool;
   private readonly schema: string;
+  private readonly migrationMode: "migrate" | "verify";
   private readonly defaultSource: string;
   private readonly cryptoKeyManager: CryptoKeyManager | null;
   private readonly upcasterRegistry: UpcasterRegistry;
@@ -67,6 +69,7 @@ export class EventStore {
   constructor(config: EventStoreConfig) {
     this.pool = config.pool;
     this.schema = config.schema ?? DEFAULT_SCHEMA;
+    this.migrationMode = config.migrationMode ?? "migrate";
     this.defaultSource = config.defaultSource ?? "event-store";
     this.upcasterRegistry = new UpcasterRegistry();
     this.snapshots = config.snapshots ?? [];
@@ -108,7 +111,13 @@ export class EventStore {
     }
     this.setupPromise = (async () => {
       try {
-        await withClient(this.pool, (c) => runMigrations(c, this.schema));
+        if (this.migrationMode === "verify") {
+          await withClient(this.pool, (client) =>
+            verifyMigrations(client, this.schema),
+          );
+        } else {
+          await migrateEventStore({ pool: this.pool, schema: this.schema });
+        }
         this.initialized = true;
       } finally {
         this.setupPromise = undefined;

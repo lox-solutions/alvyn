@@ -8,7 +8,8 @@ import {
 import { CryptoSecretsRequiredError } from "./errors";
 import { cleanupOutbox, processOutbox } from "./outbox/outbox-processor";
 import { cleanupIdempotencyKeys } from "./stream/idempotency";
-import { inTransaction } from "./pg-helpers";
+import { inTransaction, withClient } from "./pg-helpers";
+import { computeSafeWatermark } from "./stream/compute-safe-watermark";
 import { runProjection as runProjectionFn } from "./projection/run-projection";
 import { DEFAULT_PROJECTION_BATCH_SIZE } from "./event-store-constants";
 import type { OutboxHandler, Projection } from "./types";
@@ -79,13 +80,22 @@ export class EventStoreMaintenance {
     });
   }
 
-  runProjection(projection: Projection, batchSize?: number): Promise<number> {
+  async runProjection(
+    projection: Projection,
+    batchSize?: number,
+  ): Promise<number> {
+    // A short fence must not hold an exclusive writer lock through the user
+    // handler's transaction. The certified position remains safe afterward.
+    const safeWatermark = await withClient(this.pool, (client) =>
+      computeSafeWatermark({ client, schema: this.schema }),
+    );
     return inTransaction(this.pool, (client) =>
       runProjectionFn({
         client,
         schema: this.schema,
         projection,
         batchSize: batchSize ?? DEFAULT_PROJECTION_BATCH_SIZE,
+        safeWatermark,
       }),
     );
   }

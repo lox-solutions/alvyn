@@ -1,49 +1,76 @@
 import type { PoolClient } from "pg";
 
+import {
+  WATERMARK_LOCK_KEY,
+  WATERMARK_READER_LOCK_KEY,
+} from "../event-store-constants";
+
 /**
- * Computes the commit-safe high-water `global_position` for cursor-based
- * consumers.
+ * Returns a commit-safe position for cursor-based consumers.
  *
- * `global_position` is a `BIGSERIAL`: its value is reserved at INSERT time but
- * only becomes visible at COMMIT time. With concurrent writers (e.g. multiple
- * replicas), a transaction holding position 5 can commit *after* a transaction
- * holding position 6. A naive consumer that advances a cursor with
- * `WHERE global_position > cursor ORDER BY global_position` would move past 6
- * and **permanently skip 5**.
+ * Transaction IDs cannot establish position order: an older transaction can
+ * append both before AND after a younger in-flight transaction. The events
+ * table cannot reveal the younger transaction's uncommitted middle row.
  *
- * To avoid this, every event records the appending transaction id in the
- * `txid` column (`pg_current_xact_id()`). A position is *safe* to emit only
- * once its owning transaction is no longer in-flight, and no still-running
- * transaction could later reveal a lower position.
+ * A BEFORE INSERT statement trigger on the events table takes a shared,
+ * transaction-scoped, per-schema advisory lock BEFORE reserving a position.
+ * If we can take its exclusive counterpart, all transactions that may have
+ * reserved positions are finished. The highest then-visible position
+ * (including permanent sequence gaps) is safe forever. We cache that
+ * certified position in a PostgreSQL sequence: setval is non-transactional,
+ * so the certificate survives a later projection handler rollback.
  *
- * We use the current snapshot's `xmin` (`pg_snapshot_xmin(pg_current_snapshot())`),
- * which is the oldest transaction id still considered in-progress. Any event
- * whose `txid` is `>= xmin` might still be in-flight (or have committed after a
- * still-running transaction started), so it is treated conservatively as
- * unsafe. The safe watermark is therefore one less than the smallest
- * `global_position` of any such potentially-in-flight event.
+ * With a writer in flight, return the last certified value immediately rather
+ * than waiting or guessing from visible transaction IDs. A separate, short
+ * reader-only lock serializes certification attempts, so competing consumers
+ * cannot mistake another consumer for a writer and return a stale value.
  *
- * Gaps left behind by committed/aborted transactions whose `txid < xmin` are
- * permanent and skippable, so they never stall the watermark.
- *
- * @returns the largest `global_position` such that every position at or below
- *   it belongs to a transaction that is no longer in-flight; `0n` when no
- *   position is yet safe (or the table is empty).
+ * Call with a client OUTSIDE an explicit transaction. The fence uses its own
+ * short transaction and releases both locks on COMMIT/ROLLBACK. In particular,
+ * it never holds a writer lock while running user projection handlers. Using
+ * transaction-scoped rather than session locks also supports connection pools
+ * that multiplex sessions between transactions.
  */
 export async function computeSafeWatermark(options: {
   client: PoolClient;
   schema: string;
 }): Promise<bigint> {
   const { client, schema } = options;
-  const result = await client.query<{ safe_position: string | null }>(
-    `SELECT COALESCE(
-       (SELECT MIN(global_position) - 1
-          FROM ${schema}.events
-         WHERE txid >= pg_snapshot_xmin(pg_current_snapshot())),
-       (SELECT MAX(global_position) FROM ${schema}.events),
-       0
-     )::bigint AS safe_position`,
-  );
-  const value = result.rows[0]?.safe_position;
-  return value === null || value === undefined ? 0n : BigInt(value);
+  const sequence = `${schema}.projection_safe_watermark`;
+
+  await client.query("BEGIN");
+  try {
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext($1), $2)`, [
+      schema,
+      WATERMARK_READER_LOCK_KEY,
+    ]);
+    const lock = await client.query<{ acquired: boolean }>(
+      `SELECT pg_try_advisory_xact_lock(hashtext($1), $2) AS acquired`,
+      [schema, WATERMARK_LOCK_KEY],
+    );
+    const cached = await client.query<{ last_value: string }>(
+      `SELECT last_value::text FROM ${sequence}`,
+    );
+    const lastCertified = BigInt(cached.rows[0].last_value);
+    let safePosition = lastCertified;
+
+    if (lock.rows[0]?.acquired) {
+      const result = await client.query<{ last_position: string }>(
+        `SELECT COALESCE(MAX(global_position), 0)::text AS last_position FROM ${schema}.events`,
+      );
+      const position = BigInt(result.rows[0].last_position);
+      if (position > lastCertified) {
+        await client.query(`SELECT setval($1::regclass, $2::bigint, true)`, [
+          sequence,
+          position.toString(),
+        ]);
+        safePosition = position;
+      }
+    }
+    await client.query("COMMIT");
+    return safePosition;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  }
 }

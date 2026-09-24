@@ -6,7 +6,6 @@ import {
   mapRowToEvent,
   type EventRow,
 } from "../stream/map-row-to-event";
-import { computeSafeWatermark } from "../stream/compute-safe-watermark";
 
 async function ensureCheckpoint(options: {
   client: PoolClient;
@@ -44,8 +43,9 @@ export async function runProjection(options: {
   schema: string;
   projection: Projection;
   batchSize: number;
+  safeWatermark: bigint;
 }): Promise<number> {
-  const { client, schema, projection, batchSize } = options;
+  const { client, schema, projection, batchSize, safeWatermark } = options;
 
   const lastPosition = await ensureCheckpoint({
     client,
@@ -53,10 +53,8 @@ export async function runProjection(options: {
     projectionName: projection.projectionName,
   });
 
-  // Bound the read by the commit-safe watermark so a transaction holding a
-  // lower global_position that commits *after* a higher one is never skipped
-  // (see src/stream/compute-safe-watermark.ts).
-  const safeWatermark = await computeSafeWatermark({ client, schema });
+  // The bound was certified before this transaction began. It stays safe even
+  // if new writers start while the projection processes this batch.
   if (safeWatermark <= lastPosition) return 0;
 
   const eventsResult = await client.query<EventRow>(

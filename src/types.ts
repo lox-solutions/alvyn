@@ -24,6 +24,8 @@ export interface EventStoreConfig {
   pool: Pool;
   /** PostgreSQL schema name for all event store tables (default: "event_store") */
   schema?: string;
+  /** `setup()` migrates by default; use `verify` with a read-only application role after a deployment migration. */
+  migrationMode?: "migrate" | "verify";
   /**
    * Versioned secrets for crypto-shredding and the version used for new data.
    * The order of `secrets` is not significant. `GDPR_CRYPTO_SECRETS` and

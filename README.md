@@ -39,6 +39,20 @@ pnpm add alvyn pg
 
 `pg` is a peer dependency — you provide the connection pool.
 
+## Database migrations
+
+`await eventStore.setup()` migrates the PostgreSQL schema by default. For application replicas without DDL privileges, run the **same** versioned migrations once from a deployment job, then configure each replica to verify the schema without DDL:
+
+```typescript
+import { EventStore, migrateEventStore } from "alvyn";
+
+await migrateEventStore({ pool: migrationPool }); // Deployment job
+const store = new EventStore({ pool: appPool, migrationMode: "verify" });
+await store.setup(); // Checks version and event-position trigger; no DDL
+```
+
+Migrations serialize across replicas using a transaction-scoped advisory lock. See [Database Schema](https://alvyn.dev/docs/database-schema#migrations) for connection and permission requirements.
+
 ## Quick Start
 
 ### 1. Agent history
