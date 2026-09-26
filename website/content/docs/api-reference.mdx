@@ -20,6 +20,7 @@ new EventStore(config: EventStoreConfig)
 interface EventStoreConfig {
   pool: Pool;
   schema?: string;
+  migrationMode?: "migrate" | "verify";
   secrets?: CryptoSecretsConfig;
   defaultSource?: string;
   snapshots?: SnapshotHandle<unknown>[];
@@ -30,6 +31,7 @@ interface EventStoreConfig {
 | --------------- | --------------------------- | -------- | -------------------------------------------------------------------- |
 | `pool`          | `Pool`                      | Yes      | PostgreSQL connection pool (caller manages lifecycle)                |
 | `schema`        | `string`                    | No       | PostgreSQL schema name (default: `"event_store"`)                    |
+| `migrationMode` | `"migrate" \| "verify"`     | No       | `setup()` runs migrations by default; `verify` performs no DDL       |
 | `secrets`       | `CryptoSecretsConfig`       | No       | Versioned keyring and explicit version used for new encryption       |
 | `defaultSource` | `string`                    | No       | CloudEvents `source` URI-reference applied to all events             |
 | `snapshots`     | `SnapshotHandle<unknown>[]` | No       | Snapshot definitions maintained synchronously after matching appends |
@@ -68,11 +70,15 @@ entropy to a weak secret.
 
 #### `setup(): Promise<void>`
 
-Runs idempotent schema migrations (`CREATE TABLE IF NOT EXISTS`). Safe on every startup. **Must be called before any other method.**
+By default, applies versioned schema migrations transactionally under a per-schema advisory lock, then verifies the schema. With `migrationMode: "verify"`, performs only read-only version and trigger checks (no DDL); use this after a deployment job has called `migrateEventStore`. **Must be called before any other method.**
 
-Concurrent in-flight calls within the same process are automatically deduplicated — returning the active initialization promise and avoiding redundant database connections.
+Concurrent in-flight calls within the same process are automatically deduplicated — returning the active initialization promise and avoiding redundant database connections. Concurrent migration calls across replicas serialize at the database lock.
 
 Throws `EventStoreNotInitializedError` if other methods are called before `setup()`.
+
+#### `migrateEventStore({ pool, schema? }): Promise<void>`
+
+Public standalone entry point for a deployment job. Uses the **same versioned migration routine** as `EventStore.setup()` in default mode. `schema` defaults to `"event_store"`. The supplied pool must have DDL privileges and connect to the PostgreSQL primary. See [Database Schema](/docs/database-schema#migrations) for a deployment example.
 
 #### `isInitialized(): boolean`
 

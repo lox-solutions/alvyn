@@ -4,6 +4,7 @@
 
 // Core class
 export { EventStore } from "./event-store";
+export { migrateEventStore } from "./schema/migrate-event-store";
 
 // Aggregate builder (the main DX surface)
 export { defineAggregate } from "./aggregate/define-aggregate";

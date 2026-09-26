@@ -4,7 +4,7 @@ description: PostgreSQL table structure for the event store — events, event-ba
 icon: Database
 ---
 
-All event store tables live in a dedicated PostgreSQL schema (default: `event_store`), isolated from application tables. Migrations are idempotent — safe to call on every application startup.
+All event store tables live in a dedicated PostgreSQL schema (default: `event_store`), isolated from application tables. Schema migrations are versioned and serialized across application replicas. By default, `setup()` applies pending migrations on startup.
 
 ## Schema Isolation
 
@@ -30,7 +30,7 @@ const eventStore = new EventStore({
 The core append-only event log. Columns are aligned with the **CloudEvents v1.0.2** specification. Event-backed snapshots are stored here as generated events with event types ending in `Snapshot`.
 
 ```sql
-CREATE TABLE IF NOT EXISTS {schema}.events (
+CREATE TABLE {schema}.events (
   global_position  BIGSERIAL        NOT NULL,
   stream_id        TEXT             NOT NULL,
   stream_version   INTEGER          NOT NULL,
@@ -82,23 +82,23 @@ CREATE TABLE IF NOT EXISTS {schema}.events (
 **Indexes:**
 
 ```sql
-CREATE INDEX IF NOT EXISTS idx_events_stream_id
+CREATE INDEX idx_events_stream_id
   ON {schema}.events (stream_id, stream_version);
 
-CREATE INDEX IF NOT EXISTS idx_events_stream_global_position
+CREATE INDEX idx_events_stream_global_position
   ON {schema}.events (stream_id, global_position, id);
 
-CREATE INDEX IF NOT EXISTS idx_events_event_type
+CREATE INDEX idx_events_event_type
   ON {schema}.events (event_type);
 
-CREATE INDEX IF NOT EXISTS idx_events_created_at
+CREATE INDEX idx_events_created_at
   ON {schema}.events (created_at);
 
-CREATE INDEX IF NOT EXISTS idx_events_source_id
+CREATE INDEX idx_events_source_id
   ON {schema}.events (source, id);
 ```
 
-`{schema}` is a documentation placeholder, not executable SQL. The table above shows the final shape; setup adds `txid` via `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` for existing installations. The `crypto_key_id` and `event_global_pos` references are logical references, not declared foreign-key constraints.
+`{schema}` is a documentation placeholder, not executable SQL. The `crypto_key_id` and `event_global_pos` references are logical references, not declared foreign-key constraints.
 
 ### Event-backed snapshots
 
@@ -111,7 +111,7 @@ For example, a `BankAccountBalance` snapshot for stream `Transaction-account-123
 Transactional outbox for at-least-once delivery.
 
 ```sql
-CREATE TABLE IF NOT EXISTS {schema}.outbox (
+CREATE TABLE {schema}.outbox (
   id               BIGSERIAL        PRIMARY KEY,
   event_global_pos BIGINT           NOT NULL,
   topic            TEXT             NOT NULL,
@@ -131,7 +131,7 @@ CREATE TABLE IF NOT EXISTS {schema}.outbox (
 | `created_at`       | `TIMESTAMPTZ NOT NULL` | Auto-set by database                  |
 
 ```sql
-CREATE INDEX IF NOT EXISTS idx_outbox_pending
+CREATE INDEX idx_outbox_pending
   ON {schema}.outbox (created_at) WHERE processed_at IS NULL;
 ```
 
@@ -140,7 +140,7 @@ CREATE INDEX IF NOT EXISTS idx_outbox_pending
 Per-entity encryption keys for GDPR crypto-shredding.
 
 ```sql
-CREATE TABLE IF NOT EXISTS {schema}.crypto_keys (
+CREATE TABLE {schema}.crypto_keys (
   key_id           TEXT             PRIMARY KEY,
   encrypted_key    BYTEA            NULL,
   algorithm        TEXT             NOT NULL DEFAULT 'aes-256-gcm',
@@ -164,7 +164,7 @@ Revoked key rows are retained only for audit metadata. Their `encrypted_key` is 
 Checkpoint tracking for projection runners.
 
 ```sql
-CREATE TABLE IF NOT EXISTS {schema}.projections (
+CREATE TABLE {schema}.projections (
   projection_name  TEXT             PRIMARY KEY,
   last_position    BIGINT           NOT NULL DEFAULT 0,
   updated_at       TIMESTAMPTZ      NOT NULL DEFAULT now()
@@ -182,7 +182,7 @@ CREATE TABLE IF NOT EXISTS {schema}.projections (
 Deduplication table for idempotent stream appends. Prevents duplicate event writes and repeated outbox notifications on retries.
 
 ```sql
-CREATE TABLE IF NOT EXISTS {schema}.idempotency_keys (
+CREATE TABLE {schema}.idempotency_keys (
   key              TEXT             PRIMARY KEY,
   stream_id        TEXT             NOT NULL,
   request_hash     TEXT             NOT NULL,
@@ -204,14 +204,31 @@ CREATE TABLE IF NOT EXISTS {schema}.idempotency_keys (
 | `created_at`       | `TIMESTAMPTZ NOT NULL` | Auto-set by database, used for age-based retention cleanup |
 
 ```sql
-CREATE INDEX IF NOT EXISTS idx_idempotency_keys_created_at
+CREATE INDEX idx_idempotency_keys_created_at
   ON {schema}.idempotency_keys (created_at);
 ```
 
 ## Migrations
 
-Migrations are run by calling `eventStore.setup()`. This executes `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS` statements, making it safe to call on every application startup. Concurrent in-flight calls within the same process are automatically deduplicated.
+By default, `eventStore.setup()` applies pending migrations. A schema-local version table (`{schema}.schema_version`) tracks the installed version; migration DDL and its version update run in one transaction under a transaction-scoped PostgreSQL advisory lock. Concurrent replicas serialize on that lock and do not repeat DDL after the first migration completes.
 
 ```typescript
-await eventStore.setup(); // Idempotent — run on every startup
+await eventStore.setup(); // Default: migrate, then verify
 ```
+
+For deployments where application instances do not have DDL privileges, use **the same migration routine** in a separate deployment job, then start applications in verify-only mode:
+
+```typescript
+import { EventStore, migrateEventStore } from "alvyn";
+
+// Deployment job, using a DDL-capable pool connected to the primary:
+await migrateEventStore({ pool: migrationPool, schema: "event_store" });
+
+// Application instances, using a pool with schema/table access but no DDL rights:
+const store = new EventStore({ pool: appPool, migrationMode: "verify" });
+await store.setup(); // No DDL; fails if the version or event-position trigger is invalid
+```
+
+This versioned baseline does not silently claim or modify an older, unversioned Alvyn schema: if Alvyn tables already exist without `{schema}.schema_version`, migration stops with an error and leaves existing data intact. Choose a fresh schema or explicitly plan a data migration before upgrading.
+
+The app role needs `USAGE` on the schema and `SELECT` on `{schema}.schema_version` in addition to the privileges required for normal event-store operations. Deploy the migration job **before** starting instances with a newer Alvyn version. The migration path is tested with PostgreSQL 16. Plan schema/trigger changes as a deployment operation rather than running them concurrently with live writes. Verification fails closed if the event-position trigger or safe-watermark sequence is missing, or the schema version is unsupported. No session-scoped advisory locks are used during migrations.
