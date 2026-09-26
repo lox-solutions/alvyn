@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.12](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.11...alvyn-v0.1.12) (2026-09-26)
+
+
+### Features
+
+* refactor safe watermark computation and support standalone migrations ([#66](https://github.com/lox-solutions/alvyn/issues/66)) ([dca464e](https://github.com/lox-solutions/alvyn/commit/dca464ee6462653d70849a3b43222a52ac99edf2))
+
 ## [0.1.11](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.10...alvyn-v0.1.11) (2026-09-11)
 
 
