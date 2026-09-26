@@ -64,10 +64,10 @@ importers:
         version: 4.2.3(graphql@16.14.2)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(rxjs@7.8.2)
       '@elysia/graphql-yoga':
         specifier: ^1.4.1
-        version: 1.4.1(elysia@1.4.28(@sinclair/typebox@0.34.49)(file-type@22.0.1)(openapi-types@12.1.3)(typescript@7.0.2))
+        version: 1.4.1(elysia@1.4.30(@sinclair/typebox@0.34.49)(file-type@22.0.1)(openapi-types@12.1.3)(typescript@7.0.2))
       '@elysia/node':
         specifier: ^1.4.6
-        version: 1.4.6(elysia@1.4.28(@sinclair/typebox@0.34.49)(file-type@22.0.1)(openapi-types@12.1.3)(typescript@7.0.2))
+        version: 1.4.6(elysia@1.4.30(@sinclair/typebox@0.34.49)(file-type@22.0.1)(openapi-types@12.1.3)(typescript@7.0.2))
       '@sinclair/typebox':
         specifier: ^0.34.49
         version: 0.34.49
@@ -75,8 +75,8 @@ importers:
         specifier: workspace:*
         version: link:../..
       elysia:
-        specifier: ^1.4.28
-        version: 1.4.28(@sinclair/typebox@0.34.49)(file-type@22.0.1)(openapi-types@12.1.3)(typescript@7.0.2)
+        specifier: ^1.4.29
+        version: 1.4.30(@sinclair/typebox@0.34.49)(file-type@22.0.1)(openapi-types@12.1.3)(typescript@7.0.2)
       file-type:
         specifier: ^22.0.1
         version: 22.0.1
@@ -3542,8 +3542,8 @@ packages:
   elkjs@0.11.1:
     resolution: {integrity: sha512-zxxR9k+rx5ktMwT/FwyLdPCrq7xN6e4VGGHH8hA01vVYKjTFik7nHOxBnAYtrgYUB1RpAiLvA1/U2YraWxyKKg==}
 
-  elysia@1.4.28:
-    resolution: {integrity: sha512-Vrx8sBnvq8squS/3yNBzR1jBXI+SgmnmvwawPjNuEHndUe5l1jV2Gp6JJ4ulDkEB8On6bWmmuyPpA+bq4t+WYg==}
+  elysia@1.4.30:
+    resolution: {integrity: sha512-S2qqV0CbM4faB1hQQ5IYoeYnAUinjHlzRduxaBc4OoNqh0GjOc8k6tt3hv5ozWcG6Svr6hugw6JL4zNke4jwfA==}
     peerDependencies:
       '@sinclair/typebox': '>= 0.34.0 < 1'
       '@types/bun': '>= 1.2.0'
@@ -6654,17 +6654,17 @@ snapshots:
 
   '@csstools/css-tokenizer@4.0.0': {}
 
-  '@elysia/graphql-yoga@1.4.1(elysia@1.4.28(@sinclair/typebox@0.34.49)(file-type@22.0.1)(openapi-types@12.1.3)(typescript@7.0.2))':
+  '@elysia/graphql-yoga@1.4.1(elysia@1.4.30(@sinclair/typebox@0.34.49)(file-type@22.0.1)(openapi-types@12.1.3)(typescript@7.0.2))':
     dependencies:
-      elysia: 1.4.28(@sinclair/typebox@0.34.49)(file-type@22.0.1)(openapi-types@12.1.3)(typescript@7.0.2)
+      elysia: 1.4.30(@sinclair/typebox@0.34.49)(file-type@22.0.1)(openapi-types@12.1.3)(typescript@7.0.2)
       graphql: 16.14.2
       graphql-mobius: 0.1.13(graphql-yoga@3.9.1(graphql@16.14.2))(graphql@16.14.2)
       graphql-yoga: 3.9.1(graphql@16.14.2)
 
-  '@elysia/node@1.4.6(elysia@1.4.28(@sinclair/typebox@0.34.49)(file-type@22.0.1)(openapi-types@12.1.3)(typescript@7.0.2))':
+  '@elysia/node@1.4.6(elysia@1.4.30(@sinclair/typebox@0.34.49)(file-type@22.0.1)(openapi-types@12.1.3)(typescript@7.0.2))':
     dependencies:
       crossws: 0.4.6(srvx@0.11.16)
-      elysia: 1.4.28(@sinclair/typebox@0.34.49)(file-type@22.0.1)(openapi-types@12.1.3)(typescript@7.0.2)
+      elysia: 1.4.30(@sinclair/typebox@0.34.49)(file-type@22.0.1)(openapi-types@12.1.3)(typescript@7.0.2)
       srvx: 0.11.16
 
   '@emnapi/core@1.10.0':
@@ -9495,7 +9495,7 @@ snapshots:
 
   elkjs@0.11.1: {}
 
-  elysia@1.4.28(@sinclair/typebox@0.34.49)(file-type@22.0.1)(openapi-types@12.1.3)(typescript@7.0.2):
+  elysia@1.4.30(@sinclair/typebox@0.34.49)(file-type@22.0.1)(openapi-types@12.1.3)(typescript@7.0.2):
     dependencies:
       '@sinclair/typebox': 0.34.49
       cookie: 1.1.1
