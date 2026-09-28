@@ -19,15 +19,16 @@ export const AccountAggregate = defineAggregate<AccountState, AccountEvents>()({
   evolve: {
     AccountOpened: (_state, event) => ({
       status: "open",
-      balance: event.data?.initialBalance ?? 0,
+      balance: "tombstoned" in event ? 0 : event.data.initialBalance,
       depositCount: 0,
-      depositTotal: event.data?.initialBalance ?? 0,
+      depositTotal: "tombstoned" in event ? 0 : event.data.initialBalance,
     }),
     MoneyDeposited: (state, event) => ({
       ...state,
-      balance: state.balance + (event.data?.amount ?? 0),
+      balance: state.balance + ("tombstoned" in event ? 0 : event.data.amount),
       depositCount: state.depositCount + 1,
-      depositTotal: state.depositTotal + (event.data?.amount ?? 0),
+      depositTotal:
+        state.depositTotal + ("tombstoned" in event ? 0 : event.data.amount),
     }),
   },
 });
@@ -50,15 +51,16 @@ export const AccountBalanceSnapshot = defineSnapshot<
   evolve: {
     AccountOpened: (_state, event) => ({
       status: "open",
-      balance: event.data?.initialBalance ?? 0,
+      balance: "tombstoned" in event ? 0 : event.data.initialBalance,
       depositCount: 0,
-      depositTotal: event.data?.initialBalance ?? 0,
+      depositTotal: "tombstoned" in event ? 0 : event.data.initialBalance,
     }),
     MoneyDeposited: (state, event) => ({
       ...state,
-      balance: state.balance + (event.data?.amount ?? 0),
+      balance: state.balance + ("tombstoned" in event ? 0 : event.data.amount),
       depositCount: state.depositCount + 1,
-      depositTotal: state.depositTotal + (event.data?.amount ?? 0),
+      depositTotal:
+        state.depositTotal + ("tombstoned" in event ? 0 : event.data.amount),
     }),
   },
 });
