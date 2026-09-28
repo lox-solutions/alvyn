@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.13](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.12...alvyn-v0.1.13) (2026-09-28)
+
+
+### Features
+
+* upcast projections and subscriptions by default ([#68](https://github.com/lox-solutions/alvyn/issues/68)) ([37e45b1](https://github.com/lox-solutions/alvyn/commit/37e45b1e3212c95d02559e42f193fdc2febbac38))
+
 ## [0.1.12](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.11...alvyn-v0.1.12) (2026-09-26)
 
 
