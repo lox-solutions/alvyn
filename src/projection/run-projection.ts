@@ -1,6 +1,10 @@
 import type { PoolClient } from "pg";
 
-import type { Projection } from "../types";
+import type {
+  Projection,
+  RedactedProjectionEvent,
+  TombstonedEvent,
+} from "../types";
 import type { CryptoKeyManager } from "../crypto/crypto-key-manager";
 import type { UpcasterRegistry } from "../upcaster/upcaster-registry";
 import {
@@ -37,6 +41,64 @@ async function updateCheckpoint(options: {
     `UPDATE ${schema}.projections SET last_position = $1, updated_at = now() WHERE projection_name = $2`,
     [position.toString(), projectionName],
   );
+}
+
+function ignoresStream(projection: Projection, streamId: string): boolean {
+  return (
+    "streamPrefix" in projection &&
+    typeof projection.streamPrefix === "string" &&
+    !streamId.startsWith(`${projection.streamPrefix}-`)
+  );
+}
+
+async function handleRedactedEvent(options: {
+  event: TombstonedEvent;
+  client: PoolClient;
+  projection: Projection;
+}): Promise<void> {
+  const { event, client, projection } = options;
+  if (projection.onRedacted === "skip") return;
+  if (!projection.onRedacted) {
+    throw new Error(
+      `Redacted event ${event.id} at position ${event.globalPosition} requires an onRedacted policy`,
+    );
+  }
+  const redacted: RedactedProjectionEvent = { ...event, redacted: true };
+  await projection.onRedacted(redacted, client);
+}
+
+async function processProjectionRow(options: {
+  row: EventRow;
+  client: PoolClient;
+  schema: string;
+  projection: Projection;
+  cryptoKeyManager: CryptoKeyManager | null;
+  upcasterRegistry: UpcasterRegistry;
+  keyCache: Map<string, Buffer | null>;
+}): Promise<void> {
+  const {
+    row,
+    client,
+    schema,
+    projection,
+    cryptoKeyManager,
+    upcasterRegistry,
+    keyCache,
+  } = options;
+  const event = await processRow({
+    row,
+    ctx: buildBaseContext(row),
+    cryptoKeyManager,
+    upcasterRegistry,
+    keyCache,
+    client,
+    schema,
+  });
+  if ("tombstoned" in event) {
+    await handleRedactedEvent({ event, client, projection });
+    return;
+  }
+  await projection.handle(event, client);
 }
 
 /** Runs a projection by processing events from its last checkpoint. */
@@ -85,32 +147,18 @@ export async function runProjection(options: {
   for (const row of eventsResult.rows) {
     // Typed projections already filter by prefix in handle(); avoid decrypting
     // unrelated events (including shredded events) before that filter runs.
-    if (
-      "streamPrefix" in projection &&
-      typeof projection.streamPrefix === "string" &&
-      !row.stream_id.startsWith(`${projection.streamPrefix}-`)
-    ) {
-      newLastPosition = BigInt(row.global_position);
-      continue;
+    if (!ignoresStream(projection, row.stream_id)) {
+      await processProjectionRow({
+        row,
+        client,
+        schema,
+        projection,
+        cryptoKeyManager,
+        upcasterRegistry,
+        keyCache,
+      });
     }
-    const event = await processRow({
-      row,
-      ctx: buildBaseContext(row),
-      cryptoKeyManager,
-      upcasterRegistry,
-      keyCache,
-      client,
-      schema,
-    });
-    // Never pass a shredded payload to a handler typed for a domain event.
-    // Roll back the checkpoint so rebuilding requires an explicit policy.
-    if ("tombstoned" in event) {
-      throw new Error(
-        `Cannot project tombstoned event ${event.id} at position ${event.globalPosition}`,
-      );
-    }
-    await projection.handle(event, client);
-    newLastPosition = event.globalPosition;
+    newLastPosition = BigInt(row.global_position);
   }
 
   await updateCheckpoint({

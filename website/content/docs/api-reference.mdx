@@ -214,7 +214,7 @@ const orderStreams = await eventStore.listStreams({
 
 ### Subscriptions
 
-#### `subscribe(options?): AsyncIterable<StoredEvent>`
+#### `subscribe(options?): AsyncIterable<SubscriptionEvent>`
 
 Creates an independent fan-out subscription. It catches up on matching
 historical events and then tails live events in `globalPosition` order. Each
@@ -419,13 +419,15 @@ interface StoredEvent<T = unknown>
   createdAt: Date;
 }
 
-interface TombstonedEvent
+interface TombstonedEvent<T = unknown>
   extends CloudEventRequiredAttributes, CloudEventOptionalAttributes {
   globalPosition: bigint;
   streamId: string;
   streamVersion: number;
   type: string;
-  data: null;
+  data: unknown; // Public fields retained; encrypted fields set to null
+  redactedPaths: readonly string[];
+  schemaVersion: number;
   extensions: CloudEventExtensions;
   createdAt: Date;
   tombstoned: true;
@@ -441,7 +443,7 @@ interface CryptoSecretsConfig {
   secrets: readonly CryptoSecret[];
 }
 
-type ReplayedEvent<T = unknown> = StoredEvent<T> | TombstonedEvent;
+type ReplayedEvent<T = unknown> = StoredEvent<T> | TombstonedEvent<T>;
 ```
 
 Both event types inherit these CloudEvents context fields (in addition to the internal stream metadata above):
@@ -470,7 +472,7 @@ interface CloudEventExtensions {
 }
 ```
 
-`time` is an RFC 3339 string, while `createdAt` is a `Date`. Serialize `globalPosition` as a decimal string for JSON. Subscriptions upcast the stored `data` column by default without decrypting PII; pass `raw: true` to skip upcasting. Projections decrypt available PII and then upcast before invoking handlers. Tombstoned projection events fail processing rather than passing `null` to a typed handler.
+`time` is an RFC 3339 string, while `createdAt` is a `Date`. Serialize `globalPosition` as a decimal string for JSON. Subscriptions upcast complete unencrypted events by default without decrypting PII; encrypted events are returned as `RedactedSubscriptionEvent` in the stored schema with encrypted fields set to `null`. Pass `raw: true` to skip upcasting complete events. Projections decrypt available PII and then upcast before invoking typed handlers. Events with revoked keys instead use an explicit `onRedacted` handler or `onRedacted: "skip"`; their remaining public data stays in the original schema. Without a policy, the projection fails rather than silently losing an event.
 
 ### Bounded Multi-Stream Read Types
 
@@ -659,9 +661,22 @@ type AggregateStoredEvent<TEvents> = {
   [K in keyof TEvents & string]: StoredEvent<TEvents[K]> & { type: K };
 }[keyof TEvents & string];
 
-type AggregateReplayedEvent<TEvents> =
+type AggregateReplayedEvent<TEvents> = {
+  [K in keyof TEvents & string]: ReplayedEvent<TEvents[K]> & { type: K };
+}[keyof TEvents & string];
+
+type RedactedSubscriptionEvent = Omit<StoredEvent, "data"> & {
+  redacted: true;
+  data: unknown; // Public fields in the stored schema; encrypted fields null
+  redactedPaths: readonly string[];
+  schemaVersion: number;
+};
+
+type SubscriptionEvent = StoredEvent | RedactedSubscriptionEvent;
+
+type AggregateSubscriptionEvent<TEvents> =
   | AggregateStoredEvent<TEvents>
-  | TombstonedEvent;
+  | RedactedSubscriptionEvent;
 
 interface SubscribeOptions {
   subject?: string;
@@ -671,6 +686,7 @@ interface SubscribeOptions {
   signal?: AbortSignal;
   batchSize?: number;
   pollIntervalMs?: number;
+  raw?: boolean;
 }
 ```
 

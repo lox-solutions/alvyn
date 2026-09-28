@@ -93,7 +93,7 @@ describe("subscribe", () => {
     expect(received[0].data).toEqual({ amount: 2 });
   });
 
-  it("does not decrypt PII when upcasting a subscription", async () => {
+  it("returns original-schema redacted events without running upcasters on missing PII", async () => {
     const store = new EventStore({
       pool,
       schema: uniqueSchema(),
@@ -120,11 +120,19 @@ describe("subscribe", () => {
       eventType: "Registered",
       fromSchemaVersion: 1,
       toSchemaVersion: 2,
-      upcast: (data: unknown) => ({ ...(data as object), migrated: true }),
+      upcast: () => {
+        throw new Error("must not upcast redacted data");
+      },
     });
-    expect((await collect(store, { count: 1 }))[0].data).toEqual({
-      publicId: 7,
-      migrated: true,
+    expect((await collect(store, { count: 1 }))[0]).toMatchObject({
+      data: { publicId: 7, name: null },
+      redacted: true,
+      redactedPaths: ["name"],
+      schemaVersion: 1,
+    });
+    expect((await collect(store, { count: 1, raw: true }))[0]).toMatchObject({
+      data: { publicId: 7, name: null },
+      redacted: true,
     });
   });
 

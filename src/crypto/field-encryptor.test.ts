@@ -4,12 +4,25 @@ import { describe, expect, it } from "vitest";
 import {
   decryptFields,
   encryptFields,
+  redactFields,
   type EncryptedFieldEntry,
   type EncryptResult,
   type FieldEncryptionContext,
 } from "./field-encryptor";
 
 const KEY = randomBytes(32);
+
+it("redacts only encrypted paths and never mutates the stored public data", () => {
+  const stored = encrypt({ creator: { id: 7, name: "Alice" }, title: "Bug" }, [
+    "creator.name",
+  ]);
+  const redacted = redactFields({
+    cleanData: stored.cleanData,
+    encryptedData: stored.encryptedData,
+  });
+  expect(redacted).toEqual({ creator: { id: 7, name: null }, title: "Bug" });
+  expect(stored.cleanData).toEqual({ creator: { id: 7 }, title: "Bug" });
+});
 const CONTEXT: FieldEncryptionContext = {
   eventId: "User-1/1",
   cryptoKeyId: "user:1",

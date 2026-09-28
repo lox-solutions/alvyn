@@ -35,6 +35,7 @@ export type {
   AggregateReplayedEvent,
   AggregateSubscribeOptions,
   AggregateStoredEvent,
+  AggregateSubscriptionEvent,
   EncryptionConfig,
 } from "./aggregate/types";
 
@@ -55,6 +56,8 @@ export type {
   LoadFromOptions,
   LoadOptions,
   ReplayedEvent,
+  RedactedSubscriptionEvent,
+  SubscriptionEvent,
   StoredEvent,
   TombstonedEvent,
 } from "./types";
@@ -77,7 +80,12 @@ export { MAX_READ_EVENTS_PAGE_LIMIT } from "./input-validation";
 // adapter — each event is handled exactly once across the fleet — intended for
 // bridging events to an external broker (e.g. NATS). For in-process fan-out,
 // where every replica observes every event, use `EventStore.subscribe()`.
-export type { OutboxEntry, OutboxHandler, Projection } from "./types";
+export type {
+  OutboxEntry,
+  OutboxHandler,
+  Projection,
+  RedactedProjectionEvent,
+} from "./types";
 
 // Types — subscriptions (fan-out)
 export type {

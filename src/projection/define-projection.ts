@@ -1,6 +1,6 @@
 import type { PoolClient } from "pg";
 
-import type { StoredEvent } from "../types";
+import type { RedactedProjectionEvent, StoredEvent } from "../types";
 import type {
   ProjectionDefinition,
   ProjectionHandle,
@@ -55,12 +55,34 @@ export function defineProjection<TEvents>(): (
   return function (
     definition: ProjectionDefinition<TEvents>,
   ): ProjectionHandle {
-    const { projectionName, streamPrefix, handlers } = definition;
+    const { projectionName, streamPrefix, handlers, onRedacted } = definition;
     const prefix = `${streamPrefix}-`;
+    const contextFor = (
+      event: StoredEvent | RedactedProjectionEvent,
+      client: PoolClient,
+    ): ProjectionHandlerContext => ({
+      entityId: event.streamId.slice(prefix.length),
+      streamId: event.streamId,
+      globalPosition: event.globalPosition,
+      streamVersion: event.streamVersion,
+      createdAt: event.createdAt,
+      client,
+    });
+
+    let redactedHandler: ProjectionHandle["onRedacted"];
+    if (onRedacted === "skip") {
+      redactedHandler = "skip";
+    } else if (onRedacted) {
+      redactedHandler = async (event, client) => {
+        if (!event.streamId.startsWith(prefix)) return;
+        await onRedacted(event, contextFor(event, client));
+      };
+    }
 
     return {
       projectionName,
       streamPrefix,
+      onRedacted: redactedHandler,
 
       async handle(event: StoredEvent, client: PoolClient): Promise<void> {
         // Fast-path: skip events from other aggregates
@@ -70,16 +92,7 @@ export function defineProjection<TEvents>(): (
         const handler = handlers[event.type as keyof TEvents & string];
         if (!handler) return;
 
-        const entityId = event.streamId.slice(prefix.length);
-
-        const ctx: ProjectionHandlerContext = {
-          entityId,
-          streamId: event.streamId,
-          globalPosition: event.globalPosition,
-          streamVersion: event.streamVersion,
-          createdAt: event.createdAt,
-          client,
-        };
+        const ctx = contextFor(event, client);
 
         await (
           handler as (

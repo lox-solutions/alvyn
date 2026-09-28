@@ -90,13 +90,22 @@ export interface StoredEvent<T = unknown>
 }
 
 /**
- * A tombstoned event where PII has been shredded (GDPR crypto-shredding).
- * The `data` is `null` because the encryption key was revoked.
+ * A redacted event whose encrypted PII has been shredded.
+ * `data` retains public fields; only encrypted paths become `null`.
+ * It remains un-upcasted because schema migrations may need deleted PII.
  */
-export interface TombstonedEvent
+export type RedactedData<T> = T extends object
+  ? { [K in keyof T]: RedactedData<T[K]> | null }
+  : T;
+
+export interface TombstonedEvent<T = unknown>
   extends CloudEventRequiredAttributes, CloudEventOptionalAttributes {
-  /** PII was shredded — data is irrecoverable */
-  data: null;
+  /** Original-schema public payload, with encrypted fields set to null. */
+  data: RedactedData<T>;
+  /** Encrypted field paths set to null (including nested paths). */
+  redactedPaths: readonly string[];
+  /** Schema version of the original stored payload. */
+  schemaVersion: number;
   /** Extension context attributes */
   extensions: CloudEventExtensions;
   /** Marker that this event has been tombstoned */
@@ -109,8 +118,20 @@ export interface TombstonedEvent
   createdAt: Date;
 }
 
+/** Subscription payload with encrypted fields inaccessible (regardless of key state).
+ * The remaining data is in its stored schema and is never upcasted.
+ */
+export interface RedactedSubscriptionEvent extends Omit<StoredEvent, "data"> {
+  readonly redacted: true;
+  readonly data: unknown;
+  readonly redactedPaths: readonly string[];
+  readonly schemaVersion: number;
+}
+
+export type SubscriptionEvent = StoredEvent | RedactedSubscriptionEvent;
+
 /** An event returned from load(). Either a fully resolved event or a tombstone. */
-export type ReplayedEvent<T = unknown> = StoredEvent<T> | TombstonedEvent;
+export type ReplayedEvent<T = unknown> = StoredEvent<T> | TombstonedEvent<T>;
 
 // ---------------------------------------------------------------------------
 // Stream Reads
@@ -232,6 +253,14 @@ export interface Upcaster<TIn = unknown, TOut = unknown> {
 // Projections
 // ---------------------------------------------------------------------------
 
+/** An event whose encrypted fields can no longer be recovered after key revocation.
+ * `data` contains only the stored, non-encrypted fields in their ORIGINAL schema.
+ * It is intentionally not typed as a complete domain payload or upcasted.
+ */
+export interface RedactedProjectionEvent extends TombstonedEvent {
+  readonly redacted: true;
+}
+
 export interface Projection {
   projectionName: string;
   /**
@@ -244,6 +273,13 @@ export interface Projection {
    *   apply (the checkpoint advances only after handler success).
    */
   handle(event: StoredEvent, client: PoolClient): Promise<void>;
+  /** Handle an event with revoked PII, or explicitly skip it. Absent: fail closed. */
+  onRedacted?:
+    | "skip"
+    | ((
+        event: RedactedProjectionEvent,
+        client: PoolClient,
+      ) => void | Promise<void>);
 }
 
 // ---------------------------------------------------------------------------

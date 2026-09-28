@@ -28,7 +28,7 @@ import type {
   OutboxHandler,
   Projection,
   ReplayedEvent,
-  StoredEvent,
+  SubscriptionEvent,
   Upcaster,
 } from "./types";
 import type { SnapshotHandle } from "./snapshot/types";
@@ -322,7 +322,7 @@ export class EventStore {
     return this.maintenance.runProjection(projection, batchSize);
   }
 
-  subscribe(options?: SubscribeOptions): AsyncIterable<StoredEvent> {
+  subscribe(options?: SubscribeOptions): AsyncIterable<SubscriptionEvent> {
     this.ensureInitialized();
     return subscribeFn({
       pool: this.pool,

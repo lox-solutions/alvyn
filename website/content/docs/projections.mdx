@@ -63,6 +63,36 @@ The builder automatically:
 - **Provides typed data:** Handlers receive strongly typed event payloads.
 - **Provides atomic `ctx.client`:** All SQL operations inside the handler execute in the same transaction as the projection checkpoint update.
 
+### Redacted events after crypto-shredding
+
+An event encrypted with a revoked key is delivered only through `onRedacted`, **not** through its regular typed handler. `event.data` contains the original stored, non-encrypted fields with encrypted paths set to `null`, while `event.redactedPaths` lists those field paths and `event.schemaVersion` identifies the original payload schema. This partial payload is **not upcasted**: an upcaster may require PII that no longer exists. Inspect or validate the remaining data before using it.
+
+```typescript
+const issueProjection = defineProjection<IssueEvents>()({
+  projectionName: "issues",
+  streamPrefix: "Issue",
+  handlers: {
+    /* handlers for complete events */
+  },
+  onRedacted: async (event, ctx) => {
+    // Example only: handle each historical schema explicitly.
+    if (event.type === "IssueCreated" && event.schemaVersion === 1) {
+      const data = event.data as { title: string };
+      await ctx.client.query(
+        `INSERT INTO issues (id, title, assignee) VALUES ($1, $2, NULL)`,
+        [ctx.entityId, data.title],
+      );
+      return;
+    }
+    throw new Error(
+      `Unhandled redacted event: ${event.type} v${event.schemaVersion}`,
+    );
+  },
+});
+```
+
+If the projection can safely discard every redacted event, set `onRedacted: "skip"` explicitly. Without a policy, processing fails and the checkpoint rolls back rather than silently omitting an event. A missing crypto configuration or a missing key row is an error even with `"skip"`; only **revoked** keys count as intentional redaction. `onRedacted` can also be defined on the raw `Projection` interface with `(event, client)` arguments.
+
 #### `ProjectionHandlerContext`
 
 Each handler receives a context object:
@@ -160,7 +190,7 @@ startProjectionWorker();
 
 - **Idempotent Handlers:** Use `INSERT ... ON CONFLICT DO UPDATE` or idempotent SQL writes in handlers to remain resilient against rebuilds.
 - **External Effects:** HTTP calls, broker publishes, and writes through another connection are not atomic with the checkpoint and may repeat after failure. Use an outbox and downstream deduplication for these effects.
-- **Schema and PII:** Projection events are decrypted (when a key is available) and then upcast using registered upcasters. Projection handlers can therefore receive PII: restrict access to read models accordingly. If a key was revoked and an event is tombstoned, processing fails and the checkpoint rolls back; rebuilding past shredded events requires an explicit application policy.
+- **Schema and PII:** Complete projection events are decrypted and then upcast. Redacted events retain only public fields in their original schema and use the explicit `onRedacted` policy. Projection handlers can receive PII: restrict access to read models accordingly. Revoking a key does not remove PII already stored in read models; clean those up explicitly.
 - **Dedicated Workers:** Run heavy background projections on dedicated worker instances to prevent projection queries from competing with latency-critical API requests.
 
 ## Related Topics

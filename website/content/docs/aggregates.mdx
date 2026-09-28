@@ -231,19 +231,19 @@ If a key is reused with a different stream ID or different event payload, Alvyn 
 
 ## Handling Tombstoned Events
 
-When a crypto key is revoked (GDPR erasure), encrypted events return with `data: null`. Evolve handlers **must gracefully handle null data** using optional chaining with fallbacks:
+When a crypto key is revoked, only encrypted fields become `null`; public fields remain in the original stored schema. Evolve handlers must check `tombstoned` and not rely on a complete, upcasted payload:
 
 ```typescript
 evolve: {
   UserRegistered: (state, event) => ({
     ...state,
-    name: event.data?.name ?? state?.name ?? "",
-    email: event.data?.email ?? state?.email ?? "",
+    name: "tombstoned" in event ? "" : event.data?.name ?? "",
+    email: "tombstoned" in event ? "" : event.data?.email ?? "",
   }),
 }
 ```
 
-The first handler receives runtime `null`, including when the creation event is tombstoned. Supply non-sensitive defaults for every required state field; never assume a previous state exists. Erasure of previously materialized copies requires separate cleanup.
+The first handler still receives `null` as its state, including when the creation event is redacted. Supply non-sensitive defaults for erased fields; never assume a previous state exists. Erasure of previously materialized copies requires separate cleanup.
 
 ## Explicit Transactions & Stream Locking
 

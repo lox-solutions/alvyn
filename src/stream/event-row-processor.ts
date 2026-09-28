@@ -3,9 +3,9 @@ import type { PoolClient } from "pg";
 import type { CryptoKeyManager } from "../crypto/crypto-key-manager";
 import {
   decryptFields,
+  redactFields,
   type EncryptedFieldEntry,
 } from "../crypto/field-encryptor";
-import { CryptoKeyNotFoundError } from "../errors";
 import type {
   CloudEventExtensions,
   ReplayedEvent,
@@ -65,8 +65,24 @@ export function buildBaseContext(row: EventRow): BaseEventContext {
   };
 }
 
-function buildTombstone(ctx: BaseEventContext): TombstonedEvent {
-  return { ...ctx, data: null, tombstoned: true };
+export function buildTombstone<T>(
+  row: EventRow,
+  ctx: BaseEventContext,
+): TombstonedEvent<T> {
+  const encryptedData = row.encrypted_data as Record<
+    string,
+    EncryptedFieldEntry
+  >;
+  return {
+    ...ctx,
+    data: redactFields({
+      cleanData: row.data as Record<string, unknown>,
+      encryptedData,
+    }) as TombstonedEvent<T>["data"],
+    tombstoned: true,
+    redactedPaths: Object.keys(encryptedData),
+    schemaVersion: row.schema_version,
+  };
 }
 
 function applyUpcasters(options: {
@@ -93,20 +109,11 @@ async function resolveDecryptionKey(options: {
   const { cryptoKeyManager, keyCache, client, schema, cryptoKeyId } = options;
   if (keyCache.has(cryptoKeyId)) return keyCache.get(cryptoKeyId) ?? null;
 
-  let aesKey: Buffer | null;
-  try {
-    aesKey = await cryptoKeyManager.getKey({
-      client,
-      schema,
-      keyId: cryptoKeyId,
-    });
-  } catch (error) {
-    if (error instanceof CryptoKeyNotFoundError) {
-      aesKey = null;
-    } else {
-      throw error;
-    }
-  }
+  const aesKey = await cryptoKeyManager.getKey({
+    client,
+    schema,
+    keyId: cryptoKeyId,
+  });
   keyCache.set(cryptoKeyId, aesKey);
   return aesKey;
 }
@@ -166,10 +173,17 @@ export async function processRow<T>(options: {
     schema,
   } = options;
 
-  if (!row.encrypted_data || !row.crypto_key_id) {
+  if (!row.encrypted_data) {
     return processPlainRow<T>({ row, ctx, upcasterRegistry });
   }
-  if (!cryptoKeyManager) return buildTombstone(ctx);
+  if (!row.crypto_key_id) {
+    throw new Error(`Crypto key ID missing for event ${row.id}`);
+  }
+  if (!cryptoKeyManager) {
+    throw new Error(
+      `Crypto configuration required to read encrypted event ${row.id}`,
+    );
+  }
 
   const aesKey = await resolveDecryptionKey({
     cryptoKeyManager,
@@ -178,7 +192,7 @@ export async function processRow<T>(options: {
     schema,
     cryptoKeyId: row.crypto_key_id,
   });
-  if (aesKey === null) return buildTombstone(ctx);
+  if (aesKey === null) return buildTombstone<T>(row, ctx);
 
   return processEncryptedRow<T>({ row, ctx, aesKey, upcasterRegistry });
 }

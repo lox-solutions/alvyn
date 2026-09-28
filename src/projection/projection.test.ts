@@ -72,7 +72,89 @@ describe("Projections", () => {
     expect(received).toEqual([{ displayName: "Alice" }]);
   });
 
-  it("rolls back the checkpoint instead of delivering shredded PII to a handler", async () => {
+  it("requires an explicit redaction policy, preserves public fields, and continues replay", async () => {
+    const store = new EventStore({
+      pool,
+      schema: uniqueSchema(),
+      secrets: {
+        currentVersion: 1,
+        secrets: [{ version: 1, value: "11".repeat(32) }],
+      },
+    });
+    await store.setup();
+    await store.createCryptoKey("user:1");
+    await store.append({
+      streamId: "Issue-1",
+      expectedVersion: -1,
+      events: [
+        {
+          type: "IssueCreated",
+          data: { title: "Old", creator: { name: "Alice", id: 7 } },
+          schemaVersion: 1,
+          encryptedFields: ["creator.name"],
+          cryptoKeyId: "user:1",
+        },
+      ],
+    });
+    await store.append({
+      streamId: "Issue-1",
+      expectedVersion: 1,
+      events: [{ type: "IssueRenamed", data: { title: "New" } }],
+    });
+    store.registerUpcaster({
+      eventType: "IssueCreated",
+      fromSchemaVersion: 1,
+      toSchemaVersion: 2,
+      upcast: () => {
+        throw new Error("redacted data must not be upcasted");
+      },
+    });
+    await store.revokeKey("user:1");
+    type IssueEvents = {
+      IssueCreated: { title: string; creator: { name: string; id: number } };
+      IssueRenamed: { title: string };
+    };
+    const received: unknown[] = [];
+    const definition = {
+      projectionName: "issues",
+      streamPrefix: "Issue",
+      handlers: {
+        IssueCreated: () => {
+          throw new Error("complete handler called on redacted event");
+        },
+        IssueRenamed: (data: { title: string }) => {
+          received.push(data);
+        },
+      },
+    };
+    await expect(
+      store.runProjection(defineProjection<IssueEvents>()(definition)),
+    ).rejects.toThrow(/onRedacted policy/);
+    const projection = defineProjection<IssueEvents>()({
+      ...definition,
+      onRedacted: (event, ctx) => {
+        received.push({
+          data: event.data,
+          paths: event.redactedPaths,
+          version: event.schemaVersion,
+          id: ctx.entityId,
+        });
+      },
+    });
+    expect(await store.runProjection(projection)).toBe(2);
+    expect(received).toEqual([
+      {
+        data: { title: "Old", creator: { id: 7, name: null } },
+        paths: ["creator.name"],
+        version: 1,
+        id: "1",
+      },
+      { title: "New" },
+    ]);
+    expect(await store.runProjection(projection)).toBe(0);
+  });
+
+  it("skips redacted events only when explicitly configured", async () => {
     const store = new EventStore({
       pool,
       schema: uniqueSchema(),
@@ -96,21 +178,55 @@ describe("Projections", () => {
       ],
     });
     await store.revokeKey("user:1");
-    let handled = 0;
     const projection = {
-      projectionName: "shredded-user",
+      projectionName: "skip-private-user",
+      onRedacted: "skip" as const,
       handle: () => {
-        handled++;
-        return Promise.resolve();
+        throw new Error("should not be called");
       },
     };
-    await expect(store.runProjection(projection)).rejects.toThrow(
-      /tombstoned event/,
+    expect(await store.runProjection(projection)).toBe(1);
+    expect(await store.runProjection(projection)).toBe(0);
+  });
+
+  it("treats missing key rows and missing crypto configuration as errors, not redaction", async () => {
+    const schema = uniqueSchema();
+    const store = new EventStore({
+      pool,
+      schema,
+      secrets: {
+        currentVersion: 1,
+        secrets: [{ version: 1, value: "11".repeat(32) }],
+      },
+    });
+    await store.setup();
+    await store.createCryptoKey("user:1");
+    await store.append({
+      streamId: "User-1",
+      expectedVersion: -1,
+      events: [
+        {
+          type: "Registered",
+          data: { name: "Alice" },
+          encryptedFields: ["name"],
+          cryptoKeyId: "user:1",
+        },
+      ],
+    });
+    const projection = {
+      projectionName: "bad-key",
+      onRedacted: "skip" as const,
+      handle: () => Promise.resolve(),
+    };
+    const unconfigured = new EventStore({ pool, schema });
+    await unconfigured.setup();
+    await expect(unconfigured.runProjection(projection)).rejects.toThrow(
+      /Crypto configuration required/,
     );
-    expect(handled).toBe(0);
-    await expect(store.runProjection(projection)).rejects.toThrow(
-      /tombstoned event/,
-    );
+    await pool.query(`DELETE FROM ${schema}.crypto_keys WHERE key_id = $1`, [
+      "user:1",
+    ]);
+    await expect(store.runProjection(projection)).rejects.toThrow(/not found/);
   });
 
   describe("defineProjection", () => {

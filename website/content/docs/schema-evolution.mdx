@@ -91,6 +91,7 @@ A v1 event stored as `{ street: "123 Main St" }` is automatically transformed th
    - Starting from the stored `schema_version`, walk the chain
    - For each upcaster where `fromSchemaVersion === currentVersion`, apply `upcast()` and advance `currentVersion` to `toSchemaVersion`
    - Events already at the latest version skip upcasters entirely
+   - Invalid or duplicate transitions are rejected at registration; missing links in a chain throw on read instead of returning an older schema as though it were current.
 4. The database row is **never modified**.
 
 | Stored Version | Upcasters Applied   | Result Version |
@@ -154,7 +155,7 @@ If `schemaVersion` is omitted, it defaults to `1`.
 2. **Never skip versions** — If you have v1, v2, and v3, you need both v1->v2 and v2->v3. Don't create v1->v3 shortcuts.
 3. **Co-locate with aggregates** — Define upcasters in the aggregate definition.
 4. **Register at startup** — All upcasters must be registered before any read operations.
-5. **Test upcaster chains** — Verify that old events are correctly transformed through multiple versions.
+5. **Test upcaster chains** — Verify that old events are correctly transformed through multiple versions. Missing transitions throw when such an event is read.
 
 ## Step-by-Step Migration Guide
 
@@ -223,7 +224,7 @@ await Order.append(eventStore, {
 
 Upcasters let new readers understand old data; they do not make old readers forward-compatible. Optional chaining cannot repair renamed fields, changed types, or changed business meaning.
 
-1. Deploy readers and upcasters that understand both versions while writers still emit v1. Include projections, subscription consumers, and rollback candidates; projections and subscriptions upcast automatically, while subscriptions with `raw: true` retain the stored schema.
+1. Deploy readers and upcasters that understand both versions while writers still emit v1. Include projections, subscription consumers, and rollback candidates; complete projection and subscription events upcast automatically, while redacted events and subscriptions with `raw: true` retain the stored schema.
 2. Verify old-history replay and mixed-version fixtures, then enable v2 writes only after every required reader is compatible.
 3. Keep the upcasters for historical data. After v2 writes begin, rollback only to a reader version that understands v2, or use a deliberately designed compatibility bridge.
 

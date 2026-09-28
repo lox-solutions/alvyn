@@ -1,6 +1,6 @@
 import type { PoolClient } from "pg";
 import type { EventStore } from "../event-store";
-import type { ReplayedEvent, Upcaster } from "../types";
+import type { ReplayedEvent, SubscriptionEvent, Upcaster } from "../types";
 import type {
   AggregateAppendInput,
   AggregateAppendOptions,
@@ -11,7 +11,7 @@ import type {
   AggregateLoadOptions,
   AggregateReplayedEvent,
   AggregateSubscribeOptions,
-  AggregateStoredEvent,
+  AggregateSubscriptionEvent,
 } from "./types";
 import { loadFromReplay, mapEventsForAppend } from "./aggregate-helpers";
 import { isReservedSnapshotEventType } from "../snapshot/reserved-event-type";
@@ -30,9 +30,9 @@ async function loadDomainEvents<TEvents>(options: {
   ) as AggregateReplayedEvent<TEvents>[];
 }
 
-async function* filterDomainSubscription<TEvents>(
-  source: AsyncIterable<AggregateStoredEvent<TEvents>>,
-): AsyncIterable<AggregateStoredEvent<TEvents>> {
+async function* filterDomainSubscription(
+  source: AsyncIterable<SubscriptionEvent>,
+): AsyncIterable<SubscriptionEvent> {
   for await (const event of source) {
     if (!isReservedSnapshotEventType(event.type)) yield event;
   }
@@ -84,15 +84,15 @@ function createAggregateHandle<TState, TEvents>(
         encryption,
         client: options?.client,
       }),
-    subscribe: (args: AggregateSubscribeOptions) => {
+    subscribe: ((args: AggregateSubscribeOptions) => {
       const { eventStore, entityId, options } = args;
-      return filterDomainSubscription<TEvents>(
+      return filterDomainSubscription(
         eventStore.subscribe({
           ...options,
           subject: buildStreamId(entityId),
-        }) as AsyncIterable<AggregateStoredEvent<TEvents>>,
-      );
-    },
+        }),
+      ) as AsyncIterable<AggregateSubscriptionEvent<TEvents>>;
+    }) as AggregateHandle<TState, TEvents>["subscribe"],
     getUpcasters: (): Upcaster[] => upcasters ?? [],
   };
 }

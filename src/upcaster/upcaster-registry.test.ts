@@ -84,7 +84,7 @@ describe("UpcasterRegistry", () => {
       expect(result).toBe(data); // no transformation applied
     });
 
-    it("skips upcasters with version gaps", () => {
+    it("rejects incomplete upcaster chains on read", () => {
       const registry = new UpcasterRegistry();
       // Register v2->v3 but NOT v1->v2
       registry.register({
@@ -97,15 +97,56 @@ describe("UpcasterRegistry", () => {
         }),
       });
 
-      const data = { total: 100 };
-      const result = registry.upcast({
-        eventType: "OrderPlaced",
-        storedSchemaVersion: 1,
-        data,
-      });
-      // Gap: no v1->v2, so v2->v3 is never reached
-      expect(result).toBe(data);
+      expect(() =>
+        registry.upcast({
+          eventType: "OrderPlaced",
+          storedSchemaVersion: 1,
+          data: { total: 100 },
+        }),
+      ).toThrow(/Missing upcaster.*version 1/);
     });
+  });
+
+  it("rejects a gap after a successful upcast step", () => {
+    const registry = new UpcasterRegistry();
+    registry.registerAll([
+      {
+        eventType: "A",
+        fromSchemaVersion: 1,
+        toSchemaVersion: 2,
+        upcast: (d: unknown) => d,
+      },
+      {
+        eventType: "A",
+        fromSchemaVersion: 3,
+        toSchemaVersion: 4,
+        upcast: (d: unknown) => d,
+      },
+    ]);
+    expect(() =>
+      registry.upcast({ eventType: "A", storedSchemaVersion: 1, data: {} }),
+    ).toThrow(/version 2/);
+  });
+
+  it("rejects duplicate and invalid transitions", () => {
+    const registry = new UpcasterRegistry();
+    const first = {
+      eventType: "A",
+      fromSchemaVersion: 1,
+      toSchemaVersion: 2,
+      upcast: (d: unknown) => d,
+    };
+    registry.register(first);
+    expect(() => registry.register(first)).toThrow(/Duplicate upcaster/);
+    expect(() => registry.register({ ...first, fromSchemaVersion: 0 })).toThrow(
+      /Invalid upcaster/,
+    );
+    expect(() => registry.register({ ...first, toSchemaVersion: 1 })).toThrow(
+      /Invalid upcaster/,
+    );
+    expect(() =>
+      registry.register({ ...first, fromSchemaVersion: 2, toSchemaVersion: 1 }),
+    ).toThrow(/Invalid upcaster/);
   });
 
   describe("registerAll", () => {
@@ -192,7 +233,7 @@ describe("UpcasterRegistry", () => {
       expect(registry.getLatestVersion("A", 3)).toBe(3);
     });
 
-    it("stops at gap in version chain", () => {
+    it("rejects a gap in the version chain", () => {
       const registry = new UpcasterRegistry();
       registry.register({
         eventType: "A",
@@ -201,7 +242,9 @@ describe("UpcasterRegistry", () => {
         upcast: (d: unknown) => d,
       });
 
-      expect(registry.getLatestVersion("A", 1)).toBe(1);
+      expect(() => registry.getLatestVersion("A", 1)).toThrow(
+        /Missing upcaster.*version 1/,
+      );
     });
   });
 });

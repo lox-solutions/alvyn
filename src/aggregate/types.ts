@@ -1,9 +1,9 @@
 import type { PoolClient } from "pg";
 import type { EventStore } from "../event-store";
 import type {
+  RedactedSubscriptionEvent,
   ReplayedEvent,
   StoredEvent,
-  TombstonedEvent,
   Upcaster,
 } from "../types";
 import type { SubscribeOptions } from "../subscription/subscribe-options";
@@ -60,10 +60,14 @@ export type AggregateStoredEvent<TEvents> = {
   [K in EventTypeNames<TEvents>]: StoredEvent<TEvents[K]> & { type: K };
 }[EventTypeNames<TEvents>];
 
-/** A replayed event whose payload is inferred from its CloudEvents `type`. */
-export type AggregateReplayedEvent<TEvents> =
+export type AggregateSubscriptionEvent<TEvents> =
   | AggregateStoredEvent<TEvents>
-  | TombstonedEvent;
+  | RedactedSubscriptionEvent;
+
+/** A replayed event whose payload is inferred from its CloudEvents `type`. */
+export type AggregateReplayedEvent<TEvents> = {
+  [K in EventTypeNames<TEvents>]: ReplayedEvent<TEvents[K]> & { type: K };
+}[EventTypeNames<TEvents>];
 
 // ---------------------------------------------------------------------------
 // Aggregate Definition (what the developer provides)
@@ -88,8 +92,8 @@ export interface AggregateDefinition<TEvents, TState> {
    * receives `null` as state (typed as `TState` for DX — `...null` spreads
    * to `{}` in JS, so the spread pattern works safely).
    *
-   * For tombstoned events (GDPR-shredded), event.data will be null.
-   * Handlers should gracefully handle null data.
+   * For redacted events, only encrypted fields become null. Check
+   * `tombstoned` before relying on a complete, upcasted payload.
    */
   evolve: {
     [K in EventTypeNames<TEvents>]: (
@@ -153,8 +157,13 @@ export interface AggregateHandle<TState, TEvents> {
    * Subscribes to this aggregate's stream with payload types inferred from event names.
    */
   subscribe(
+    options: Omit<AggregateSubscribeOptions, "options"> & {
+      options?: Omit<SubscribeOptions, "subject" | "raw"> & { raw?: false };
+    },
+  ): AsyncIterable<AggregateSubscriptionEvent<TEvents>>;
+  subscribe(
     options: AggregateSubscribeOptions,
-  ): AsyncIterable<AggregateStoredEvent<TEvents>>;
+  ): AsyncIterable<StoredEvent | RedactedSubscriptionEvent>;
 
   /**
    * Returns all registered upcasters for this aggregate.

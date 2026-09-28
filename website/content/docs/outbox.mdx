@@ -117,6 +117,8 @@ Every outbox record generates an industry-standard CloudEvents v1.0.2 compliant 
 }
 ```
 
+Encrypted fields in newly created outbox payloads are represented as `null`; PII is never decrypted by the relay. Outbox messages are fixed at append time: revoking a key later does not rewrite previously stored payloads (including entries created by older versions of Alvyn).
+
 ## Worker Relay with `processOutbox()`
 
 Build a relay worker that claims pending outbox entries and dispatches them to your external message broker:

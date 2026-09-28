@@ -222,11 +222,11 @@ describe("encrypted events", () => {
     });
 
     expect(payloads).toHaveLength(1);
-    expect(payloads[0].data).toEqual({ active: true });
+    expect(payloads[0].data).toEqual({ active: true, name: null });
     expect(JSON.stringify(payloads)).not.toContain("Alice");
   });
 
-  it("returns a tombstone when the encrypted event key row is missing", async () => {
+  it("rejects reads when the encrypted event key row is missing", async () => {
     const schema = uniqueSchema();
     const store = makeStore(schema);
     await store.setup();
@@ -243,12 +243,10 @@ describe("encrypted events", () => {
       "user:missing-row",
     ]);
 
-    await expect(store.load("User-missing-row")).resolves.toMatchObject([
-      { data: null, tombstoned: true },
-    ]);
+    await expect(store.load("User-missing-row")).rejects.toThrow(/not found/);
   });
 
-  it("returns a tombstone when encrypted data is read without secrets", async () => {
+  it("rejects encrypted reads without secrets", async () => {
     const schema = uniqueSchema();
     const source = makeStore(schema);
     await source.setup();
@@ -269,9 +267,9 @@ describe("encrypted events", () => {
       const reader = new EventStore({ pool, schema });
       await reader.setup();
 
-      await expect(reader.load("User-no-read-secrets")).resolves.toMatchObject([
-        { data: null, tombstoned: true },
-      ]);
+      await expect(reader.load("User-no-read-secrets")).rejects.toThrow(
+        /Crypto configuration required/,
+      );
     } finally {
       if (previous === undefined) delete process.env.GDPR_CRYPTO_SECRETS;
       else process.env.GDPR_CRYPTO_SECRETS = previous;
@@ -340,6 +338,46 @@ describe("encrypted events", () => {
 });
 
 describe("crypto-shredding", () => {
+  it("retains public fields and nulls encrypted paths on every replay read", async () => {
+    const store = makeStore(uniqueSchema());
+    await store.setup();
+    await store.createCryptoKey("user:partial");
+    await store.append({
+      streamId: "Issue-1",
+      expectedVersion: -1,
+      events: [
+        {
+          type: "IssueCreated",
+          schemaVersion: 2,
+          data: { title: "Bug", creator: { id: 5, name: "Alice" } },
+          encryptedFields: ["creator.name"],
+          cryptoKeyId: "user:partial",
+        },
+      ],
+    });
+    await store.revokeKey("user:partial");
+    const expected = {
+      data: { title: "Bug", creator: { id: 5, name: null } },
+      redactedPaths: ["creator.name"],
+      schemaVersion: 2,
+      tombstoned: true,
+    };
+    expect((await store.load("Issue-1"))[0]).toMatchObject(expected);
+    expect(
+      (await store.loadFrom("Issue-1", { fromVersion: 1 }))[0],
+    ).toMatchObject(expected);
+    expect(
+      (await store.readEventsPage({ streamIds: ["Issue-1"], limit: 1 }))
+        .events[0],
+    ).toMatchObject(expected);
+    expect(
+      await store.loadLatestEventByType({
+        streamId: "Issue-1",
+        eventType: "IssueCreated",
+      }),
+    ).toMatchObject(expected);
+  });
+
   it("turns encrypted events into metadata-preserving tombstones", async () => {
     const schema = uniqueSchema();
     const store = makeStore(schema);
@@ -359,7 +397,9 @@ describe("crypto-shredding", () => {
     const tombstone = (await store.load("User-shred"))[0] as TombstonedEvent;
     expect(tombstone).toMatchObject({
       type: "Registered",
-      data: null,
+      data: { name: null },
+      redactedPaths: ["name"],
+      schemaVersion: 1,
       tombstoned: true,
       streamId: "User-shred",
       streamVersion: 1,
