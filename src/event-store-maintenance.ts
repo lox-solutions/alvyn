@@ -1,6 +1,7 @@
 import type { Pool } from "pg";
 
 import type { CryptoKeyManager } from "./crypto/crypto-key-manager";
+import type { UpcasterRegistry } from "./upcaster/upcaster-registry";
 import {
   createCryptoKey as createCryptoKeyOp,
   revokeCryptoKey as revokeCryptoKeyOp,
@@ -18,6 +19,7 @@ interface EventStoreMaintenanceOptions {
   pool: Pool;
   schema: string;
   cryptoKeyManager: CryptoKeyManager | null;
+  upcasterRegistry: UpcasterRegistry;
 }
 
 /** Owns EventStore operations that maintain derived infrastructure. */
@@ -25,11 +27,13 @@ export class EventStoreMaintenance {
   private readonly pool: Pool;
   private readonly schema: string;
   private readonly cryptoKeyManager: CryptoKeyManager | null;
+  private readonly upcasterRegistry: UpcasterRegistry;
 
   constructor(options: EventStoreMaintenanceOptions) {
     this.pool = options.pool;
     this.schema = options.schema;
     this.cryptoKeyManager = options.cryptoKeyManager;
+    this.upcasterRegistry = options.upcasterRegistry;
   }
 
   createCryptoKey(keyId: string): Promise<void> {
@@ -96,6 +100,8 @@ export class EventStoreMaintenance {
         projection,
         batchSize: batchSize ?? DEFAULT_PROJECTION_BATCH_SIZE,
         safeWatermark,
+        cryptoKeyManager: this.cryptoKeyManager,
+        upcasterRegistry: this.upcasterRegistry,
       }),
     );
   }

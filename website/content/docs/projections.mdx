@@ -160,7 +160,7 @@ startProjectionWorker();
 
 - **Idempotent Handlers:** Use `INSERT ... ON CONFLICT DO UPDATE` or idempotent SQL writes in handlers to remain resilient against rebuilds.
 - **External Effects:** HTTP calls, broker publishes, and writes through another connection are not atomic with the checkpoint and may repeat after failure. Use an outbox and downstream deduplication for these effects.
-- **Non-PII Read Models:** Projections read raw stored event rows and do not decrypt crypto-shredded fields. Avoid building long-lived public read models from PII without crypto consideration.
+- **Schema and PII:** Projection events are decrypted (when a key is available) and then upcast using registered upcasters. Projection handlers can therefore receive PII: restrict access to read models accordingly. If a key was revoked and an event is tombstoned, processing fails and the checkpoint rolls back; rebuilding past shredded events requires an explicit application policy.
 - **Dedicated Workers:** Run heavy background projections on dedicated worker instances to prevent projection queries from competing with latency-critical API requests.
 
 ## Related Topics

@@ -188,13 +188,13 @@ This minimal endpoint serializes `globalPosition` as a decimal string because JS
 
 ## Encryption and Schema Evolution
 
-Subscriptions read stored event rows for high-throughput fan-out delivery. Unlike `eventStore.load()`, they do not decrypt GDPR-encrypted fields or run registered upcasters.
+Subscriptions upcast event payloads using registered upcasters by default, including during catch-up. Set `raw: true` to receive the stored schema instead. Neither mode decrypts GDPR-encrypted fields.
 
-- The payload is the stored `data` column, with encrypted fields removed. Ciphertext lives separately in `encrypted_data` and is not returned by subscriptions.
-- The consumer receives the payload in its stored schema format.
+- The payload starts with the stored `data` column, with encrypted fields removed. Ciphertext lives separately in `encrypted_data` and is not returned by subscriptions. Upcasters run on this public payload only; upcasters that require encrypted fields must use a decrypted read path instead.
+- `raw: true` skips upcasting and returns the stored schema format.
 - Aggregate event-map types do not validate runtime payloads or restore encrypted fields. `eventTypes` filters also do not narrow the TypeScript union; check `event.type` before accessing event-specific fields.
 
-When replayed, decrypted, and upcasted domain state is required, use `Order.load()` or `eventStore.load()`.
+When decrypted and upcasted domain state is required, use `Order.load()` or `eventStore.load()`.
 
 ## Subscription vs. Outbox
 

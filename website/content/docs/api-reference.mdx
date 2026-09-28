@@ -470,7 +470,7 @@ interface CloudEventExtensions {
 }
 ```
 
-`time` is an RFC 3339 string, while `createdAt` is a `Date`. Serialize `globalPosition` as a decimal string for JSON. Raw subscriptions and projections return the stored `data` column without encrypted fields, not ciphertext or automatically upcasted data.
+`time` is an RFC 3339 string, while `createdAt` is a `Date`. Serialize `globalPosition` as a decimal string for JSON. Subscriptions upcast the stored `data` column by default without decrypting PII; pass `raw: true` to skip upcasting. Projections decrypt available PII and then upcast before invoking handlers. Tombstoned projection events fail processing rather than passing `null` to a typed handler.
 
 ### Bounded Multi-Stream Read Types
 

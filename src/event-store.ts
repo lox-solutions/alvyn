@@ -95,6 +95,7 @@ export class EventStore {
       pool: this.pool,
       schema: this.schema,
       cryptoKeyManager: this.cryptoKeyManager,
+      upcasterRegistry: this.upcasterRegistry,
     });
   }
 
@@ -327,6 +328,7 @@ export class EventStore {
       pool: this.pool,
       schema: this.schema,
       options,
+      upcasterRegistry: this.upcasterRegistry,
       createWaker: () => createNotifyWaker(this.pool, this.schema),
     });
   }

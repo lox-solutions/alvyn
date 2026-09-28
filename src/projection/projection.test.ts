@@ -27,6 +27,92 @@ type OrderEvents = {
 };
 
 describe("Projections", () => {
+  it("decrypts before upcasting historical events", async () => {
+    const store = new EventStore({
+      pool,
+      schema: uniqueSchema(),
+      secrets: {
+        currentVersion: 1,
+        secrets: [{ version: 1, value: "11".repeat(32) }],
+      },
+    });
+    await store.setup();
+    await store.createCryptoKey("user:1");
+    await store.append({
+      streamId: "User-1",
+      expectedVersion: -1,
+      events: [
+        {
+          type: "Registered",
+          data: { name: "Alice" },
+          schemaVersion: 1,
+          encryptedFields: ["name"],
+          cryptoKeyId: "user:1",
+        },
+      ],
+    });
+    store.registerUpcaster({
+      eventType: "Registered",
+      fromSchemaVersion: 1,
+      toSchemaVersion: 2,
+      upcast: (data: unknown) => ({
+        displayName: (data as { name: string }).name,
+      }),
+    });
+    const received: unknown[] = [];
+    expect(
+      await store.runProjection({
+        projectionName: "private-user",
+        handle: (event) => {
+          received.push(event.data);
+          return Promise.resolve();
+        },
+      }),
+    ).toBe(1);
+    expect(received).toEqual([{ displayName: "Alice" }]);
+  });
+
+  it("rolls back the checkpoint instead of delivering shredded PII to a handler", async () => {
+    const store = new EventStore({
+      pool,
+      schema: uniqueSchema(),
+      secrets: {
+        currentVersion: 1,
+        secrets: [{ version: 1, value: "11".repeat(32) }],
+      },
+    });
+    await store.setup();
+    await store.createCryptoKey("user:1");
+    await store.append({
+      streamId: "User-1",
+      expectedVersion: -1,
+      events: [
+        {
+          type: "Registered",
+          data: { name: "Alice" },
+          encryptedFields: ["name"],
+          cryptoKeyId: "user:1",
+        },
+      ],
+    });
+    await store.revokeKey("user:1");
+    let handled = 0;
+    const projection = {
+      projectionName: "shredded-user",
+      handle: () => {
+        handled++;
+        return Promise.resolve();
+      },
+    };
+    await expect(store.runProjection(projection)).rejects.toThrow(
+      /tombstoned event/,
+    );
+    expect(handled).toBe(0);
+    await expect(store.runProjection(projection)).rejects.toThrow(
+      /tombstoned event/,
+    );
+  });
+
   describe("defineProjection", () => {
     it("filters events by stream prefix", async () => {
       const store = new EventStore({ pool, schema: uniqueSchema() });

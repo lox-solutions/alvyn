@@ -1,6 +1,7 @@
 import type { Pool } from "pg";
 
 import type { StoredEvent } from "../types";
+import type { UpcasterRegistry } from "../upcaster/upcaster-registry";
 import { withClient } from "../pg-helpers";
 import {
   EVENT_ROW_COLUMNS,
@@ -84,7 +85,7 @@ function buildCatchUpQuery(
   );
   const filterClause = filter.clause ? ` AND ${filter.clause}` : "";
   const limitIndex = FILTER_PARAM_START + filter.params.length;
-  const sql = `SELECT ${EVENT_ROW_COLUMNS}
+  const sql = `SELECT ${EVENT_ROW_COLUMNS}, schema_version
      FROM ${schema}.events
      WHERE global_position > $1 AND global_position <= $2${filterClause}
      ORDER BY global_position ASC LIMIT $${limitIndex}`;
@@ -94,6 +95,7 @@ function buildCatchUpQuery(
 export interface SubscribeDeps {
   pool: Pool;
   schema: string;
+  upcasterRegistry?: UpcasterRegistry;
   options?: SubscribeOptions;
   /** Optional waker factory (the event store injects the NOTIFY-backed waker). */
   createWaker?: () => SubscriptionWaker;
@@ -129,12 +131,15 @@ async function* pumpBatch(
       schema: deps.schema,
     });
     if (watermark <= cursor) return null;
-    const result = await c.query<EventRow>(query.sql, [
-      cursor.toString(),
-      watermark.toString(),
-      ...query.filterParams,
-      batchSize,
-    ]);
+    const result = await c.query<EventRow & { schema_version: number }>(
+      query.sql,
+      [
+        cursor.toString(),
+        watermark.toString(),
+        ...query.filterParams,
+        batchSize,
+      ],
+    );
     return result.rows;
   });
   if (rows === null) return { cursor, caughtUp: true };
@@ -143,6 +148,13 @@ async function* pumpBatch(
   for (const row of rows) {
     const event = mapRowToEvent(row);
     next = event.globalPosition;
+    if (!deps.options?.raw && deps.upcasterRegistry) {
+      event.data = deps.upcasterRegistry.upcast({
+        eventType: event.type,
+        storedSchemaVersion: row.schema_version,
+        data: event.data,
+      });
+    }
     yield event;
   }
   return { cursor: next, caughtUp: rows.length < batchSize };

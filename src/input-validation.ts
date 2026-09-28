@@ -196,6 +196,7 @@ export function validateSubscribeOptions(options: SubscribeOptions): void {
   }
   validateOptionalNonEmptyString(options.subject, "subject");
   validateOptionalBoolean(options.recursive, "recursive");
+  validateOptionalBoolean(options.raw, "raw");
   validateOptionalStringArray(options.eventTypes, "eventTypes");
   if (options.batchSize !== undefined) {
     assertPositiveSafeInteger(options.batchSize, "batchSize");

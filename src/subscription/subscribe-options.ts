@@ -39,6 +39,8 @@ export interface SubscribeOptions {
   lowerBound?: SubscriptionLowerBound;
   /** Abort signal to stop the stream and release its resources. */
   signal?: AbortSignal;
+  /** Return stored payloads without upcasting (default: false). PII is never decrypted. */
+  raw?: boolean;
   /** Catch-up batch size (default: 500). */
   batchSize?: number;
   /** Polling / fallback cadence in milliseconds (default: 1000). */

@@ -1,11 +1,13 @@
 import type { PoolClient } from "pg";
 
 import type { Projection } from "../types";
+import type { CryptoKeyManager } from "../crypto/crypto-key-manager";
+import type { UpcasterRegistry } from "../upcaster/upcaster-registry";
 import {
-  EVENT_ROW_COLUMNS,
-  mapRowToEvent,
+  buildBaseContext,
+  processRow,
   type EventRow,
-} from "../stream/map-row-to-event";
+} from "../stream/event-row-processor";
 
 async function ensureCheckpoint(options: {
   client: PoolClient;
@@ -44,8 +46,18 @@ export async function runProjection(options: {
   projection: Projection;
   batchSize: number;
   safeWatermark: bigint;
+  cryptoKeyManager: CryptoKeyManager | null;
+  upcasterRegistry: UpcasterRegistry;
 }): Promise<number> {
-  const { client, schema, projection, batchSize, safeWatermark } = options;
+  const {
+    client,
+    schema,
+    projection,
+    batchSize,
+    safeWatermark,
+    cryptoKeyManager,
+    upcasterRegistry,
+  } = options;
 
   const lastPosition = await ensureCheckpoint({
     client,
@@ -58,7 +70,8 @@ export async function runProjection(options: {
   if (safeWatermark <= lastPosition) return 0;
 
   const eventsResult = await client.query<EventRow>(
-    `SELECT ${EVENT_ROW_COLUMNS}
+    `SELECT global_position, stream_id, stream_version, id, source, specversion, event_type,
+            subject, time, datacontenttype, data, extensions, encrypted_data, crypto_key_id, schema_version, created_at
      FROM ${schema}.events
      WHERE global_position > $1 AND global_position <= $2
      ORDER BY global_position ASC LIMIT $3`,
@@ -68,8 +81,34 @@ export async function runProjection(options: {
   if (eventsResult.rows.length === 0) return 0;
 
   let newLastPosition = lastPosition;
+  const keyCache = new Map<string, Buffer | null>();
   for (const row of eventsResult.rows) {
-    const event = mapRowToEvent(row);
+    // Typed projections already filter by prefix in handle(); avoid decrypting
+    // unrelated events (including shredded events) before that filter runs.
+    if (
+      "streamPrefix" in projection &&
+      typeof projection.streamPrefix === "string" &&
+      !row.stream_id.startsWith(`${projection.streamPrefix}-`)
+    ) {
+      newLastPosition = BigInt(row.global_position);
+      continue;
+    }
+    const event = await processRow({
+      row,
+      ctx: buildBaseContext(row),
+      cryptoKeyManager,
+      upcasterRegistry,
+      keyCache,
+      client,
+      schema,
+    });
+    // Never pass a shredded payload to a handler typed for a domain event.
+    // Roll back the checkpoint so rebuilding requires an explicit policy.
+    if ("tombstoned" in event) {
+      throw new Error(
+        `Cannot project tombstoned event ${event.id} at position ${event.globalPosition}`,
+      );
+    }
     await projection.handle(event, client);
     newLastPosition = event.globalPosition;
   }

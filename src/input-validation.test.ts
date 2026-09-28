@@ -201,5 +201,8 @@ describe("runtime input validation", () => {
     expect(() => validateSubscribeOptions({ eventTypes: [""] })).toThrow(
       InvalidArgumentError,
     );
+    expect(() => validateSubscribeOptions({ raw: "yes" as never })).toThrow(
+      InvalidArgumentError,
+    );
   });
 });
