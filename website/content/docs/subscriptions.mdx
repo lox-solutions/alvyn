@@ -4,7 +4,7 @@ description: Fan-out event subscriptions with historical catch-up, live tailing,
 icon: Radio
 ---
 
-`EventStore.subscribe()` is Alvyn's **fan-out** primitive for consumers that observe events independently. It returns an `AsyncIterable<StoredEvent>` that first catches up on matching history and then seamlessly transitions to tailing new events as they commit in PostgreSQL.
+`EventStore.subscribe()` is Alvyn's **fan-out** primitive for consumers that observe events independently. It returns an `AsyncIterable<SubscriptionEvent>` that first catches up on matching history and then seamlessly transitions to tailing new events as they commit in PostgreSQL.
 
 Unlike the transactional outbox, subscriptions are **not** competing consumers. Every subscriber (e.g. every replica or connected client) receives every matching event and maintains its own in-memory cursor.
 
@@ -188,13 +188,13 @@ This minimal endpoint serializes `globalPosition` as a decimal string because JS
 
 ## Encryption and Schema Evolution
 
-Subscriptions read stored event rows for high-throughput fan-out delivery. Unlike `eventStore.load()`, they do not decrypt GDPR-encrypted fields or run registered upcasters.
+Subscriptions upcast **complete, unencrypted** event payloads by default, including during catch-up. Set `raw: true` to receive the stored schema instead. Events with encrypted fields are always delivered as `RedactedSubscriptionEvent` in their original schema, regardless of whether the key is active or revoked. Neither mode decrypts GDPR-encrypted fields.
 
-- The payload is the stored `data` column, with encrypted fields removed. Ciphertext lives separately in `encrypted_data` and is not returned by subscriptions.
-- The consumer receives the payload in its stored schema format.
+- The payload starts with the stored `data` column, with inaccessible encrypted fields represented as `null` (whether the key is active or revoked). Ciphertext lives separately in `encrypted_data` and is not returned by subscriptions. These redacted events carry `redacted: true`, `redactedPaths`, and `schemaVersion`. They are **never upcasted**: a registered upcaster may require encrypted fields. Check for `"redacted" in event` before treating an aggregate subscription event as a fully typed payload.
+- `raw: true` skips upcasting complete events and returns the stored schema format; `Order.subscribe({ options: { raw: true }, ... })` does not promise typed current-schema payloads. Redacted events remain redacted in either mode.
 - Aggregate event-map types do not validate runtime payloads or restore encrypted fields. `eventTypes` filters also do not narrow the TypeScript union; check `event.type` before accessing event-specific fields.
 
-When replayed, decrypted, and upcasted domain state is required, use `Order.load()` or `eventStore.load()`.
+When decrypted and upcasted domain state is required, use `Order.load()` or `eventStore.load()`.
 
 ## Subscription vs. Outbox
 

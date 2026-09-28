@@ -1,6 +1,10 @@
 import type { PoolClient } from "pg";
 
 import type { CloudEventExtensions } from "../types";
+import {
+  redactFields,
+  type EncryptedFieldEntry,
+} from "../crypto/field-encryptor";
 
 const PARAMS_PER_OUTBOX = 3;
 const PG_MAX_PARAMS = 65535;
@@ -27,6 +31,7 @@ export interface PreparedRowForOutbox {
   time: string;
   datacontenttype: string;
   dataToStore: unknown;
+  encryptedDataJson?: string | null;
   extensions: CloudEventExtensions;
 }
 
@@ -47,7 +52,15 @@ function buildCloudEventsPayload(
     subject: row.subject,
     time: row.time,
     datacontenttype: row.datacontenttype,
-    data: row.dataToStore,
+    data: row.encryptedDataJson
+      ? redactFields({
+          cleanData: row.dataToStore as Record<string, unknown>,
+          encryptedData: JSON.parse(row.encryptedDataJson) as Record<
+            string,
+            EncryptedFieldEntry
+          >,
+        })
+      : row.dataToStore,
   };
   for (const [key, value] of Object.entries(row.extensions)) {
     if (value !== undefined && !RESERVED_CE_KEYS.has(key)) {

@@ -216,6 +216,22 @@ export function encryptFields(options: {
   return { cleanData, encryptedData };
 }
 
+/** Replaces encrypted fields with null without changing the stored public payload. */
+export function redactFields(options: {
+  cleanData: Record<string, unknown>;
+  encryptedData: Record<string, EncryptedFieldEntry>;
+}): Record<string, unknown> {
+  const result = JSON.parse(JSON.stringify(options.cleanData)) as Record<
+    string,
+    unknown
+  >;
+  for (const field of Object.keys(options.encryptedData)) {
+    assertValidFieldPath(field);
+    setNestedField({ obj: result, path: field, value: null });
+  }
+  return result;
+}
+
 /**
  * Decrypts encrypted field blobs and merges them back into the event data.
  *

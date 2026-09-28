@@ -213,7 +213,7 @@ describe("SQL injection resistance", () => {
 
     await store.revokeKey(injectedKeyId);
     await expect(store.load(injectedStreamId)).resolves.toMatchObject([
-      { streamId: injectedStreamId, data: null, tombstoned: true },
+      { streamId: injectedStreamId, data: { value: null }, tombstoned: true },
     ]);
     await expect(store.load(safeStreamId)).resolves.toMatchObject([
       { streamId: safeStreamId, data: { value: "safe" } },

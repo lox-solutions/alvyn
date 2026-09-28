@@ -227,7 +227,8 @@ describe("EventStore idempotency", () => {
       initialState: { balance: 0 },
       evolve: {
         Deposit: (state, event) => ({
-          balance: state.balance + (event.data?.amount ?? 0),
+          balance:
+            state.balance + ("tombstoned" in event ? 0 : event.data.amount),
         }),
       },
     });

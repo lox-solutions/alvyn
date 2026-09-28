@@ -58,7 +58,7 @@ Alvyn append idempotency applies to database writes; it does not deduplicate pay
 
 For personal data, minimize collection and configure encrypted fields and key management explicitly. Alvyn supports per-entity envelope encryption and key revocation, not automatic privacy compliance.
 
-After revocation, affected reads may return a tombstone with `data: null`. A historical reducer must handle this explicitly rather than pretending to reproduce the original private state; null-safe aggregate handlers merely avoid crashing and do not restore missing facts. Previously loaded plaintext is not removed from application memory.
+After revocation, affected reads may return a tombstone with encrypted field paths set to `null` and public fields preserved in the original schema. A historical reducer must handle this explicitly rather than pretending to reproduce the original private state; null-safe aggregate handlers merely avoid crashing and do not restore missing facts. Previously loaded plaintext is not removed from application memory.
 
 Snapshots are separate stored events and can contain copied sensitive state. Configure their encryption separately; source-event encryption does not automatically protect every derived copy. Projections, exports, logs, caches, provider retention, backups, and retained keys need their own deletion and retention policy. Revoking an active key does not erase plaintext copies or make old backups with recoverable keys harmless. Do not promise identical replay after deletion.
 

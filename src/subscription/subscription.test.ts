@@ -51,6 +51,91 @@ async function collect(
 }
 
 describe("subscribe", () => {
+  it("upcasts catch-up and live events by default, but supports raw stored payloads", async () => {
+    const store = await newStore();
+    await store.append({
+      streamId: "Order-1",
+      expectedVersion: -1,
+      events: [{ type: "OrderPlaced", data: { total: 1 }, schemaVersion: 1 }],
+    });
+    store.registerUpcaster({
+      eventType: "OrderPlaced",
+      fromSchemaVersion: 1,
+      toSchemaVersion: 2,
+      upcast: (data: unknown) => ({
+        amount: (data as { total: number }).total,
+      }),
+    });
+    expect((await collect(store, { count: 1 }))[0].data).toEqual({ amount: 1 });
+    expect((await collect(store, { count: 1, raw: true }))[0].data).toEqual({
+      total: 1,
+    });
+
+    const ac = new AbortController();
+    const received: StoredEvent[] = [];
+    const done = (async () => {
+      for await (const event of store.subscribe({
+        lowerBound: { id: "1" },
+        signal: ac.signal,
+        pollIntervalMs: 25,
+      })) {
+        received.push(event);
+        ac.abort();
+        break;
+      }
+    })();
+    await store.append({
+      streamId: "Order-1",
+      expectedVersion: 1,
+      events: [{ type: "OrderPlaced", data: { total: 2 }, schemaVersion: 1 }],
+    });
+    await done;
+    expect(received[0].data).toEqual({ amount: 2 });
+  });
+
+  it("returns original-schema redacted events without running upcasters on missing PII", async () => {
+    const store = new EventStore({
+      pool,
+      schema: uniqueSchema(),
+      secrets: {
+        currentVersion: 1,
+        secrets: [{ version: 1, value: "11".repeat(32) }],
+      },
+    });
+    await store.setup();
+    await store.createCryptoKey("user:1");
+    await store.append({
+      streamId: "User-1",
+      expectedVersion: -1,
+      events: [
+        {
+          type: "Registered",
+          data: { name: "Alice", publicId: 7 },
+          encryptedFields: ["name"],
+          cryptoKeyId: "user:1",
+        },
+      ],
+    });
+    store.registerUpcaster({
+      eventType: "Registered",
+      fromSchemaVersion: 1,
+      toSchemaVersion: 2,
+      upcast: () => {
+        throw new Error("must not upcast redacted data");
+      },
+    });
+    expect((await collect(store, { count: 1 }))[0]).toMatchObject({
+      data: { publicId: 7, name: null },
+      redacted: true,
+      redactedPaths: ["name"],
+      schemaVersion: 1,
+    });
+    expect((await collect(store, { count: 1, raw: true }))[0]).toMatchObject({
+      data: { publicId: 7, name: null },
+      redacted: true,
+    });
+  });
+
   it("streams historical events in global order (catch-up)", async () => {
     const store = await newStore();
     await store.append({

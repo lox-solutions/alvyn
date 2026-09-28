@@ -1,11 +1,17 @@
 import type { PoolClient } from "pg";
 
-import type { Projection } from "../types";
+import type {
+  Projection,
+  RedactedProjectionEvent,
+  TombstonedEvent,
+} from "../types";
+import type { CryptoKeyManager } from "../crypto/crypto-key-manager";
+import type { UpcasterRegistry } from "../upcaster/upcaster-registry";
 import {
-  EVENT_ROW_COLUMNS,
-  mapRowToEvent,
+  buildBaseContext,
+  processRow,
   type EventRow,
-} from "../stream/map-row-to-event";
+} from "../stream/event-row-processor";
 
 async function ensureCheckpoint(options: {
   client: PoolClient;
@@ -37,6 +43,69 @@ async function updateCheckpoint(options: {
   );
 }
 
+function ignoresEvent(projection: Projection, row: EventRow): boolean {
+  if (
+    projection.handlesEventType &&
+    !projection.handlesEventType(row.event_type)
+  )
+    return true;
+  return (
+    "streamPrefix" in projection &&
+    typeof projection.streamPrefix === "string" &&
+    !row.stream_id.startsWith(`${projection.streamPrefix}-`)
+  );
+}
+
+async function handleRedactedEvent(options: {
+  event: TombstonedEvent;
+  client: PoolClient;
+  projection: Projection;
+}): Promise<void> {
+  const { event, client, projection } = options;
+  if (projection.onRedacted === "skip") return;
+  if (!projection.onRedacted) {
+    throw new Error(
+      `Redacted event ${event.id} at position ${event.globalPosition} requires an onRedacted policy`,
+    );
+  }
+  const redacted: RedactedProjectionEvent = { ...event, redacted: true };
+  await projection.onRedacted(redacted, client);
+}
+
+async function processProjectionRow(options: {
+  row: EventRow;
+  client: PoolClient;
+  schema: string;
+  projection: Projection;
+  cryptoKeyManager: CryptoKeyManager | null;
+  upcasterRegistry: UpcasterRegistry;
+  keyCache: Map<string, Buffer | null>;
+}): Promise<void> {
+  const {
+    row,
+    client,
+    schema,
+    projection,
+    cryptoKeyManager,
+    upcasterRegistry,
+    keyCache,
+  } = options;
+  const event = await processRow({
+    row,
+    ctx: buildBaseContext(row),
+    cryptoKeyManager,
+    upcasterRegistry,
+    keyCache,
+    client,
+    schema,
+  });
+  if ("tombstoned" in event) {
+    await handleRedactedEvent({ event, client, projection });
+    return;
+  }
+  await projection.handle(event, client);
+}
+
 /** Runs a projection by processing events from its last checkpoint. */
 export async function runProjection(options: {
   client: PoolClient;
@@ -44,8 +113,18 @@ export async function runProjection(options: {
   projection: Projection;
   batchSize: number;
   safeWatermark: bigint;
+  cryptoKeyManager: CryptoKeyManager | null;
+  upcasterRegistry: UpcasterRegistry;
 }): Promise<number> {
-  const { client, schema, projection, batchSize, safeWatermark } = options;
+  const {
+    client,
+    schema,
+    projection,
+    batchSize,
+    safeWatermark,
+    cryptoKeyManager,
+    upcasterRegistry,
+  } = options;
 
   const lastPosition = await ensureCheckpoint({
     client,
@@ -58,7 +137,8 @@ export async function runProjection(options: {
   if (safeWatermark <= lastPosition) return 0;
 
   const eventsResult = await client.query<EventRow>(
-    `SELECT ${EVENT_ROW_COLUMNS}
+    `SELECT global_position, stream_id, stream_version, id, source, specversion, event_type,
+            subject, time, datacontenttype, data, extensions, encrypted_data, crypto_key_id, schema_version, created_at
      FROM ${schema}.events
      WHERE global_position > $1 AND global_position <= $2
      ORDER BY global_position ASC LIMIT $3`,
@@ -68,10 +148,22 @@ export async function runProjection(options: {
   if (eventsResult.rows.length === 0) return 0;
 
   let newLastPosition = lastPosition;
+  const keyCache = new Map<string, Buffer | null>();
   for (const row of eventsResult.rows) {
-    const event = mapRowToEvent(row);
-    await projection.handle(event, client);
-    newLastPosition = event.globalPosition;
+    // Typed projections already filter by prefix in handle(); avoid decrypting
+    // unrelated events (including shredded events) before that filter runs.
+    if (!ignoresEvent(projection, row)) {
+      await processProjectionRow({
+        row,
+        client,
+        schema,
+        projection,
+        cryptoKeyManager,
+        upcasterRegistry,
+        keyCache,
+      });
+    }
+    newLastPosition = BigInt(row.global_position);
   }
 
   await updateCheckpoint({

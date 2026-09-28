@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type pg from "pg";
-import type { AggregateReplayedEvent, AggregateStoredEvent } from "./types";
+import type {
+  AggregateReplayedEvent,
+  AggregateStoredEvent,
+  AggregateSubscriptionEvent,
+} from "./types";
 import { EventStore } from "../event-store";
 import { ReservedSnapshotEventTypeError } from "../errors";
 import { defineAggregate } from "./define-aggregate";
@@ -49,7 +53,7 @@ const Order = defineAggregate<OrderState, OrderEvents>()({
     OrderPlaced: (state, event) => ({
       ...state,
       status: "placed",
-      total: event.data?.total ?? 0,
+      total: "tombstoned" in event ? 0 : event.data.total,
     }),
     OrderShipped: (state) => ({ ...state, status: "shipped" }),
     OrderCancelled: (state) => ({ ...state, status: "cancelled" }),
@@ -191,7 +195,7 @@ describe("defineAggregate", () => {
       });
 
       const ac = new AbortController();
-      let received: OrderStoredEvent | null = null;
+      let received: AggregateSubscriptionEvent<OrderEvents> | null = null;
       for await (const event of Order.subscribe({
         eventStore: store,
         entityId: "subscribed",
@@ -206,7 +210,7 @@ describe("defineAggregate", () => {
       }
 
       expect(received?.type).toBe("OrderPlaced");
-      if (received?.type !== "OrderPlaced") {
+      if (received?.type !== "OrderPlaced" || "redacted" in received) {
         throw new Error("Expected OrderPlaced event");
       }
       expect(received.data.total).toBe(10);
@@ -244,7 +248,7 @@ describe("defineAggregate", () => {
         evolve: {
           OrderSnapshot: (state, event) => ({
             ...state,
-            status: event.data?.status ?? "unknown",
+            status: "tombstoned" in event ? "unknown" : event.data.status,
             total: 0,
           }),
         },
@@ -298,11 +302,21 @@ describe("defineAggregate", () => {
     const EncryptedUser = defineAggregate<UserState, UserEvents>()({
       streamPrefix: "EncUser",
       evolve: {
-        UserRegistered: (_state, event) => ({
-          name: event.data?.name ?? "",
-          email: event.data?.email ?? "",
-          age: event.data?.age ?? 0,
-        }),
+        UserRegistered: (_state, event) => {
+          if ("tombstoned" in event) {
+            const data = event.data as { age?: unknown };
+            return {
+              name: "",
+              email: "",
+              age: typeof data.age === "number" ? data.age : 0,
+            };
+          }
+          return {
+            name: event.data.name,
+            email: event.data.email,
+            age: event.data.age,
+          };
+        },
       },
       encryption: {
         cryptoKeyId: (entityId) => `user:${entityId}`,
@@ -339,6 +353,64 @@ describe("defineAggregate", () => {
       expect(agg.state?.name).toBe("Alice");
       expect(agg.state?.email).toBe("alice@test.com");
       expect(agg.state?.age).toBe(30);
+
+      const ac = new AbortController();
+      for await (const event of EncryptedUser.subscribe({
+        eventStore: store,
+        entityId: "enc1",
+        options: { signal: ac.signal, pollIntervalMs: 25 },
+      })) {
+        expect(event).toMatchObject({
+          redacted: true,
+          data: { name: null, email: null, age: 30 },
+          redactedPaths: ["name", "email"],
+        });
+        if (!("redacted" in event)) throw new Error("Expected redacted event");
+        expect(event.schemaVersion).toBe(1);
+        ac.abort();
+        break;
+      }
+    });
+
+    it("replays public fields after encrypted identity fields are shredded", async () => {
+      const store = new EventStore({
+        pool,
+        schema: uniqueSchema(),
+        secrets: {
+          currentVersion: 1,
+          secrets: [{ version: 1, value: testSecretValue() }],
+        },
+      });
+      await store.setup();
+      await store.createCryptoKey("user:gone");
+      await EncryptedUser.append(store, {
+        entityId: "gone",
+        expectedVersion: -1,
+        events: [
+          {
+            type: "UserRegistered",
+            data: { name: "Alice", email: "alice@test.com", age: 30 },
+          },
+        ],
+      });
+      await store.revokeKey("user:gone");
+      expect((await EncryptedUser.load(store, "gone")).state).toEqual({
+        name: "",
+        email: "",
+        age: 30,
+      });
+      expect(
+        (
+          await EncryptedUser.loadEvents({
+            eventStore: store,
+            entityId: "gone",
+          })
+        )[0],
+      ).toMatchObject({
+        data: { name: null, email: null, age: 30 },
+        tombstoned: true,
+        redactedPaths: ["name", "email"],
+      });
     });
 
     it("does not encrypt events without encryptedFields mapping", async () => {
@@ -353,8 +425,14 @@ describe("defineAggregate", () => {
       >()({
         streamPrefix: "Mixed",
         evolve: {
-          Public: (s, e) => ({ ...s, info: e.data?.info ?? "" }),
-          Private: (s, e) => ({ ...s, secret: e.data?.secret ?? "" }),
+          Public: (s, e) => ({
+            ...s,
+            info: "tombstoned" in e ? "" : e.data.info,
+          }),
+          Private: (s, e) => ({
+            ...s,
+            secret: "tombstoned" in e ? "" : e.data.secret,
+          }),
         },
         encryption: {
           cryptoKeyId: (id) => `mix:${id}`,

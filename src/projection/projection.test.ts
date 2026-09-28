@@ -27,7 +27,253 @@ type OrderEvents = {
 };
 
 describe("Projections", () => {
+  it("decrypts before upcasting historical events", async () => {
+    const store = new EventStore({
+      pool,
+      schema: uniqueSchema(),
+      secrets: {
+        currentVersion: 1,
+        secrets: [{ version: 1, value: "11".repeat(32) }],
+      },
+    });
+    await store.setup();
+    await store.createCryptoKey("user:1");
+    await store.append({
+      streamId: "User-1",
+      expectedVersion: -1,
+      events: [
+        {
+          type: "Registered",
+          data: { name: "Alice" },
+          schemaVersion: 1,
+          encryptedFields: ["name"],
+          cryptoKeyId: "user:1",
+        },
+      ],
+    });
+    store.registerUpcaster({
+      eventType: "Registered",
+      fromSchemaVersion: 1,
+      toSchemaVersion: 2,
+      upcast: (data: unknown) => ({
+        displayName: (data as { name: string }).name,
+      }),
+    });
+    const received: unknown[] = [];
+    expect(
+      await store.runProjection({
+        projectionName: "private-user",
+        handle: (event) => {
+          received.push(event.data);
+          return Promise.resolve();
+        },
+      }),
+    ).toBe(1);
+    expect(received).toEqual([{ displayName: "Alice" }]);
+  });
+
+  it("requires an explicit redaction policy, preserves public fields, and continues replay", async () => {
+    const store = new EventStore({
+      pool,
+      schema: uniqueSchema(),
+      secrets: {
+        currentVersion: 1,
+        secrets: [{ version: 1, value: "11".repeat(32) }],
+      },
+    });
+    await store.setup();
+    await store.createCryptoKey("user:1");
+    await store.append({
+      streamId: "Issue-1",
+      expectedVersion: -1,
+      events: [
+        {
+          type: "IssueCreated",
+          data: { title: "Old", creator: { name: "Alice", id: 7 } },
+          schemaVersion: 1,
+          encryptedFields: ["creator.name"],
+          cryptoKeyId: "user:1",
+        },
+      ],
+    });
+    await store.append({
+      streamId: "Issue-1",
+      expectedVersion: 1,
+      events: [{ type: "IssueRenamed", data: { title: "New" } }],
+    });
+    store.registerUpcaster({
+      eventType: "IssueCreated",
+      fromSchemaVersion: 1,
+      toSchemaVersion: 2,
+      upcast: () => {
+        throw new Error("redacted data must not be upcasted");
+      },
+    });
+    await store.revokeKey("user:1");
+    type IssueEvents = {
+      IssueCreated: { title: string; creator: { name: string; id: number } };
+      IssueRenamed: { title: string };
+    };
+    const received: unknown[] = [];
+    const definition = {
+      projectionName: "issues",
+      streamPrefix: "Issue",
+      handlers: {
+        IssueCreated: () => {
+          throw new Error("complete handler called on redacted event");
+        },
+        IssueRenamed: (data: { title: string }) => {
+          received.push(data);
+        },
+      },
+    };
+    await expect(
+      store.runProjection(defineProjection<IssueEvents>()(definition)),
+    ).rejects.toThrow(/onRedacted policy/);
+    const projection = defineProjection<IssueEvents>()({
+      ...definition,
+      onRedacted: (event, ctx) => {
+        received.push({
+          data: event.data,
+          paths: event.redactedPaths,
+          version: event.schemaVersion,
+          id: ctx.entityId,
+        });
+      },
+    });
+    expect(await store.runProjection(projection)).toBe(2);
+    expect(received).toEqual([
+      {
+        data: { title: "Old", creator: { id: 7, name: null } },
+        paths: ["creator.name"],
+        version: 1,
+        id: "1",
+      },
+      { title: "New" },
+    ]);
+    expect(await store.runProjection(projection)).toBe(0);
+  });
+
+  it("skips redacted events only when explicitly configured", async () => {
+    const store = new EventStore({
+      pool,
+      schema: uniqueSchema(),
+      secrets: {
+        currentVersion: 1,
+        secrets: [{ version: 1, value: "11".repeat(32) }],
+      },
+    });
+    await store.setup();
+    await store.createCryptoKey("user:1");
+    await store.append({
+      streamId: "User-1",
+      expectedVersion: -1,
+      events: [
+        {
+          type: "Registered",
+          data: { name: "Alice" },
+          encryptedFields: ["name"],
+          cryptoKeyId: "user:1",
+        },
+      ],
+    });
+    await store.revokeKey("user:1");
+    const projection = {
+      projectionName: "skip-private-user",
+      onRedacted: "skip" as const,
+      handle: () => {
+        throw new Error("should not be called");
+      },
+    };
+    expect(await store.runProjection(projection)).toBe(1);
+    expect(await store.runProjection(projection)).toBe(0);
+  });
+
+  it("treats missing key rows and missing crypto configuration as errors, not redaction", async () => {
+    const schema = uniqueSchema();
+    const store = new EventStore({
+      pool,
+      schema,
+      secrets: {
+        currentVersion: 1,
+        secrets: [{ version: 1, value: "11".repeat(32) }],
+      },
+    });
+    await store.setup();
+    await store.createCryptoKey("user:1");
+    await store.append({
+      streamId: "User-1",
+      expectedVersion: -1,
+      events: [
+        {
+          type: "Registered",
+          data: { name: "Alice" },
+          encryptedFields: ["name"],
+          cryptoKeyId: "user:1",
+        },
+      ],
+    });
+    const projection = {
+      projectionName: "bad-key",
+      onRedacted: "skip" as const,
+      handle: () => Promise.resolve(),
+    };
+    const unconfigured = new EventStore({ pool, schema });
+    await unconfigured.setup();
+    await expect(unconfigured.runProjection(projection)).rejects.toThrow(
+      /Crypto configuration required/,
+    );
+    await pool.query(`DELETE FROM ${schema}.crypto_keys WHERE key_id = $1`, [
+      "user:1",
+    ]);
+    await expect(store.runProjection(projection)).rejects.toThrow(/not found/);
+  });
+
   describe("defineProjection", () => {
+    it("skips unhandled encrypted event types before decryption", async () => {
+      const store = new EventStore({
+        pool,
+        schema: uniqueSchema(),
+        secrets: {
+          currentVersion: 1,
+          secrets: [{ version: 1, value: "11".repeat(32) }],
+        },
+      });
+      await store.setup();
+      await store.createCryptoKey("user:old");
+      await store.appendSnapshot({
+        streamId: "Order-1",
+        expectedVersion: -1,
+        events: [
+          {
+            type: "OrderSummarySnapshot",
+            data: { privateName: "Ada" },
+            encryptedFields: ["privateName"],
+            cryptoKeyId: "user:old",
+          },
+        ],
+      });
+      await store.append({
+        streamId: "Order-1",
+        expectedVersion: 1,
+        events: [{ type: "OrderPlaced", data: { total: 42 } }],
+      });
+      await store.revokeKey("user:old");
+      const handled: number[] = [];
+      const projection = defineProjection<OrderEvents>()({
+        projectionName: "only-orders",
+        streamPrefix: "Order",
+        handlers: {
+          OrderPlaced: (data) => {
+            handled.push(data.total);
+          },
+        },
+      });
+      expect(await store.runProjection(projection)).toBe(2);
+      expect(handled).toEqual([42]);
+      expect(await store.runProjection(projection)).toBe(0);
+    });
+
     it("filters events by stream prefix", async () => {
       const store = new EventStore({ pool, schema: uniqueSchema() });
       await store.setup();

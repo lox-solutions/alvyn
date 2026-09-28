@@ -28,7 +28,7 @@ import type {
   OutboxHandler,
   Projection,
   ReplayedEvent,
-  StoredEvent,
+  SubscriptionEvent,
   Upcaster,
 } from "./types";
 import type { SnapshotHandle } from "./snapshot/types";
@@ -95,6 +95,7 @@ export class EventStore {
       pool: this.pool,
       schema: this.schema,
       cryptoKeyManager: this.cryptoKeyManager,
+      upcasterRegistry: this.upcasterRegistry,
     });
   }
 
@@ -321,12 +322,13 @@ export class EventStore {
     return this.maintenance.runProjection(projection, batchSize);
   }
 
-  subscribe(options?: SubscribeOptions): AsyncIterable<StoredEvent> {
+  subscribe(options?: SubscribeOptions): AsyncIterable<SubscriptionEvent> {
     this.ensureInitialized();
     return subscribeFn({
       pool: this.pool,
       schema: this.schema,
       options,
+      upcasterRegistry: this.upcasterRegistry,
       createWaker: () => createNotifyWaker(this.pool, this.schema),
     });
   }

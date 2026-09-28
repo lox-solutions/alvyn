@@ -5,7 +5,7 @@ import type { Upcaster } from "../types";
  *
  * Upcasters transform old event schemas into newer versions at read-time.
  * The stored event in the database is NEVER modified — transformations
- * happen in memory during load().
+ * happen in memory during eligible reads (including complete subscriptions).
  *
  * Example: If an event was stored as schema version 1, and upcasters
  * v1→v2 and v2→v3 exist, the event is passed through both transformations
@@ -22,7 +22,29 @@ export class UpcasterRegistry {
    * Registers an upcaster for a specific event type and version range.
    */
   register(upcaster: Upcaster): void {
+    if (
+      typeof upcaster.eventType !== "string" ||
+      upcaster.eventType.length === 0 ||
+      !Number.isSafeInteger(upcaster.fromSchemaVersion) ||
+      upcaster.fromSchemaVersion < 1 ||
+      !Number.isSafeInteger(upcaster.toSchemaVersion) ||
+      upcaster.toSchemaVersion <= upcaster.fromSchemaVersion ||
+      typeof upcaster.upcast !== "function"
+    ) {
+      throw new Error(
+        "Invalid upcaster: provide an event type, a function and increasing positive schema versions",
+      );
+    }
     const existing = this.upcasters.get(upcaster.eventType) ?? [];
+    if (
+      existing.some(
+        (entry) => entry.fromSchemaVersion === upcaster.fromSchemaVersion,
+      )
+    ) {
+      throw new Error(
+        `Duplicate upcaster for ${upcaster.eventType} schema version ${upcaster.fromSchemaVersion}`,
+      );
+    }
     existing.push(upcaster);
     // Keep sorted by fromSchemaVersion for correct chain execution
     existing.sort((a, b) => a.fromSchemaVersion - b.fromSchemaVersion);
@@ -68,7 +90,28 @@ export class UpcasterRegistry {
       }
     }
 
+    this.assertCompleteChain({
+      eventType,
+      storedVersion: storedSchemaVersion,
+      reachedVersion: currentVersion,
+      chain,
+    });
     return currentData;
+  }
+
+  private assertCompleteChain(options: {
+    eventType: string;
+    storedVersion: number;
+    reachedVersion: number;
+    chain: Upcaster[];
+  }): void {
+    const { eventType, storedVersion, reachedVersion, chain } = options;
+    const latest = Math.max(...chain.map((entry) => entry.toSchemaVersion));
+    if (storedVersion < latest && reachedVersion < latest) {
+      throw new Error(
+        `Missing upcaster for ${eventType} schema version ${reachedVersion}`,
+      );
+    }
   }
 
   /**
@@ -88,6 +131,12 @@ export class UpcasterRegistry {
         version = upcaster.toSchemaVersion;
       }
     }
+    this.assertCompleteChain({
+      eventType,
+      storedVersion: baseVersion,
+      reachedVersion: version,
+      chain,
+    });
     return version;
   }
 }

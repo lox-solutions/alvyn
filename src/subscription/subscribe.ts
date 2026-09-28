@@ -1,6 +1,11 @@
 import type { Pool } from "pg";
 
-import type { StoredEvent } from "../types";
+import type { RedactedSubscriptionEvent, SubscriptionEvent } from "../types";
+import type { UpcasterRegistry } from "../upcaster/upcaster-registry";
+import {
+  redactFields,
+  type EncryptedFieldEntry,
+} from "../crypto/field-encryptor";
 import { withClient } from "../pg-helpers";
 import {
   EVENT_ROW_COLUMNS,
@@ -84,7 +89,7 @@ function buildCatchUpQuery(
   );
   const filterClause = filter.clause ? ` AND ${filter.clause}` : "";
   const limitIndex = FILTER_PARAM_START + filter.params.length;
-  const sql = `SELECT ${EVENT_ROW_COLUMNS}
+  const sql = `SELECT ${EVENT_ROW_COLUMNS}, schema_version, encrypted_data
      FROM ${schema}.events
      WHERE global_position > $1 AND global_position <= $2${filterClause}
      ORDER BY global_position ASC LIMIT $${limitIndex}`;
@@ -94,6 +99,7 @@ function buildCatchUpQuery(
 export interface SubscribeDeps {
   pool: Pool;
   schema: string;
+  upcasterRegistry?: UpcasterRegistry;
   options?: SubscribeOptions;
   /** Optional waker factory (the event store injects the NOTIFY-backed waker). */
   createWaker?: () => SubscriptionWaker;
@@ -121,7 +127,7 @@ interface PumpResult {
  */
 async function* pumpBatch(
   options: PumpOptions,
-): AsyncGenerator<StoredEvent, PumpResult, void> {
+): AsyncGenerator<SubscriptionEvent, PumpResult, void> {
   const { deps, query, cursor, batchSize } = options;
   const rows = await withClient(deps.pool, async (c) => {
     const watermark = await computeSafeWatermark({
@@ -129,7 +135,12 @@ async function* pumpBatch(
       schema: deps.schema,
     });
     if (watermark <= cursor) return null;
-    const result = await c.query<EventRow>(query.sql, [
+    const result = await c.query<
+      EventRow & {
+        schema_version: number;
+        encrypted_data: Record<string, EncryptedFieldEntry> | null;
+      }
+    >(query.sql, [
       cursor.toString(),
       watermark.toString(),
       ...query.filterParams,
@@ -143,13 +154,34 @@ async function* pumpBatch(
   for (const row of rows) {
     const event = mapRowToEvent(row);
     next = event.globalPosition;
+    if (row.encrypted_data && Object.keys(row.encrypted_data).length > 0) {
+      const redacted: RedactedSubscriptionEvent = {
+        ...event,
+        data: redactFields({
+          cleanData: row.data as Record<string, unknown>,
+          encryptedData: row.encrypted_data,
+        }),
+        redacted: true,
+        redactedPaths: Object.keys(row.encrypted_data),
+        schemaVersion: row.schema_version,
+      };
+      yield redacted;
+      continue;
+    }
+    if (!deps.options?.raw && deps.upcasterRegistry) {
+      event.data = deps.upcasterRegistry.upcast({
+        eventType: event.type,
+        storedSchemaVersion: row.schema_version,
+        data: event.data,
+      });
+    }
     yield event;
   }
   return { cursor: next, caughtUp: rows.length < batchSize };
 }
 
 /**
- * Builds an `AsyncIterable<StoredEvent>` that streams matching historical events
+ * Builds an `AsyncIterable<SubscriptionEvent>` that streams matching historical events
  * in gap-free `global_position` order (catch-up), then transitions seamlessly
  * to live events on the same iterator.
  *
@@ -159,7 +191,7 @@ async function* pumpBatch(
  */
 export async function* subscribe(
   deps: SubscribeDeps,
-): AsyncGenerator<StoredEvent, void, void> {
+): AsyncGenerator<SubscriptionEvent, void, void> {
   const options = deps.options ?? {};
   validateSubscribeOptions(options);
   const signal = options.signal;

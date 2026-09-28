@@ -1,6 +1,6 @@
 import type { PoolClient } from "pg";
 
-import type { StoredEvent } from "../types";
+import type { RedactedProjectionEvent, StoredEvent } from "../types";
 
 // ---------------------------------------------------------------------------
 // Projection Handler Context
@@ -59,6 +59,15 @@ export interface ProjectionDefinition<TEvents> {
       ctx: ProjectionHandlerContext,
     ) => void | Promise<void>;
   };
+  /** Handle revoked-PII events in their original, partial schema, or explicitly skip.
+   * Without a policy, projection processing fails and rolls back the checkpoint.
+   */
+  onRedacted?:
+    | "skip"
+    | ((
+        event: RedactedProjectionEvent,
+        ctx: ProjectionHandlerContext,
+      ) => void | Promise<void>);
 }
 
 // ---------------------------------------------------------------------------
@@ -79,4 +88,9 @@ export interface ProjectionHandle {
    * extracts the entity ID, and dispatches to the correct typed handler.
    */
   handle(event: StoredEvent, client: PoolClient): Promise<void>;
+  /** Used by the runner to skip unhandled event types before decryption. */
+  handlesEventType(type: string): boolean;
+  onRedacted?:
+    | "skip"
+    | ((event: RedactedProjectionEvent, client: PoolClient) => Promise<void>);
 }
