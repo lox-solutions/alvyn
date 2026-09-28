@@ -39,10 +39,10 @@ const BankAccountBalance = defineSnapshot<
   initialState: { balance: 0 },
   evolve: {
     Deposit: (state, event) => ({
-      balance: state.balance + (event.data?.amount ?? 0),
+      balance: state.balance + ("tombstoned" in event ? 0 : event.data.amount),
     }),
     Withdrawal: (state, event) => ({
-      balance: state.balance - (event.data?.amount ?? 0),
+      balance: state.balance - ("tombstoned" in event ? 0 : event.data.amount),
     }),
   },
 });
@@ -57,10 +57,10 @@ const FrequentlySnapshottedBalance = defineSnapshot<
   initialState: { balance: 0 },
   evolve: {
     Deposit: (state, event) => ({
-      balance: state.balance + (event.data?.amount ?? 0),
+      balance: state.balance + ("tombstoned" in event ? 0 : event.data.amount),
     }),
     Withdrawal: (state, event) => ({
-      balance: state.balance - (event.data?.amount ?? 0),
+      balance: state.balance - ("tombstoned" in event ? 0 : event.data.amount),
     }),
   },
 });
@@ -75,7 +75,7 @@ const EncryptedBalance = defineSnapshot<
   initialState: { balance: 0 },
   evolve: {
     Deposit: (state, event) => ({
-      balance: state.balance + (event.data?.amount ?? 0),
+      balance: state.balance + ("tombstoned" in event ? 0 : event.data.amount),
     }),
   },
   encryption: {

@@ -43,11 +43,16 @@ async function updateCheckpoint(options: {
   );
 }
 
-function ignoresStream(projection: Projection, streamId: string): boolean {
+function ignoresEvent(projection: Projection, row: EventRow): boolean {
+  if (
+    projection.handlesEventType &&
+    !projection.handlesEventType(row.event_type)
+  )
+    return true;
   return (
     "streamPrefix" in projection &&
     typeof projection.streamPrefix === "string" &&
-    !streamId.startsWith(`${projection.streamPrefix}-`)
+    !row.stream_id.startsWith(`${projection.streamPrefix}-`)
   );
 }
 
@@ -147,7 +152,7 @@ export async function runProjection(options: {
   for (const row of eventsResult.rows) {
     // Typed projections already filter by prefix in handle(); avoid decrypting
     // unrelated events (including shredded events) before that filter runs.
-    if (!ignoresStream(projection, row.stream_id)) {
+    if (!ignoresEvent(projection, row)) {
       await processProjectionRow({
         row,
         client,

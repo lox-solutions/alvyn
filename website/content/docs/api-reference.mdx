@@ -419,7 +419,7 @@ interface StoredEvent<T = unknown>
   createdAt: Date;
 }
 
-interface TombstonedEvent<T = unknown>
+interface TombstonedEvent
   extends CloudEventRequiredAttributes, CloudEventOptionalAttributes {
   globalPosition: bigint;
   streamId: string;
@@ -443,7 +443,7 @@ interface CryptoSecretsConfig {
   secrets: readonly CryptoSecret[];
 }
 
-type ReplayedEvent<T = unknown> = StoredEvent<T> | TombstonedEvent<T>;
+type ReplayedEvent<T = unknown> = StoredEvent<T> | TombstonedEvent;
 ```
 
 Both event types inherit these CloudEvents context fields (in addition to the internal stream metadata above):
@@ -559,6 +559,13 @@ interface Upcaster<TIn = unknown, TOut = unknown> {
 interface Projection {
   projectionName: string;
   handle(event: StoredEvent, client: PoolClient): Promise<void>;
+  handlesEventType?: (type: string) => boolean; // Filter before decrypting
+  onRedacted?:
+    | "skip"
+    | ((
+        event: RedactedProjectionEvent,
+        client: PoolClient,
+      ) => void | Promise<void>);
 }
 
 interface ProjectionHandlerContext {

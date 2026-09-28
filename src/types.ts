@@ -94,14 +94,10 @@ export interface StoredEvent<T = unknown>
  * `data` retains public fields; only encrypted paths become `null`.
  * It remains un-upcasted because schema migrations may need deleted PII.
  */
-export type RedactedData<T> = T extends object
-  ? { [K in keyof T]: RedactedData<T[K]> | null }
-  : T;
-
-export interface TombstonedEvent<T = unknown>
+export interface TombstonedEvent
   extends CloudEventRequiredAttributes, CloudEventOptionalAttributes {
   /** Original-schema public payload, with encrypted fields set to null. */
-  data: RedactedData<T>;
+  data: unknown;
   /** Encrypted field paths set to null (including nested paths). */
   redactedPaths: readonly string[];
   /** Schema version of the original stored payload. */
@@ -131,7 +127,7 @@ export interface RedactedSubscriptionEvent extends Omit<StoredEvent, "data"> {
 export type SubscriptionEvent = StoredEvent | RedactedSubscriptionEvent;
 
 /** An event returned from load(). Either a fully resolved event or a tombstone. */
-export type ReplayedEvent<T = unknown> = StoredEvent<T> | TombstonedEvent<T>;
+export type ReplayedEvent<T = unknown> = StoredEvent<T> | TombstonedEvent;
 
 // ---------------------------------------------------------------------------
 // Stream Reads
@@ -273,6 +269,8 @@ export interface Projection {
    *   apply (the checkpoint advances only after handler success).
    */
   handle(event: StoredEvent, client: PoolClient): Promise<void>;
+  /** Optional pre-read filter for event types this projection actually handles. */
+  handlesEventType?: (type: string) => boolean;
   /** Handle an event with revoked PII, or explicitly skip it. Absent: fail closed. */
   onRedacted?:
     | "skip"

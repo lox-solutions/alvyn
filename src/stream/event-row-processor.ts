@@ -65,10 +65,10 @@ export function buildBaseContext(row: EventRow): BaseEventContext {
   };
 }
 
-export function buildTombstone<T>(
+export function buildTombstone(
   row: EventRow,
   ctx: BaseEventContext,
-): TombstonedEvent<T> {
+): TombstonedEvent {
   const encryptedData = row.encrypted_data as Record<
     string,
     EncryptedFieldEntry
@@ -78,7 +78,7 @@ export function buildTombstone<T>(
     data: redactFields({
       cleanData: row.data as Record<string, unknown>,
       encryptedData,
-    }) as TombstonedEvent<T>["data"],
+    }),
     tombstoned: true,
     redactedPaths: Object.keys(encryptedData),
     schemaVersion: row.schema_version,
@@ -173,7 +173,7 @@ export async function processRow<T>(options: {
     schema,
   } = options;
 
-  if (!row.encrypted_data) {
+  if (!row.encrypted_data || Object.keys(row.encrypted_data).length === 0) {
     return processPlainRow<T>({ row, ctx, upcasterRegistry });
   }
   if (!row.crypto_key_id) {
@@ -192,7 +192,7 @@ export async function processRow<T>(options: {
     schema,
     cryptoKeyId: row.crypto_key_id,
   });
-  if (aesKey === null) return buildTombstone<T>(row, ctx);
+  if (aesKey === null) return buildTombstone(row, ctx);
 
   return processEncryptedRow<T>({ row, ctx, aesKey, upcasterRegistry });
 }

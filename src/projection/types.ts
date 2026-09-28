@@ -88,6 +88,8 @@ export interface ProjectionHandle {
    * extracts the entity ID, and dispatches to the correct typed handler.
    */
   handle(event: StoredEvent, client: PoolClient): Promise<void>;
+  /** Used by the runner to skip unhandled event types before decryption. */
+  handlesEventType(type: string): boolean;
   onRedacted?:
     | "skip"
     | ((event: RedactedProjectionEvent, client: PoolClient) => Promise<void>);

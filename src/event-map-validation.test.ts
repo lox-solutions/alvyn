@@ -32,16 +32,16 @@ const BankAccount = defineAggregate<BankAccountState, BankAccountEvents>()({
   evolve: {
     AccountOpened: (_state, event) => ({
       status: "open",
-      ownerName: event.data?.ownerName ?? "",
-      balance: event.data?.initialBalance ?? 0,
+      ownerName: "tombstoned" in event ? "" : event.data.ownerName,
+      balance: "tombstoned" in event ? 0 : event.data.initialBalance,
     }),
     MoneyDeposited: (state, event) => ({
       ...state,
-      balance: state.balance + (event.data?.amount ?? 0),
+      balance: state.balance + ("tombstoned" in event ? 0 : event.data.amount),
     }),
     MoneyWithdrawn: (state, event) => ({
       ...state,
-      balance: state.balance - (event.data?.amount ?? 0),
+      balance: state.balance - ("tombstoned" in event ? 0 : event.data.amount),
     }),
     AccountClosed: (state) => ({ ...state, status: "closed" }),
   },
@@ -79,16 +79,16 @@ const BankAccountSnapshot = defineSnapshot<
   evolve: {
     AccountOpened: (_state, event) => ({
       status: "open",
-      ownerName: event.data?.ownerName ?? "",
-      balance: event.data?.initialBalance ?? 0,
+      ownerName: "tombstoned" in event ? "" : event.data.ownerName,
+      balance: "tombstoned" in event ? 0 : event.data.initialBalance,
     }),
     MoneyDeposited: (state, event) => ({
       ...state,
-      balance: state.balance + (event.data?.amount ?? 0),
+      balance: state.balance + ("tombstoned" in event ? 0 : event.data.amount),
     }),
     MoneyWithdrawn: (state, event) => ({
       ...state,
-      balance: state.balance - (event.data?.amount ?? 0),
+      balance: state.balance - ("tombstoned" in event ? 0 : event.data.amount),
     }),
     AccountClosed: (state) => ({ ...state, status: "closed" }),
   },

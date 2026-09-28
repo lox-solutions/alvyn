@@ -230,6 +230,50 @@ describe("Projections", () => {
   });
 
   describe("defineProjection", () => {
+    it("skips unhandled encrypted event types before decryption", async () => {
+      const store = new EventStore({
+        pool,
+        schema: uniqueSchema(),
+        secrets: {
+          currentVersion: 1,
+          secrets: [{ version: 1, value: "11".repeat(32) }],
+        },
+      });
+      await store.setup();
+      await store.createCryptoKey("user:old");
+      await store.appendSnapshot({
+        streamId: "Order-1",
+        expectedVersion: -1,
+        events: [
+          {
+            type: "OrderSummarySnapshot",
+            data: { privateName: "Ada" },
+            encryptedFields: ["privateName"],
+            cryptoKeyId: "user:old",
+          },
+        ],
+      });
+      await store.append({
+        streamId: "Order-1",
+        expectedVersion: 1,
+        events: [{ type: "OrderPlaced", data: { total: 42 } }],
+      });
+      await store.revokeKey("user:old");
+      const handled: number[] = [];
+      const projection = defineProjection<OrderEvents>()({
+        projectionName: "only-orders",
+        streamPrefix: "Order",
+        handlers: {
+          OrderPlaced: (data) => {
+            handled.push(data.total);
+          },
+        },
+      });
+      expect(await store.runProjection(projection)).toBe(2);
+      expect(handled).toEqual([42]);
+      expect(await store.runProjection(projection)).toBe(0);
+    });
+
     it("filters events by stream prefix", async () => {
       const store = new EventStore({ pool, schema: uniqueSchema() });
       await store.setup();

@@ -186,7 +186,7 @@ crypto_key_id column:   "user:abc123"
 #### Read Path (load)
 
 1. If the entity's crypto key is **active**: fields are decrypted and merged back into the event data. The caller sees the complete event as if encryption was transparent.
-2. If the key is **revoked**: the event is returned as a `TombstonedEvent` with non-encrypted fields preserved and encrypted field paths set to `null`. The payload is in its original schema and is not upcasted. Missing key rows or missing crypto configuration are errors, not intentional erasure.
+2. If the key is **revoked** and fields were actually encrypted: the event is returned as a `TombstonedEvent` with non-encrypted fields preserved and encrypted field paths set to `null`. The payload is in its original schema and is not upcasted. A configured encrypted field that was absent from an event is not encrypted and does not cause a tombstone later. Missing key rows or missing crypto configuration are errors, not intentional erasure.
 
 ### Setting Up Encryption
 
@@ -391,16 +391,21 @@ interface TombstonedEvent {
 - `type` is still available — you know _what_ business event happened, just not the personal details.
 - Non-encrypted events in the same stream are **not affected**.
 
-Evolve handlers **must** use optional chaining with fallbacks:
+Evolve handlers must distinguish complete events from redacted, original-schema payloads. Validate public fields before using them and do not retain erased PII from previous state:
 
 ```typescript
 evolve: {
-  UserRegistered: (state, event) => ({
-    ...state,
-    name: event.data?.name ?? state?.name ?? "",
-    email: event.data?.email ?? state?.email ?? "",
-    active: event.data?.active ?? state?.active ?? false,
-  }),
+  UserRegistered: (state, event) => {
+    if ("tombstoned" in event) {
+      const data = event.data;
+      const active = typeof data === "object" && data !== null &&
+        "active" in data && typeof data.active === "boolean"
+          ? data.active : false;
+      return { ...state, name: "", email: "", active };
+    }
+    return { ...state, name: event.data.name,
+      email: event.data.email, active: event.data.active };
+  },
 }
 ```
 

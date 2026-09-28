@@ -1,5 +1,12 @@
 import type pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  expectTypeOf,
+  it,
+} from "vitest";
 
 import {
   createTestPool,
@@ -338,6 +345,116 @@ describe("encrypted events", () => {
 });
 
 describe("crypto-shredding", () => {
+  it("treats empty encrypted maps as complete for new and legacy rows", async () => {
+    const schema = uniqueSchema();
+    const store = makeStore(schema);
+    await store.setup();
+    await store.createCryptoKey("user:absent");
+    await store.append({
+      streamId: "Issue-1",
+      expectedVersion: -1,
+      events: [
+        {
+          type: "IssueCreated",
+          data: { title: "Bug" },
+          encryptedFields: ["missing"],
+          cryptoKeyId: "user:absent",
+        },
+      ],
+    });
+    const stored = await pool.query<{
+      encrypted_data: unknown;
+      crypto_key_id: string | null;
+    }>(
+      `SELECT encrypted_data, crypto_key_id FROM ${schema}.events WHERE stream_id = $1`,
+      ["Issue-1"],
+    );
+    expect(stored.rows[0]).toMatchObject({
+      encrypted_data: null,
+      crypto_key_id: null,
+    });
+    await store.revokeKey("user:absent");
+    store.registerUpcaster({
+      eventType: "IssueCreated",
+      fromSchemaVersion: 1,
+      toSchemaVersion: 2,
+      upcast: (data: unknown) => ({ ...(data as object), migrated: true }),
+    });
+    expect((await store.load("Issue-1"))[0].data).toEqual({
+      title: "Bug",
+      migrated: true,
+    });
+
+    // Older installations may already have written an empty encrypted map.
+    await pool.query(
+      `UPDATE ${schema}.events SET encrypted_data = '{}'::jsonb, crypto_key_id = $1 WHERE stream_id = $2`,
+      ["user:absent", "Issue-1"],
+    );
+    expect((await store.load("Issue-1"))[0]).toMatchObject({
+      data: { title: "Bug", migrated: true },
+    });
+    const abort = new AbortController();
+    for await (const event of store.subscribe({ signal: abort.signal })) {
+      expect(event).not.toHaveProperty("redacted");
+      expect(event.data).toEqual({ title: "Bug", migrated: true });
+      abort.abort();
+      break;
+    }
+    const handled: unknown[] = [];
+    expect(
+      await store.runProjection({
+        projectionName: "legacy-empty-encryption",
+        handle: (event) => {
+          handled.push(event.data);
+          return Promise.resolve();
+        },
+      }),
+    ).toBe(1);
+    expect(handled).toEqual([{ title: "Bug", migrated: true }]);
+  });
+
+  it("keeps old-schema redacted payloads untyped when upcasting is registered", async () => {
+    const store = makeStore(uniqueSchema());
+    await store.setup();
+    await store.createCryptoKey("user:old-schema");
+    await store.append({
+      streamId: "Issue-1",
+      expectedVersion: -1,
+      events: [
+        {
+          type: "IssueCreated",
+          schemaVersion: 1,
+          data: { title: "Login", creatorName: "Ada" },
+          encryptedFields: ["creatorName"],
+          cryptoKeyId: "user:old-schema",
+        },
+      ],
+    });
+    store.registerUpcaster({
+      eventType: "IssueCreated",
+      fromSchemaVersion: 1,
+      toSchemaVersion: 2,
+      upcast: (data: unknown) => ({
+        summary: (data as { title: string }).title,
+        creatorName: (data as { creatorName: string }).creatorName,
+      }),
+    });
+    expect(
+      (await store.load<{ summary: string; creatorName: string }>("Issue-1"))[0]
+        .data,
+    ).toEqual({ summary: "Login", creatorName: "Ada" });
+    await store.revokeKey("user:old-schema");
+    const event = (
+      await store.load<{ summary: string; creatorName: string }>("Issue-1")
+    )[0];
+    if (!("tombstoned" in event)) throw new Error("Expected redacted event");
+    expectTypeOf(event.data).toEqualTypeOf<unknown>();
+    expect(event).toMatchObject({
+      data: { title: "Login", creatorName: null },
+      schemaVersion: 1,
+    });
+  });
+
   it("retains public fields and nulls encrypted paths on every replay read", async () => {
     const store = makeStore(uniqueSchema());
     await store.setup();

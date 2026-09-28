@@ -118,7 +118,14 @@ export async function prepareEventRow(options: {
       eventId: `${options.streamId}/${options.version}`,
     });
     dataToStore = encrypted.dataToStore;
-    encryptedData = encrypted.encryptedData;
+    // No field was actually present: do not persist a misleading encrypted row.
+    if (
+      Object.keys(encrypted.encryptedData as Record<string, unknown>).length > 0
+    ) {
+      encryptedData = encrypted.encryptedData;
+    } else {
+      cryptoKeyId = null;
+    }
   } else {
     cryptoKeyId = null;
   }

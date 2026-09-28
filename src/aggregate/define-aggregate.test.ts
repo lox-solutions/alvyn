@@ -53,7 +53,7 @@ const Order = defineAggregate<OrderState, OrderEvents>()({
     OrderPlaced: (state, event) => ({
       ...state,
       status: "placed",
-      total: event.data?.total ?? 0,
+      total: "tombstoned" in event ? 0 : event.data.total,
     }),
     OrderShipped: (state) => ({ ...state, status: "shipped" }),
     OrderCancelled: (state) => ({ ...state, status: "cancelled" }),
@@ -248,7 +248,7 @@ describe("defineAggregate", () => {
         evolve: {
           OrderSnapshot: (state, event) => ({
             ...state,
-            status: event.data?.status ?? "unknown",
+            status: "tombstoned" in event ? "unknown" : event.data.status,
             total: 0,
           }),
         },
@@ -302,11 +302,21 @@ describe("defineAggregate", () => {
     const EncryptedUser = defineAggregate<UserState, UserEvents>()({
       streamPrefix: "EncUser",
       evolve: {
-        UserRegistered: (_state, event) => ({
-          name: event.data?.name ?? "",
-          email: event.data?.email ?? "",
-          age: event.data?.age ?? 0,
-        }),
+        UserRegistered: (_state, event) => {
+          if ("tombstoned" in event) {
+            const data = event.data as { age?: unknown };
+            return {
+              name: "",
+              email: "",
+              age: typeof data.age === "number" ? data.age : 0,
+            };
+          }
+          return {
+            name: event.data.name,
+            email: event.data.email,
+            age: event.data.age,
+          };
+        },
       },
       encryption: {
         cryptoKeyId: (entityId) => `user:${entityId}`,
@@ -415,8 +425,14 @@ describe("defineAggregate", () => {
       >()({
         streamPrefix: "Mixed",
         evolve: {
-          Public: (s, e) => ({ ...s, info: e.data?.info ?? "" }),
-          Private: (s, e) => ({ ...s, secret: e.data?.secret ?? "" }),
+          Public: (s, e) => ({
+            ...s,
+            info: "tombstoned" in e ? "" : e.data.info,
+          }),
+          Private: (s, e) => ({
+            ...s,
+            secret: "tombstoned" in e ? "" : e.data.secret,
+          }),
         },
         encryption: {
           cryptoKeyId: (id) => `mix:${id}`,

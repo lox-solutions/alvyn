@@ -82,6 +82,8 @@ export function defineProjection<TEvents>(): (
     return {
       projectionName,
       streamPrefix,
+      handlesEventType: (type: string) =>
+        Boolean(handlers[type as keyof TEvents & string]),
       onRedacted: redactedHandler,
 
       async handle(event: StoredEvent, client: PoolClient): Promise<void> {

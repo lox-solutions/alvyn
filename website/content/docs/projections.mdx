@@ -58,7 +58,7 @@ export const orderSummaryProjection = defineProjection<OrderEvents>()({
 
 The builder automatically:
 
-- **Filters by stream prefix:** Events from unrelated aggregates are skipped without invoking handlers.
+- **Filters by stream prefix and handler type:** Events from unrelated aggregates or event types without a handler (including snapshot events) are skipped before decryption/upcasting.
 - **Extracts the entity ID:** Strips the prefix from the stream ID (e.g. `"Order-123"` becomes `"123"`).
 - **Provides typed data:** Handlers receive strongly typed event payloads.
 - **Provides atomic `ctx.client`:** All SQL operations inside the handler execute in the same transaction as the projection checkpoint update.
@@ -91,7 +91,7 @@ const issueProjection = defineProjection<IssueEvents>()({
 });
 ```
 
-If the projection can safely discard every redacted event, set `onRedacted: "skip"` explicitly. Without a policy, processing fails and the checkpoint rolls back rather than silently omitting an event. A missing crypto configuration or a missing key row is an error even with `"skip"`; only **revoked** keys count as intentional redaction. `onRedacted` can also be defined on the raw `Projection` interface with `(event, client)` arguments.
+If the projection can safely discard every **handled** redacted event, set `onRedacted: "skip"` explicitly. Typed projections skip event types without a handler before decryption; custom `Projection` implementations may provide `handlesEventType(type)` for the same optimization. Without a policy, processing fails and the checkpoint rolls back rather than silently omitting an event. A missing crypto configuration or a missing key row is an error even with `"skip"`; only **revoked** keys count as intentional redaction. `onRedacted` can also be defined on the raw `Projection` interface with `(event, client)` arguments.
 
 #### `ProjectionHandlerContext`
 
