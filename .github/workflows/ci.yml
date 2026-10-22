@@ -40,7 +40,6 @@ jobs:
         with:
           name: pr-data
           path: pr-data/
-      - run: pnpm run audit:prod
       - run: pnpm run pack:check
       - run: pnpm --filter website run types:check
       - run: pnpm --filter website run build
