@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.14](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.13...alvyn-v0.1.14) (2026-10-22)
+
+
+### Bug Fixes
+
+* **security:** update dependencies ([#70](https://github.com/lox-solutions/alvyn/issues/70)) ([864d8b8](https://github.com/lox-solutions/alvyn/commit/864d8b83c5f77a5f193f76530447187805b9329f))
+
 ## [0.1.13](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.12...alvyn-v0.1.13) (2026-09-28)
 
 
