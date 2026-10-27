@@ -94,7 +94,9 @@
       "nanoid": "3.3.18",
       "postcss": "8.5.25",
       "semver@6": "6.3.0",
-      "@whatwg-node/fetch@0": "0.12.1"
+      "@whatwg-node/fetch@0": "0.12.1",
+      "@graphql-tools/merge>@graphql-tools/utils": "12.0.2",
+      "@graphql-tools/utils@9": "12.0.2"
     }
   }
 }
