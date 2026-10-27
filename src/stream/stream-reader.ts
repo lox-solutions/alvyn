@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 
 import type { CryptoKeyManager } from "../crypto/crypto-key-manager";
+import { assertValidSchemaName } from "../sql-helpers";
 import type { ReplayedEvent } from "../types";
 import type { UpcasterRegistry } from "../upcaster/upcaster-registry";
 import {
@@ -41,6 +42,8 @@ export async function readStream<T = unknown>(
     upcasterRegistry,
     maxEvents,
   } = options;
+
+  assertValidSchemaName(schema);
 
   const query =
     maxEvents !== undefined

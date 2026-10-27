@@ -7,6 +7,7 @@ import {
   type EncryptedFieldEntry,
 } from "../crypto/field-encryptor";
 import { withClient } from "../pg-helpers";
+import { assertValidSchemaName } from "../sql-helpers";
 import {
   EVENT_ROW_COLUMNS,
   mapRowToEvent,
@@ -79,6 +80,7 @@ function buildCatchUpQuery(
   schema: string,
   options: SubscribeOptions,
 ): CatchUpQuery {
+  assertValidSchemaName(schema);
   const filter = buildSubjectFilter(
     {
       subject: options.subject,

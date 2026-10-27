@@ -5,6 +5,7 @@ import {
   redactFields,
   type EncryptedFieldEntry,
 } from "../crypto/field-encryptor";
+import { assertValidSchemaName } from "../sql-helpers";
 
 const PARAMS_PER_OUTBOX = 3;
 const PG_MAX_PARAMS = 65535;
@@ -97,6 +98,7 @@ export async function insertOutboxChunks(options: {
   rows: OutboxRow[];
 }): Promise<void> {
   const { client, schema, rows } = options;
+  assertValidSchemaName(schema);
   for (
     let chunkStart = 0;
     chunkStart < rows.length;

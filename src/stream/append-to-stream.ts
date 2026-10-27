@@ -11,6 +11,7 @@ import { notifyChannel } from "./notify-channel";
 import { prepareEventRow } from "./prepare-event-row";
 import type { PreparedRow } from "./prepare-event-row";
 import { DEFAULT_STREAM_LOCK_SEED } from "../event-store-constants";
+import { assertValidSchemaName } from "../sql-helpers";
 import {
   checkIdempotencyKey,
   computeRequestHash,
@@ -53,6 +54,7 @@ async function validateVersion(options: {
   expectedVersion: number;
 }): Promise<number> {
   const { client, schema, streamId, expectedVersion } = options;
+  assertValidSchemaName(schema);
   const versionResult = await client.query<{ max_version: number | null }>(
     `SELECT MAX(stream_version) as max_version FROM ${schema}.events WHERE stream_id = $1`,
     [streamId],
@@ -117,6 +119,7 @@ async function insertEventChunks(options: {
   preparedRows: PreparedRow[];
 }): Promise<bigint[]> {
   const { client, schema, streamId, preparedRows } = options;
+  assertValidSchemaName(schema);
   const globalPositions: bigint[] = [];
   for (
     let chunkStart = 0;
