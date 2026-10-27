@@ -5,6 +5,12 @@ on:
     branches: [main]
     paths:
       - "website/**"
+      # Shared dependencies and install settings also affect the docs build.
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".npmrc"
+      - ".github/workflows/docs.yml"
   workflow_dispatch:
 
 permissions:
