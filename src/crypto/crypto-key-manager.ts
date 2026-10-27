@@ -171,6 +171,7 @@ export class CryptoKeyManager {
     lockForEncryption = false,
   ): Promise<{ key: Buffer; version: number } | null> {
     const { client, schema, keyId } = options;
+    assertValidSchemaName(schema);
     const result = await client.query<{
       encrypted_key: Buffer | null;
       revoked_at: Date | null;
