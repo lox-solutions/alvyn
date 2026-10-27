@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.14](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.13...alvyn-v0.1.14) (2026-10-27)
+
+
+### Bug Fixes
+
+* **ci:** deploy docs on shared dependency updates ([#74](https://github.com/lox-solutions/alvyn/issues/74)) ([db5cdd2](https://github.com/lox-solutions/alvyn/commit/db5cdd2427c144d3d49505ae5a807ed4ec1d22e7))
+* **security:** autofix 3rd party Github Actions should be pinned ([#76](https://github.com/lox-solutions/alvyn/issues/76)) ([942d0fb](https://github.com/lox-solutions/alvyn/commit/942d0fb268dc3f7046973afaecdf1a1b19f51677))
+* **security:** autofix Potential SQL injection via string-based query concatenation ([#75](https://github.com/lox-solutions/alvyn/issues/75)) ([9956034](https://github.com/lox-solutions/alvyn/commit/9956034ddbb4e750f748066b332f134405c49f01))
+* **security:** update dependencies ([#70](https://github.com/lox-solutions/alvyn/issues/70)) ([864d8b8](https://github.com/lox-solutions/alvyn/commit/864d8b83c5f77a5f193f76530447187805b9329f))
+* **security:** update dependencies ([#73](https://github.com/lox-solutions/alvyn/issues/73)) ([c1e267d](https://github.com/lox-solutions/alvyn/commit/c1e267d422af0e3a07f776a0f88d2e2b8c7b8dc0))
+
 ## [0.1.13](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.12...alvyn-v0.1.13) (2026-09-28)
 
 
