@@ -847,7 +847,6 @@ pnpm test:coverage
 # Run the release safety gates
 pnpm typecheck
 pnpm lint
-pnpm audit:prod
 pnpm pack:check
 
 # Build the documentation site
@@ -855,8 +854,15 @@ pnpm --filter website build
 ```
 
 The test suite uses [Testcontainers](https://testcontainers.com/) to spin up PostgreSQL instances automatically — you just need Docker running.
-The dependency audit rejects high-severity production vulnerabilities, and the
-package check ensures that test and load-test artifacts are not published.
+Dependency security is monitored by Aikido Security. The package check ensures that test and load-test artifacts are not published.
+
+If npm publishing fails after a GitHub release was created, retry with the current workflow and the existing release tag (after merging workflow fixes into `main`):
+
+```bash
+gh workflow run release-please.yml --ref main -f release_tag=alvyn-v0.1.14
+```
+
+This reruns the release checks and publishes the tagged code; only use it for versions not yet published to npm.
 
 Please open an [issue](https://github.com/lox-solutions/alvyn/issues) or [pull request](https://github.com/lox-solutions/alvyn/pulls) on GitHub.
 
