@@ -12,7 +12,7 @@ jobs:
     if: github.event.workflow_run.conclusion == 'success'
     steps:
       - name: Download PR artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v4.1.3
         with:
           name: pr-data
           run-id: ${{ github.event.workflow_run.id }}
