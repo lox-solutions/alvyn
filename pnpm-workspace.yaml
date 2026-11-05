@@ -12,6 +12,10 @@ packages:
 
 # Only allow dependencies published at least 7 days ago
 minimumReleaseAge: 4320
+minimumReleaseAgeExclude:
+  - next
+  - eslint-config-next
+  - "@next/*"
 
 # Block transitive deps from using git repos or tarball URLs
 blockExoticSubdeps: true
