@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.15](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.14...alvyn-v0.1.15) (2026-11-05)
+
+
+### Bug Fixes
+
+* **security:** autofix 3rd party Github Actions should be pinned ([#82](https://github.com/lox-solutions/alvyn/issues/82)) ([04a4e2d](https://github.com/lox-solutions/alvyn/commit/04a4e2d989ffca32a517a1a32c57f38ac3862952))
+* **security:** autofix Overly Broad Permissions in GitHub Actions Workflows is risky ([#84](https://github.com/lox-solutions/alvyn/issues/84)) ([e192260](https://github.com/lox-solutions/alvyn/commit/e19226008e2e077f2db33e81220147e65eabd720))
+* **security:** update dependencies ([#85](https://github.com/lox-solutions/alvyn/issues/85)) ([c6a18ac](https://github.com/lox-solutions/alvyn/commit/c6a18ac82fbff1c9e4fd2144115c104af456b08d))
+
 ## [0.1.14](https://github.com/lox-solutions/alvyn/compare/alvyn-v0.1.13...alvyn-v0.1.14) (2026-10-27)
 
 
