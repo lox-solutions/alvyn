@@ -8,6 +8,7 @@
     "start": "next start",
     "types:check": "fumadocs-mdx && next typegen && tsc --noEmit",
     "postinstall": "fumadocs-mdx",
+    "test": "tsx --test tests/*.test.ts",
     "lint": "eslint"
   },
   "dependencies": {
