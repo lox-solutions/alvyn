@@ -1,8 +1,13 @@
+import { CookieConsentProvider } from "@/components/CookieConsent";
 import { Provider } from "@/components/provider";
 import "./global.css";
 import { Inter } from "next/font/google";
 import type { Metadata } from "next";
+import { isTagManagerId } from "@/lib/cookie-consent";
 import { baseUrl } from "@/lib/shared";
+import { source } from "@/lib/source";
+
+const homeTitle = "Alvyn | Event history for TypeScript and AI agents";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -15,7 +20,7 @@ export const metadata: Metadata = {
       : `${baseUrl}/`,
   ),
   title: {
-    default: "Alvyn | Event history for TypeScript and AI agents",
+    default: homeTitle,
     template: "%s | Alvyn",
   },
   description:
@@ -43,10 +48,23 @@ export const metadata: Metadata = {
 };
 
 export default function Layout({ children }: LayoutProps<"/">) {
+  const id = process.env.NEXT_PUBLIC_GTM_ID;
+  const gtmId = isTagManagerId(id) ? id : undefined;
+  const trackedPages = gtmId
+    ? Object.fromEntries([
+        ["/", homeTitle],
+        ...source.getPages().map((page) => [page.url, page.data.title]),
+      ])
+    : {};
+
   return (
     <html lang="en" className={inter.className} suppressHydrationWarning>
       <body className="flex flex-col min-h-screen">
-        <Provider>{children}</Provider>
+        <Provider>
+          <CookieConsentProvider gtmId={gtmId} pages={trackedPages}>
+            {children}
+          </CookieConsentProvider>
+        </Provider>
       </body>
     </html>
   );
